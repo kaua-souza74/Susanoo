@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Zap, Grid, MessageSquareText, FolderUp, Settings, LogOut, Bot, Sparkles } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useRouter, usePathname } from "next/navigation";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -15,21 +16,24 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }, []);
 
   const handleLogout = () => {
-      supabase.auth.signOut();
-      router.replace("/");
+       supabase.auth.signOut();
+       router.replace("/");
   };
 
   return (
-    <div className="flex h-screen bg-[#111213] text-[#f5f5f5] selection:bg-accent selection:text-white font-sans">
-      <aside className="w-[280px] bg-[#141516] border-r border-[#2c2d30] flex flex-col justify-between hidden md:flex shrink-0">
+    <div className="flex h-screen bg-background text-foreground selection:bg-accent selection:text-white font-sans transition-colors duration-300">
+      <aside className="w-[280px] bg-surface border-r border-surface-border flex flex-col justify-between hidden md:flex shrink-0 transition-colors duration-300">
         <div>
             {/* Header Área do Cliente */}
-            <div className="p-4 border-b border-[#2c2d30] mb-4">
-               <div className="flex items-center gap-3 px-3 py-2 hover:bg-[#1a1b1e] rounded-xl cursor-default transition-colors">
-                  <div className="w-8 h-8 rounded-lg bg-accent text-accent-foreground flex items-center justify-center font-bold text-sm shadow-inner shadow-black/50">
-                    <Zap className="w-5 h-5 fill-current"/>
+            <div className="p-4 border-b border-surface-border mb-4">
+               <div className="flex items-center justify-between px-3 py-2">
+                  <div className="flex items-center gap-3 rounded-xl cursor-default transition-colors">
+                     <div className="w-8 h-8 rounded-lg bg-accent text-accent-foreground flex items-center justify-center font-bold text-sm shadow-inner shadow-black/50">
+                       <Zap className="w-5 h-5 fill-current"/>
+                     </div>
+                     <span className="font-bold text-[15px] tracking-wide text-foreground">Workspace</span>
                   </div>
-                  <span className="font-bold text-[15px] tracking-wide text-white">Workspace</span>
+                  <ThemeToggle />
                </div>
             </div>
 
@@ -44,15 +48,15 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </div>
         </div>
 
-        <div className="p-4 border-t border-[#2c2d30] pb-6">
-             <button onClick={handleLogout} className="cursor-pointer flex items-center gap-3 px-4 py-3 text-sm font-bold text-[#a0a0a0] hover:text-[#ff4040] hover:bg-red-500/10 rounded-xl w-full transition-colors border border-transparent hover:border-red-500/20">
+        <div className="p-4 border-t border-surface-border pb-6">
+             <button onClick={handleLogout} className="cursor-pointer flex items-center gap-3 px-4 py-3 text-sm font-bold text-foreground/60 hover:text-[#ff4040] hover:bg-red-500/10 rounded-xl w-full transition-colors border border-transparent hover:border-red-500/20">
                 <LogOut className="w-5 h-5"/> Fazer Logout
              </button>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col overflow-hidden h-screen bg-[#111213]">
+      <main className="flex-1 flex flex-col overflow-hidden h-screen bg-background transition-colors duration-300">
          {children}
       </main>
     </div>
@@ -62,7 +66,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 // Componente para tornar o NavLink inteligente (Aba Ativa)
 function NavItem({ icon, label, active = false, href }: { icon: ReactNode, label: string, active?: boolean, href: string }) {
     return (
-        <Link href={href} className={`flex items-center gap-3 px-4 py-3.5 rounded-xl text-[15px] transition-all duration-200 cursor-pointer ${active ? 'bg-[#1e1f24] text-white font-bold border border-[#2c2d30] shadow-sm' : 'text-[#888] font-medium hover:bg-[#1e1f24] hover:text-[#e0e0e0] border border-transparent'}`}>
+        <Link href={href} className={`flex items-center gap-3 px-4 py-3.5 rounded-xl text-[15px] transition-all duration-200 cursor-pointer ${active ? 'bg-foreground/5 text-foreground font-bold border border-surface-border shadow-sm' : 'text-foreground/60 font-medium hover:bg-foreground/5 hover:text-foreground border border-transparent'}`}>
             {icon}
             {label}
         </Link>

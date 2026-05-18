@@ -65,7 +65,12 @@ export default function LoginPage() {
           />
         </div>
         <div>
-          <label className="block text-sm font-semibold mb-2 opacity-80">Senha</label>
+          <div className="flex justify-between items-center mb-2">
+            <label className="block text-sm font-semibold opacity-80">Senha</label>
+            <Link href="/forgot-password" className="text-xs font-semibold text-accent hover:underline">
+              Esqueceu a senha?
+            </Link>
+          </div>
           <input 
             type="password" 
             value={password}
@@ -87,7 +92,6 @@ export default function LoginPage() {
 
       <p className="mt-10 text-center flex flex-col gap-2 items-center">
         <span className="text-[#a0a0a0]">Não possui acesso ao seu projeto? <Link href="/register" className="text-white font-semibold hover:underline">Fale com a agência</Link></span>
-        <Link href="/admin/login" className="text-[#2c2d30] hover:text-[#555] font-bold text-[10px] uppercase tracking-[0.3em] transition-colors mt-8">Protocolo HQ (Staff)</Link>
       </p>
     </motion.div>
   );

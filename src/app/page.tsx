@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { LogIn, ArrowRight, Zap } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Logo } from "@/components/logo";
 import Link from "next/link";
 
 export default function Home() {
@@ -13,12 +14,9 @@ export default function Home() {
 
       {/* Navbar area */}
       <nav className="absolute top-0 w-full p-6 flex justify-between items-center z-10 max-w-7xl mx-auto">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
-            <Zap className="w-5 h-5 text-accent-foreground" />
-          </div>
-          <span className="text-xl font-bold tracking-tight">Susanoo</span>
-        </div>
+        <Link href="/" className="flex items-center cursor-pointer">
+          <Logo />
+        </Link>
         <div className="flex items-center gap-4">
           <ThemeToggle />
           <Link href="/login" className="glass px-6 py-2 rounded-full text-sm font-medium hover:bg-surface/80 transition-colors flex items-center gap-2">
