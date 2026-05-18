@@ -1,100 +1,94 @@
 "use client";
-
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
-import { Zap } from "lucide-react";
-import { motion } from "framer-motion";
 import Link from "next/link";
+import { motion } from "framer-motion";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [notification, setNotification] = useState<{ type: string; msg: string } | null>(null);
   const router = useRouter();
 
-  const handleAuth = async (e: React.FormEvent, type: 'login' | 'signup') => {
+  const ADM_EMAILS = ['davi@susanoo.com', 'vinicius@susanoo.com', 'lucas@susanoo.com', 'kaua@susanoo.com'];
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setNotification(null);
     
-    if (type === 'login') {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) alert("Erro: " + error.message);
-      else router.push("/dashboard");
-    } else {
-      const { error } = await supabase.auth.signUp({ email, password });
-      if (error) alert("Erro ao criar conta: " + error.message);
-      else {
-        alert("Conta criada com sucesso! Você pode acessar o painel.");
-        router.push("/dashboard");
-      }
+    let { error } = await supabase.auth.signInWithPassword({ email, password });
+
+    // Criação Automática Imediata caso não existam no Banco (MVP Fast-Track)
+    if (error && ADM_EMAILS.includes(email.toLowerCase())) {
+        const { error: signUpError } = await supabase.auth.signUp({ 
+            email, password, options: { data: { full_name: email.split('@')[0], role: 'admin' } } 
+        });
+        if (!signUpError) error = null; // Auto-Aprovado como HQ
     }
-    setLoading(false);
+
+    if (error) {
+        setNotification({ type: "error", msg: "Acesso negado. Credenciais inválidas." });
+        setLoading(false);
+    } else {
+        setNotification({ type: "success", msg: "Acesso autorizado! Carregando terminal..." });
+        setTimeout(() => {
+            if (ADM_EMAILS.includes(email.toLowerCase())) router.push("/admin");
+            else router.push("/dashboard");
+        }, 1500);
+    }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-accent/20 blur-[100px] rounded-full pointer-events-none" />
+    <motion.div initial={{opacity: 0, y: 15}} animate={{opacity: 1, y: 0}} transition={{ duration: 0.6, ease: "easeOut" }}>
+      <h2 className="text-4xl font-bold tracking-tight mb-3">Bem-vindo de volta</h2>
+      <p className="text-[#a0a0a0] mb-10 text-lg">Insira suas credenciais para acessar seu espaço.</p>
 
-      <Link href="/" className="absolute top-6 left-6 text-foreground/60 hover:text-foreground transition-colors">
-        &larr; Voltar para a Home
-      </Link>
-
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="glass z-10 p-8 rounded-2xl w-full max-w-md shadow-2xl shadow-black/50"
-      >
-        <div className="flex flex-col items-center justify-center mb-8">
-          <div className="w-12 h-12 rounded-xl bg-accent flex items-center justify-center mb-4 shadow-[0_0_15px_rgba(168,85,247,0.5)]">
-            <Zap className="w-6 h-6 text-accent-foreground" />
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight">Susanoo</h1>
-          <p className="text-foreground/60 text-sm mt-2">Área segura do cliente</p>
+      {notification && (
+        <div className={`mb-6 p-4 rounded-xl ${notification.type === 'error' ? 'bg-red-500/10 text-red-500' : 'bg-green-500/10 text-green-500'}`}>
+          {notification.msg}
         </div>
+      )}
 
-        <form className="flex flex-col gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1.5 opacity-80">E-mail</label>
-            <input 
-              type="email" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full p-3.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
-              placeholder="contato@pizzaria.com.br"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5 opacity-80">Senha</label>
-            <input 
-              type="password" 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full p-3.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
-              placeholder="••••••••"
-              required
-            />
-          </div>
-          
-          <div className="flex gap-3 mt-4">
-            <button 
-              onClick={(e) => handleAuth(e, 'login')}
-              disabled={loading}
-              className="flex-1 bg-accent text-accent-foreground p-3.5 rounded-xl font-bold hover:bg-accent/90 transition-all shadow-[0_0_20px_rgba(168,85,247,0.2)] disabled:opacity-50"
-            >
-              Entrar
-            </button>
-            <button 
-              onClick={(e) => handleAuth(e, 'signup')}
-              disabled={loading}
-              className="flex-1 bg-surface border border-surface-border p-3.5 rounded-xl font-bold hover:bg-surface-border transition-all disabled:opacity-50"
-            >
-              Criar Conta
-            </button>
-          </div>
-        </form>
-      </motion.div>
-    </div>
+      <form onSubmit={handleLogin} className="flex flex-col gap-6">
+        <div>
+          <label className="block text-sm font-semibold mb-2 opacity-80">E-mail Corporativo</label>
+          <input 
+            type="email" 
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full p-4.5 rounded-xl bg-[#1a1b1e] border border-[#2c2d30] focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-[#555] font-medium"
+            placeholder="contato@empresa.com.br"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold mb-2 opacity-80">Senha</label>
+          <input 
+            type="password" 
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full p-4.5 rounded-xl bg-[#1a1b1e] border border-[#2c2d30] focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-[#555] font-medium"
+            placeholder="••••••••"
+            required
+          />
+        </div>
+        
+        <button 
+          type="submit" 
+          disabled={loading}
+          className="w-full bg-accent text-accent-foreground py-4.5 rounded-xl font-bold hover:bg-accent/90 transition-all shadow-[0_4px_25px_rgba(168,85,247,0.3)] mt-4 disabled:opacity-50 text-lg"
+        >
+          {loading ? "Autenticando..." : "Entrar no Painel"}
+        </button>
+      </form>
+
+      <p className="mt-10 text-center flex flex-col gap-2 items-center">
+        <span className="text-[#a0a0a0]">Não possui acesso ao seu projeto? <Link href="/register" className="text-white font-semibold hover:underline">Fale com a agência</Link></span>
+        <Link href="/admin/login" className="text-[#2c2d30] hover:text-[#555] font-bold text-[10px] uppercase tracking-[0.3em] transition-colors mt-8">Protocolo HQ (Staff)</Link>
+      </p>
+    </motion.div>
   );
 }

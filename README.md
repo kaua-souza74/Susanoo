@@ -1,36 +1,35 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🦅 SUSANOO - Sistema Operacional HQ
 
-## Getting Started
+O sistema mestre de operações da Susanoo, concebido para gerir múltiplos projetos de software com integração suprema, Kanban integrado (Trello HQ) e central de comunicação instantânea. Modulado inteiramente na Vibe Premium Dark.
 
-First, run the development server:
+## 🚀 Como os Sócios (Davi, Vinícius, Lucas e Kauã) Trabalham Juntos?
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Com certeza **TEM COMO!** A grande sacada do que nós montamos juntos aqui é que todo o sistema está ligado a apenas **1 Cérebro Central na nuvem (Seu Supabase Público)**. 
+
+Múltiplas pessoas podem baixar o código em suas casas, rodar, e tudo estará perfeitamente sincronizado. Se o Davi em São Paulo arrastar um projeto pra coluna `Revisão`, em questão de milissegundos o card some da coluna antiga e aparece na do Vinícius, tudo sozinho. Funciona incrivelmente bem justamente por estarmos usando os WebSockets Realtime nativos da sua plataforma.
+
+### Passo a passo para sua Equipe rodar nas próprias máquinas:
+
+1. **Compartilhe o Código**
+Suba essa pasta para um GitHub Privado seu e chame seus sócios, ou envie para eles o arquivo .zip com o código.
+
+2. **Instalando o Reator**
+Sempre que alguém baixar no PC dele, ele precisa abrir aquela pasta nova, rodar o terminal lá dentro e confirmar as engrenagens e a bateria:
+`npm install --legacy-peer-deps`
+
+3. **O Elemento Vital (Cuidado com Segredos de Estado)**
+A única coisa que conecta seu banco de dados a tela de quem não for você é algo extremamente sigiloso. Peça pra cada um de seus sócios criarem na raiz do projeto (perto da onde fica package.json etc) um arquivo simples com o nome `.env.local`
+
+Dê as chaves do seu reino para eles colocarem lá dentro (sem aspas, limpinho assim):
+```env
+NEXT_PUBLIC_SUPABASE_URL=Sua_Urllll_AQUI_DO_SUPABASE
+NEXT_PUBLIC_SUPABASE_ANON_KEY=Sua_Chaveeee_Sua_AQUI_DO_SUPABASE
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+4. **Ignite! (Ignição)**
+`npm run dev`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Seus 4 pcs estão espelhados, dividindo e multiplicando a carga da agência. Não precisa fazer nada especial para sincronizar, basta clicar e pronto.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+*Ambiente criado restritamente para operações táticas internas.*
