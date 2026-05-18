@@ -1,10 +1,26 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Send, Search, Users, Phone, Video, MoreHorizontal, Hash, Plus, PlusCircle, Settings, Pin, X, Paperclip } from "lucide-react";
+import { Send, Search, Users, Phone, Video, MoreHorizontal, Hash, Plus, PlusCircle, Settings, Pin, X, Paperclip, CornerUpLeft, Trash2, Pencil } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 type Message = { id: string; content: string; created_at: string; user_id: string; sender_name?: string; profiles?: { name: string; role?: string } };
+
+// Helper to parse replied message syntax
+const parseReply = (content: string) => {
+    if (content && content.startsWith("[REPLY:")) {
+        const match = content.match(/^\[REPLY:([^|]+)\|([\s\S]*?)\]([\s\S]*)$/);
+        if (match) {
+            return {
+                isReply: true,
+                replyToName: match[1],
+                replyToContent: match[2],
+                actualContent: match[3]
+            };
+        }
+    }
+    return { isReply: false, replyToName: "", replyToContent: "", actualContent: content };
+};
 
 export default function AdminTeamsChat() {
    const [user, setUser] = useState<any>(null);
@@ -13,10 +29,10 @@ export default function AdminTeamsChat() {
    const getMyName = () => {
        if (user?.email) {
            const emailLower = user.email.toLowerCase();
-           if (emailLower.startsWith('kaua@')) return 'Kauã';
-           if (emailLower.startsWith('vinicius@')) return 'Vinícius';
-           if (emailLower.startsWith('davi@')) return 'Davi';
-           if (emailLower.startsWith('lucas@')) return 'Lucas';
+           if (emailLower.startsWith('kaua') || emailLower === 'kauasesi156@gmail.com') return 'Kauã';
+           if (emailLower.startsWith('vinicius') || emailLower === 'vinicius172321@gmail.com') return 'Vinícius';
+           if (emailLower.startsWith('davi') || emailLower === 'davi@susanoo.com') return 'Davi';
+           if (emailLower.startsWith('lucas') || emailLower === 'limasilvallsss@gmail.com') return 'Lucas';
 
            if (user.user_metadata?.name) return user.user_metadata.name;
            const part = user.email.split('@')[0];
@@ -30,6 +46,61 @@ export default function AdminTeamsChat() {
    const [content, setContent] = useState("");
    const [searchTerm, setSearchTerm] = useState("");
    const messagesEndRef = useRef<HTMLDivElement>(null);
+
+   // Reply, Edit and Delete local state
+   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+   const [deletedMessageIds, setDeletedMessageIds] = useState<string[]>([]);
+   const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
+
+   // Typing indicator state
+   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+   const typingTimeoutRef = useRef<any>(null);
+   const chatChannelRef = useRef<any>(null);
+
+   useEffect(() => {
+       const stored = localStorage.getItem("susanoo_deleted_messages");
+       if (stored) {
+           try {
+               setDeletedMessageIds(JSON.parse(stored));
+           } catch (e) {
+               console.error(e);
+           }
+       }
+   }, []);
+
+   const handleHideMessageLocal = (msgId: string) => {
+       const updated = [...deletedMessageIds, msgId];
+       setDeletedMessageIds(updated);
+       localStorage.setItem("susanoo_deleted_messages", JSON.stringify(updated));
+   };
+
+   const handleDeleteMessageEveryone = async (msgId: string) => {
+       const { error } = await supabase.from('messages').delete().eq('id', msgId);
+       if (error) {
+           alert("Erro ao excluir mensagem: " + error.message);
+       }
+   };
+
+   const handleTyping = () => {
+       if (!chatChannelRef.current || !user) return;
+       chatChannelRef.current.send({
+           type: 'broadcast',
+           event: 'typing',
+           payload: { name: getMyName(), isTyping: true }
+       });
+
+       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+       typingTimeoutRef.current = setTimeout(() => {
+           if (chatChannelRef.current) {
+               chatChannelRef.current.send({
+                   type: 'broadcast',
+                   event: 'typing',
+                   payload: { name: getMyName(), isTyping: false }
+               });
+           }
+       }, 2000);
+   };
 
    // Modal de Criação State
    const [isModalOpen, setIsModalOpen] = useState(false);
@@ -56,6 +127,26 @@ export default function AdminTeamsChat() {
 
    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
+   // Fallback polling for new messages every 3 seconds (in case Supabase Realtime publication is not enabled by user)
+   useEffect(() => {
+       if (!activeChannel) return;
+       const filterField = activeChannel.isProject ? 'project_id' : 'chat_id';
+       
+       const interval = setInterval(() => {
+           supabase.from('messages')
+               .select('*, profiles:user_id(name)')
+               .eq(filterField, activeChannel.id)
+               .order('created_at', { ascending: true })
+               .then(({ data }) => {
+                   if (data) {
+                       setMessages(data as any || []);
+                   }
+               });
+       }, 3000);
+
+       return () => clearInterval(interval);
+   }, [activeChannel]);
+
    const fetchData = async () => {
        const { data: { session } } = await supabase.auth.getSession();
        if (session) setUser(session.user);
@@ -77,6 +168,9 @@ export default function AdminTeamsChat() {
 
    const handleSelectChannel = async (channel: any) => {
        setActiveChannel(channel);
+       setReplyingTo(null);
+       setEditingMessage(null);
+       setTypingUsers([]);
        
        const filterField = channel.isProject ? 'project_id' : 'chat_id';
        
@@ -88,9 +182,30 @@ export default function AdminTeamsChat() {
        setMessages(data as any || []);
        
        supabase.removeAllChannels();
-       supabase.channel('hq-chat').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `${filterField}=eq.${channel.id}` }, () => {
-           supabase.from('messages').select('*, profiles:user_id(name)').eq(filterField, channel.id).order('created_at', { ascending: true }).then(({data}) => setMessages(data as any || []));
-       }).subscribe();
+       const channelName = `chat-${channel.id}`;
+       const chatChannel = supabase.channel(channelName);
+       
+       chatChannel
+           .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `${filterField}=eq.${channel.id}` }, () => {
+               supabase.from('messages').select('*, profiles:user_id(name)').eq(filterField, channel.id).order('created_at', { ascending: true }).then(({data}) => setMessages(data as any || []));
+           })
+           .on('broadcast', { event: 'typing' }, ({ payload }) => {
+               const { name, isTyping } = payload;
+               if (name === getMyName()) return;
+               setTypingUsers(prev => {
+                   if (isTyping) {
+                       if (prev.includes(name)) return prev;
+                       return [...prev, name];
+                   } else {
+                       return prev.filter(n => n !== name);
+                   }
+               });
+           })
+           .subscribe((status) => {
+               console.log("Joined channel:", channelName, status);
+           });
+
+       chatChannelRef.current = chatChannel;
    };
 
    const handleSend = async (e: React.FormEvent) => {
@@ -106,10 +221,53 @@ export default function AdminTeamsChat() {
 
        const temp = content;
        setContent("");
+
+       // Clear typing indicator instantly
+       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+       if (chatChannelRef.current) {
+           chatChannelRef.current.send({
+               type: 'broadcast',
+               event: 'typing',
+               payload: { name: getMyName(), isTyping: false }
+           });
+       }
+
+       if (editingMessage) {
+           const parsed = parseReply(editingMessage.content);
+           const newContent = parsed.isReply
+               ? `[REPLY:${parsed.replyToName}|${parsed.replyToContent}]${temp}`
+               : temp;
+
+           const { error } = await supabase
+               .from('messages')
+               .update({ content: newContent })
+               .eq('id', editingMessage.id);
+
+           if (error) {
+               alert("Erro ao editar mensagem: " + error.message);
+           }
+           setEditingMessage(null);
+           return;
+       }
+
+       let finalContent = temp;
+       if (replyingTo) {
+           const parsedParent = parseReply(replyingTo.content);
+           const parentAuthor = replyingTo.sender_name || 'Membro';
+           let snippet = parsedParent.actualContent;
+           if (snippet.startsWith("[IMAGE](")) snippet = "📷 Imagem";
+           else if (snippet.startsWith("[VIDEO](")) snippet = "🎥 Vídeo";
+           else if (snippet.startsWith("[DOCUMENT](")) snippet = "📎 Arquivo";
+           
+           if (snippet.length > 60) snippet = snippet.substring(0, 60) + "...";
+           
+           finalContent = `[REPLY:${parentAuthor}|${snippet}]${temp}`;
+           setReplyingTo(null);
+       }
        
        const payload = activeChannel.isProject 
-           ? { project_id: activeChannel.id, user_id: senderId, content: temp, sender_name: getMyName() }
-           : { chat_id: activeChannel.id, user_id: senderId, content: temp, sender_name: getMyName() };
+           ? { project_id: activeChannel.id, user_id: senderId, content: finalContent, sender_name: getMyName() }
+           : { chat_id: activeChannel.id, user_id: senderId, content: finalContent, sender_name: getMyName() };
            
        const { data, error } = await supabase.from('messages').insert([payload]).select().single();
        if (error) {
@@ -258,7 +416,7 @@ export default function AdminTeamsChat() {
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
                           placeholder="Buscar canal ou grupo..." 
-                          className="w-full bg-[#111] border border-[#222] text-sm text-white placeholder:text-[#555] p-3 pl-10 rounded-xl focus:border-accent/50 outline-none transition-colors shadow-inner"
+                          className="w-full bg-[#11] border border-[#222] text-sm text-white placeholder:text-[#555] p-3 pl-10 rounded-xl focus:border-accent/50 outline-none transition-colors shadow-inner"
                        />
                    </div>
 
@@ -354,7 +512,9 @@ export default function AdminTeamsChat() {
                            </div>
 
                            <AnimatePresence initial={false}>
-                           {messages.map((msg, idx) => {
+                           {messages
+                               .filter(msg => !deletedMessageIds.includes(msg.id))
+                               .map((msg, idx) => {
                                const messageAuthor = msg.sender_name || 'Agência Susanoo';
                                const isMe = messageAuthor === getMyName() || msg.user_id === user?.id;
                                const initial = messageAuthor.charAt(0).toUpperCase();
@@ -363,9 +523,11 @@ export default function AdminTeamsChat() {
                                const prev = idx > 0 ? messages[idx-1] : null;
                                const group = prev && (prev.user_id === msg.user_id && prev.sender_name === msg.sender_name);
 
+                               const parsed = parseReply(msg.content);
+
                                return (
                                    <motion.div initial={{opacity:0, y:15}} animate={{opacity:1, y:0}} key={msg.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} ${group ? '-mt-4' : 'mt-2'}`}>
-                                       <div className={`flex gap-4 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                                       <div className={`flex gap-4 max-w-[85%] relative group ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                                            {!group && (
                                                <div className={`w-10 h-10 mt-1 rounded-xl flex items-center justify-center font-bold text-white shadow-lg shrink-0 ${isAgency ? 'bg-gradient-to-br from-accent to-[#581c87]' : 'bg-[#222] border border-[#333]'}`}>
                                                    {initial}
@@ -380,10 +542,79 @@ export default function AdminTeamsChat() {
                                                        <span className="text-[11px] font-medium text-[#666]">{new Date(msg.created_at).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}</span>
                                                    </div>
                                                )}
-                                               <div className={`p-4 px-5 rounded-[20px] min-w-[80px] border shadow-md flex-col ${isMe ? 'bg-[#1e1f24] text-white border-[#222] rounded-tr-[5px]' : (isAgency ? 'bg-accent text-white border-accent/50 rounded-tl-[5px]' : 'bg-[#111213] text-white border-[#222] rounded-tl-[5px]')}`}>
-                                                   <p className="text-[15px] leading-relaxed font-medium break-words">
-                                                       {renderMessageContent(msg.content)}
-                                                   </p>
+                                               <div className={`p-4 px-5 rounded-[20px] min-w-[80px] border shadow-md flex flex-col relative ${isMe ? 'bg-[#1e1f24] text-white border-[#222] rounded-tr-[5px]' : (isAgency ? 'bg-accent text-white border-accent/50 rounded-tl-[5px]' : 'bg-[#111213] text-white border-[#222] rounded-tl-[5px]')}`}>
+                                                   
+                                                   {/* Hover Actions Menu */}
+                                                   <div className={`opacity-0 group-hover:opacity-100 transition-all duration-200 flex gap-1 items-center bg-[#0a0a0b] border border-[#222] p-1 rounded-xl absolute -top-3.5 z-20 shadow-xl ${isMe ? 'left-4' : 'right-4'}`}>
+                                                       <button 
+                                                           type="button"
+                                                           onClick={() => setReplyingTo(msg)}
+                                                           className="p-1.5 text-gray-400 hover:text-accent hover:bg-[#111] rounded-lg transition-colors"
+                                                           title="Responder"
+                                                       >
+                                                           <CornerUpLeft className="w-3.5 h-3.5" />
+                                                       </button>
+                                                       {isMe && (
+                                                           <button 
+                                                               type="button"
+                                                               onClick={() => {
+                                                                   setEditingMessage(msg);
+                                                                   const parsedMsg = parseReply(msg.content);
+                                                                   setContent(parsedMsg.actualContent);
+                                                               }}
+                                                               className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-[#111] rounded-lg transition-colors"
+                                                               title="Editar"
+                                                           >
+                                                               <Pencil className="w-3.5 h-3.5" />
+                                                           </button>
+                                                       )}
+                                                       <button 
+                                                           type="button"
+                                                           onClick={() => setDeleteMenuMsgId(deleteMenuMsgId === msg.id ? null : msg.id)}
+                                                           className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-[#111] rounded-lg transition-colors"
+                                                           title="Excluir"
+                                                       >
+                                                           <Trash2 className="w-3.5 h-3.5" />
+                                                       </button>
+                                                   </div>
+
+                                                   {/* Custom Popover Delete Menu */}
+                                                   {deleteMenuMsgId === msg.id && (
+                                                       <div className={`absolute bg-[#111213] border border-[#222] p-2 rounded-xl shadow-2xl z-30 flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider -top-24 min-w-[150px] ${isMe ? 'right-0' : 'left-0'}`}>
+                                                           <button 
+                                                               type="button"
+                                                               onClick={() => { handleDeleteMessageEveryone(msg.id); setDeleteMenuMsgId(null); }}
+                                                               className="w-full text-left text-red-500 hover:bg-red-500/10 p-2 rounded-lg transition-colors flex items-center gap-2"
+                                                           >
+                                                               Apagar para todos
+                                                           </button>
+                                                           <button 
+                                                               type="button"
+                                                               onClick={() => { handleHideMessageLocal(msg.id); setDeleteMenuMsgId(null); }}
+                                                               className="w-full text-left text-gray-300 hover:bg-white/5 p-2 rounded-lg transition-colors flex items-center gap-2"
+                                                           >
+                                                               Apagar para mim
+                                                           </button>
+                                                           <button 
+                                                               type="button"
+                                                               onClick={() => setDeleteMenuMsgId(null)}
+                                                               className="w-full text-left text-gray-500 hover:bg-white/5 p-2 rounded-lg transition-colors flex items-center gap-2 border-t border-[#222] pt-2"
+                                                           >
+                                                               Cancelar
+                                                           </button>
+                                                       </div>
+                                                   )}
+
+                                                   {parsed.isReply && (
+                                                       <div className="bg-black/30 p-2.5 px-3 rounded-xl border-l-4 border-accent mb-2.5 text-left text-xs opacity-90 max-w-full">
+                                                           <div className="font-bold text-accent mb-0.5">{parsed.replyToName}</div>
+                                                           <div className="truncate text-white/70 text-[11px] font-medium">{parsed.replyToContent}</div>
+                                                       </div>
+                                                   )}
+
+                                                   <div className="text-[15px] leading-relaxed font-medium break-words">
+                                                       {renderMessageContent(parsed.actualContent)}
+                                                   </div>
                                                </div>
                                            </div>
                                        </div>
@@ -391,18 +622,69 @@ export default function AdminTeamsChat() {
                                );
                            })}
                            </AnimatePresence>
+
+                           {/* Typing indicator */}
+                           {typingUsers.length > 0 && (
+                               <div className="flex items-center gap-2 text-xs text-accent font-semibold ml-14 animate-pulse">
+                                   <div className="flex gap-1">
+                                       <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0ms' }} />
+                                       <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '150ms' }} />
+                                       <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '300ms' }} />
+                                   </div>
+                                   <span>{typingUsers.join(', ')} {typingUsers.length === 1 ? 'está' : 'estão'} digitando...</span>
+                               </div>
+                           )}
+
                            <div ref={messagesEndRef} className="h-4"/>
                        </div>
 
                        {/* Teams Input Box Complexo */}
                        <div className="p-6 bg-[#0a0a0b] border-t border-[#222] shrink-0">
+                           
+                           {/* Reply Preview Bar */}
+                           {replyingTo && (
+                               <div className="max-w-5xl mx-auto mb-3 bg-[#111213] border border-[#2c2d30] border-l-4 border-accent p-4 rounded-xl flex justify-between items-center shadow-lg">
+                                   <div className="overflow-hidden pr-4">
+                                       <span className="text-[10px] font-black text-accent uppercase tracking-widest block mb-1">Respondendo a mensagem de {replyingTo.sender_name || 'Membro'}</span>
+                                       <p className="text-white/60 text-sm truncate">{parseReply(replyingTo.content).actualContent}</p>
+                                   </div>
+                                   <button 
+                                       type="button" 
+                                       onClick={() => setReplyingTo(null)}
+                                       className="p-1 rounded-full hover:bg-white/5 text-[#888] hover:text-white transition-colors"
+                                   >
+                                       <X className="w-4 h-4" />
+                                   </button>
+                               </div>
+                           )}
+
+                           {/* Edit Preview Bar */}
+                           {editingMessage && (
+                               <div className="max-w-5xl mx-auto mb-3 bg-[#111213] border border-[#2c2d30] border-l-4 border-blue-500 p-4 rounded-xl flex justify-between items-center shadow-lg">
+                                   <div className="overflow-hidden pr-4">
+                                       <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest block mb-1">Modo de Edição</span>
+                                       <p className="text-white/60 text-sm truncate">{parseReply(editingMessage.content).actualContent}</p>
+                                   </div>
+                                   <button 
+                                       type="button" 
+                                       onClick={() => { setEditingMessage(null); setContent(""); }}
+                                       className="p-1 rounded-full hover:bg-white/5 text-[#888] hover:text-white transition-colors"
+                                   >
+                                       <X className="w-4 h-4" />
+                                   </button>
+                               </div>
+                           )}
+
                            <form onSubmit={handleSend} className="max-w-5xl mx-auto flex flex-col bg-[#111213] rounded-2xl border border-[#2c2d30] shadow-xl focus-within:border-accent/50 transition-colors p-2">
                                <textarea 
                                    rows={2}
                                    value={content}
-                                   onChange={e => setContent(e.target.value)}
+                                   onChange={e => {
+                                       setContent(e.target.value);
+                                       handleTyping();
+                                   }}
                                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(e); } }}
-                                   placeholder={`Responder em #${activeChannel.name}... (Use \`\`\` para código)`} 
+                                   placeholder={editingMessage ? "Editar mensagem..." : `Responder em #${activeChannel.name}... (Use \`\`\` para código)`} 
                                    className="w-full bg-transparent text-white placeholder:text-[#555] p-4 text-[15px] outline-none font-medium resize-none custom-scrollbar"
                                />
                                <div className="flex justify-between items-center px-2 pb-2 mt-1">
@@ -413,10 +695,21 @@ export default function AdminTeamsChat() {
                                        </label>
                                        <button type="button" className="p-2 text-[#888] rounded-xl hover:text-white transition-colors" title="Formatação"><div className="font-bold text-lg leading-none">A</div></button>
                                    </div>
-                                   <button type="submit" disabled={!content.trim()} className="px-6 py-2 bg-white hover:bg-neutral-200 text-black font-bold text-[13px] tracking-wide rounded-xl disabled:opacity-50 transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(255,255,255,0.1)] cursor-pointer">
-                                       <Send className="w-4 h-4"/> Enviar Staff
-                                   </button>
-                               </div>
+                                   <div className="flex gap-2">
+                                       {(editingMessage || replyingTo) && (
+                                           <button 
+                                               type="button"
+                                               onClick={() => { setEditingMessage(null); setReplyingTo(null); setContent(""); }}
+                                               className="px-4 py-2 bg-transparent hover:bg-white/5 text-white/60 hover:text-white font-bold text-[13px] rounded-xl transition-all"
+                                           >
+                                               Cancelar
+                                           </button>
+                                       )}
+                                       <button type="submit" disabled={!content.trim()} className="px-6 py-2 bg-white hover:bg-neutral-200 text-black font-bold text-[13px] tracking-wide rounded-xl disabled:opacity-50 transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(255,255,255,0.1)] cursor-pointer">
+                                           <Send className="w-4 h-4"/> {editingMessage ? "Salvar" : "Enviar Staff"}
+                                       </button>
+                                   </div>
+                                </div>
                            </form>
                        </div>
                    </>
