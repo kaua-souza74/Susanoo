@@ -22,7 +22,7 @@ A única coisa que conecta seu banco de dados a tela de quem não for você é a
 
 Dê as chaves do seu reino para eles colocarem lá dentro (sem aspas, limpinho assim):
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://dgbubqnzzttdkmlnifsa.supabase.co/rest/v1/
+NEXT_PUBLIC_SUPABASE_URL=https://dgbubqnzzttdkmlnifsa.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnYnVicW56enR0ZGttbG5pZnNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNjAyOTUsImV4cCI6MjA5NDYzNjI5NX0.R5fDsiMT1KsZKy4nblBfCE4p-6tumpHu453mzHjYhaY
 ```
 
