@@ -29,10 +29,10 @@ export default function AdminTeamsChat() {
    const getMyName = () => {
        if (user?.email) {
            const emailLower = user.email.toLowerCase();
-           if (emailLower.startsWith('kaua@')) return 'Kauã';
-           if (emailLower.startsWith('vinicius@')) return 'Vinícius';
-           if (emailLower.startsWith('davi@')) return 'Davi';
-           if (emailLower.startsWith('lucas@')) return 'Lucas';
+           if (emailLower.startsWith('kaua') || emailLower === 'kauasesi156@gmail.com') return 'Kauã';
+           if (emailLower.startsWith('vinicius') || emailLower === 'vinicius172321@gmail.com') return 'Vinícius';
+           if (emailLower.startsWith('davi') || emailLower === 'davi@susanoo.com') return 'Davi';
+           if (emailLower.startsWith('lucas') || emailLower === 'limasilvallsss@gmail.com') return 'Lucas';
 
            if (user.user_metadata?.name) return user.user_metadata.name;
            const part = user.email.split('@')[0];
@@ -52,6 +52,11 @@ export default function AdminTeamsChat() {
    const [editingMessage, setEditingMessage] = useState<Message | null>(null);
    const [deletedMessageIds, setDeletedMessageIds] = useState<string[]>([]);
    const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
+
+   // Typing indicator state
+   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+   const typingTimeoutRef = useRef<any>(null);
+   const chatChannelRef = useRef<any>(null);
 
    useEffect(() => {
        const stored = localStorage.getItem("susanoo_deleted_messages");
@@ -75,6 +80,26 @@ export default function AdminTeamsChat() {
        if (error) {
            alert("Erro ao excluir mensagem: " + error.message);
        }
+   };
+
+   const handleTyping = () => {
+       if (!chatChannelRef.current || !user) return;
+       chatChannelRef.current.send({
+           type: 'broadcast',
+           event: 'typing',
+           payload: { name: getMyName(), isTyping: true }
+       });
+
+       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+       typingTimeoutRef.current = setTimeout(() => {
+           if (chatChannelRef.current) {
+               chatChannelRef.current.send({
+                   type: 'broadcast',
+                   event: 'typing',
+                   payload: { name: getMyName(), isTyping: false }
+               });
+           }
+       }, 2000);
    };
 
    // Modal de Criação State
@@ -102,6 +127,26 @@ export default function AdminTeamsChat() {
 
    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
+   // Fallback polling for new messages every 3 seconds (in case Supabase Realtime publication is not enabled by user)
+   useEffect(() => {
+       if (!activeChannel) return;
+       const filterField = activeChannel.isProject ? 'project_id' : 'chat_id';
+       
+       const interval = setInterval(() => {
+           supabase.from('messages')
+               .select('*, profiles:user_id(name)')
+               .eq(filterField, activeChannel.id)
+               .order('created_at', { ascending: true })
+               .then(({ data }) => {
+                   if (data) {
+                       setMessages(data as any || []);
+                   }
+               });
+       }, 3000);
+
+       return () => clearInterval(interval);
+   }, [activeChannel]);
+
    const fetchData = async () => {
        const { data: { session } } = await supabase.auth.getSession();
        if (session) setUser(session.user);
@@ -125,6 +170,7 @@ export default function AdminTeamsChat() {
        setActiveChannel(channel);
        setReplyingTo(null);
        setEditingMessage(null);
+       setTypingUsers([]);
        
        const filterField = channel.isProject ? 'project_id' : 'chat_id';
        
@@ -136,9 +182,30 @@ export default function AdminTeamsChat() {
        setMessages(data as any || []);
        
        supabase.removeAllChannels();
-       supabase.channel('hq-chat').on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `${filterField}=eq.${channel.id}` }, () => {
-           supabase.from('messages').select('*, profiles:user_id(name)').eq(filterField, channel.id).order('created_at', { ascending: true }).then(({data}) => setMessages(data as any || []));
-       }).subscribe();
+       const channelName = `chat-${channel.id}`;
+       const chatChannel = supabase.channel(channelName);
+       
+       chatChannel
+           .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `${filterField}=eq.${channel.id}` }, () => {
+               supabase.from('messages').select('*, profiles:user_id(name)').eq(filterField, channel.id).order('created_at', { ascending: true }).then(({data}) => setMessages(data as any || []));
+           })
+           .on('broadcast', { event: 'typing' }, ({ payload }) => {
+               const { name, isTyping } = payload;
+               if (name === getMyName()) return;
+               setTypingUsers(prev => {
+                   if (isTyping) {
+                       if (prev.includes(name)) return prev;
+                       return [...prev, name];
+                   } else {
+                       return prev.filter(n => n !== name);
+                   }
+               });
+           })
+           .subscribe((status) => {
+               console.log("Joined channel:", channelName, status);
+           });
+
+       chatChannelRef.current = chatChannel;
    };
 
    const handleSend = async (e: React.FormEvent) => {
@@ -154,6 +221,16 @@ export default function AdminTeamsChat() {
 
        const temp = content;
        setContent("");
+
+       // Clear typing indicator instantly
+       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+       if (chatChannelRef.current) {
+           chatChannelRef.current.send({
+               type: 'broadcast',
+               event: 'typing',
+               payload: { name: getMyName(), isTyping: false }
+           });
+       }
 
        if (editingMessage) {
            const parsed = parseReply(editingMessage.content);
@@ -339,7 +416,7 @@ export default function AdminTeamsChat() {
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
                           placeholder="Buscar canal ou grupo..." 
-                          className="w-full bg-[#111] border border-[#222] text-sm text-white placeholder:text-[#555] p-3 pl-10 rounded-xl focus:border-accent/50 outline-none transition-colors shadow-inner"
+                          className="w-full bg-[#11] border border-[#222] text-sm text-white placeholder:text-[#555] p-3 pl-10 rounded-xl focus:border-accent/50 outline-none transition-colors shadow-inner"
                        />
                    </div>
 
@@ -535,9 +612,9 @@ export default function AdminTeamsChat() {
                                                        </div>
                                                    )}
 
-                                                   <p className="text-[15px] leading-relaxed font-medium break-words">
+                                                   <div className="text-[15px] leading-relaxed font-medium break-words">
                                                        {renderMessageContent(parsed.actualContent)}
-                                                   </p>
+                                                   </div>
                                                </div>
                                            </div>
                                        </div>
@@ -545,6 +622,19 @@ export default function AdminTeamsChat() {
                                );
                            })}
                            </AnimatePresence>
+
+                           {/* Typing indicator */}
+                           {typingUsers.length > 0 && (
+                               <div className="flex items-center gap-2 text-xs text-accent font-semibold ml-14 animate-pulse">
+                                   <div className="flex gap-1">
+                                       <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0ms' }} />
+                                       <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '150ms' }} />
+                                       <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '300ms' }} />
+                                   </div>
+                                   <span>{typingUsers.join(', ')} {typingUsers.length === 1 ? 'está' : 'estão'} digitando...</span>
+                               </div>
+                           )}
+
                            <div ref={messagesEndRef} className="h-4"/>
                        </div>
 
@@ -589,7 +679,10 @@ export default function AdminTeamsChat() {
                                <textarea 
                                    rows={2}
                                    value={content}
-                                   onChange={e => setContent(e.target.value)}
+                                   onChange={e => {
+                                       setContent(e.target.value);
+                                       handleTyping();
+                                   }}
                                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(e); } }}
                                    placeholder={editingMessage ? "Editar mensagem..." : `Responder em #${activeChannel.name}... (Use \`\`\` para código)`} 
                                    className="w-full bg-transparent text-white placeholder:text-[#555] p-4 text-[15px] outline-none font-medium resize-none custom-scrollbar"

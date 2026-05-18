@@ -12,7 +12,7 @@ export default function LoginPage() {
   const [notification, setNotification] = useState<{ type: string; msg: string } | null>(null);
   const router = useRouter();
 
-  const ADM_EMAILS = ['davi@susanoo.com', 'vinicius@susanoo.com', 'lucas@susanoo.com', 'kaua@susanoo.com'];
+  const ADM_EMAILS = ['davi@susanoo.com', 'vinicius172321@gmail.com', 'limasilvallsss@gmail.com', 'kauasesi156@gmail.com'];
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

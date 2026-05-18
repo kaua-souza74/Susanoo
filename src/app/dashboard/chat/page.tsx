@@ -38,6 +38,27 @@ export default function ChatPage() {
    const [deletedMessageIds, setDeletedMessageIds] = useState<string[]>([]);
    const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
 
+   // Typing indicator state
+   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+   const typingTimeoutRef = useRef<any>(null);
+   const chatChannelRef = useRef<any>(null);
+
+   const getMyName = () => {
+       if (user?.email) {
+           const emailLower = user.email.toLowerCase();
+           if (emailLower.startsWith('kaua') || emailLower === 'kauasesi156@gmail.com') return 'Kauã';
+           if (emailLower.startsWith('vinicius') || emailLower === 'vinicius172321@gmail.com') return 'Vinícius';
+           if (emailLower.startsWith('davi') || emailLower === 'davi@susanoo.com') return 'Davi';
+           if (emailLower.startsWith('lucas') || emailLower === 'limasilvallsss@gmail.com') return 'Lucas';
+
+           if (user.user_metadata?.name) return user.user_metadata.name;
+           if (user.user_metadata?.full_name) return user.user_metadata.full_name;
+           const part = user.email.split('@')[0];
+           return part.charAt(0).toUpperCase() + part.slice(1);
+       }
+       return 'Cliente';
+   };
+
    useEffect(() => {
        const stored = localStorage.getItem("susanoo_deleted_messages");
        if (stored) {
@@ -62,6 +83,26 @@ export default function ChatPage() {
        }
    };
 
+   const handleTyping = () => {
+       if (!chatChannelRef.current || !user) return;
+       chatChannelRef.current.send({
+           type: 'broadcast',
+           event: 'typing',
+           payload: { name: getMyName(), isTyping: true }
+       });
+
+       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+       typingTimeoutRef.current = setTimeout(() => {
+           if (chatChannelRef.current) {
+               chatChannelRef.current.send({
+                   type: 'broadcast',
+                   event: 'typing',
+                   payload: { name: getMyName(), isTyping: false }
+               });
+           }
+       }, 2000);
+   };
+
    useEffect(() => {
      const init = async () => {
          const { data: { session } } = await supabase.auth.getSession();
@@ -84,15 +125,55 @@ export default function ChatPage() {
        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
    }, [messages]);
 
+   // Fallback polling for new messages every 3 seconds (in case Supabase Realtime publication is not enabled by user)
+   useEffect(() => {
+       if (!project) return;
+       const interval = setInterval(() => {
+           supabase.from('messages')
+               .select('*, profiles:user_id(name, role)')
+               .eq('project_id', project.id)
+               .order('created_at', { ascending: true })
+               .then(({ data }) => {
+                   if (data) {
+                       setMessages(data as unknown as Message[]);
+                   }
+               });
+       }, 3000);
+
+       return () => clearInterval(interval);
+   }, [project]);
+
    const loadMessages = async (pid: string) => {
        const { data } = await supabase.from('messages').select('*, profiles:user_id(name, role)').eq('project_id', pid).order('created_at', { ascending: true });
        if (data) setMessages(data as unknown as Message[]);
    };
 
    const subscribeChat = (pid: string) => {
-       supabase.channel('chat-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `project_id=eq.${pid}` }, () => {
-           loadMessages(pid);
-       }).subscribe();
+       const channelName = `chat-${pid}`;
+       const chatChannel = supabase.channel(channelName);
+       
+       chatChannel
+           .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `project_id=eq.${pid}` }, () => {
+               loadMessages(pid);
+           })
+           .on('broadcast', { event: 'typing' }, ({ payload }) => {
+               const { name, isTyping } = payload;
+               if (name === getMyName()) return;
+               
+               setTypingUsers(prev => {
+                   if (isTyping) {
+                       if (prev.includes(name)) return prev;
+                       return [...prev, name];
+                   } else {
+                       return prev.filter(n => n !== name);
+                   }
+               });
+           })
+           .subscribe((status) => {
+               console.log("Joined channel:", channelName, status);
+           });
+
+       chatChannelRef.current = chatChannel;
    };
 
    const handleSend = async (e: React.FormEvent) => {
@@ -100,6 +181,16 @@ export default function ChatPage() {
        if (!content.trim() || !project) return;
        const msgContent = content;
        setContent("");
+
+       // Clear typing indicator instantly
+       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+       if (chatChannelRef.current) {
+           chatChannelRef.current.send({
+               type: 'broadcast',
+               event: 'typing',
+               payload: { name: getMyName(), isTyping: false }
+           });
+       }
 
        if (editingMessage) {
            const parsed = parseReply(editingMessage.content);
@@ -290,7 +381,7 @@ export default function ChatPage() {
                                            </div>
                                        )}
 
-                                       <p className="text-[15px] leading-relaxed font-medium break-words">{parsed.actualContent}</p>
+                                       <div className="text-[15px] leading-relaxed font-medium break-words">{parsed.actualContent}</div>
                                    </div>
                                </div>
                            </div>
@@ -298,6 +389,19 @@ export default function ChatPage() {
                    );
                })}
                </AnimatePresence>
+
+               {/* Typing Indicator */}
+               {typingUsers.length > 0 && (
+                   <div className="flex items-center gap-2 text-xs text-accent font-semibold ml-14 animate-pulse">
+                       <div className="flex gap-1">
+                           <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0ms' }} />
+                           <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '150ms' }} />
+                           <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '300ms' }} />
+                       </div>
+                       <span>{typingUsers.join(', ')} {typingUsers.length === 1 ? 'está' : 'estão'} digitando...</span>
+                   </div>
+               )}
+
                <div ref={messagesEndRef} className="h-2" />
            </div>
 
@@ -339,7 +443,10 @@ export default function ChatPage() {
                    <input 
                        type="text" 
                        value={content}
-                       onChange={e => setContent(e.target.value)}
+                       onChange={e => {
+                           setContent(e.target.value);
+                           handleTyping();
+                       }}
                        placeholder={editingMessage ? "Editar mensagem..." : `Envie uma mensagem em General - ${project?.name || 'Projeto'}...`} 
                        className="w-full bg-transparent text-white placeholder:text-[#555] p-4 focus:outline-none transition-all font-medium text-[15px]"
                        disabled={!project}
