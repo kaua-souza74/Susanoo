@@ -1,26 +1,52 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Light mode colors: Light Gray and Purple */
+  --background: #fcfcfc;
+  --foreground: #0a0a0a;
+  --accent: #8b5cf6; /* Violet 500 */
+  --accent-foreground: #ffffff;
+  --surface: #ffffff;
+  --surface-border: #e5e5e5;
+}
+
+.dark {
+  /* Dark mode colors: Black and Purple */
+  --background: #050505;
+  --foreground: #f5f5f5;
+  --accent: #a855f7; /* Purple 500 */
+  --accent-foreground: #ffffff;
+  --surface: #111111;
+  --surface-border: #222222;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-surface: var(--surface);
+  --color-surface-border: var(--surface-border);
+  --font-sans: var(--font-inter);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), sans-serif;
+  overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.glass {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--surface-border);
+}
+
+.dark .glass {
+  background: rgba(17, 17, 17, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--surface-border);
+  box-shadow: none;
 }
