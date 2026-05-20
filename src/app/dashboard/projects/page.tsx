@@ -20,10 +20,6 @@ export default function ClientProjectsPage() {
           const { data: projs } = await supabase.from('projects').select('*').eq('client_id', session.user.id);
           let activeProjects = projs || [];
           
-          if (activeProjects.length === 0) {
-             activeProjects = [{ id: 'mock-123', name: 'Software Management V2', manual_progress: 68, deploy_url: 'susanoo.com' }];
-          }
-
           setProjects(activeProjects);
           setLoading(false);
       };
@@ -62,7 +58,15 @@ export default function ClientProjectsPage() {
                 </motion.div>
 
                 <div className="grid grid-cols-1 gap-12">
-                    {projects.map((proj, i) => {
+                    {projects.length === 0 ? (
+                        <motion.div initial={{opacity:0}} animate={{opacity:1}} className="bg-[#0c0c0d] border border-white/5 rounded-[60px] p-20 text-center flex flex-col items-center">
+                            <div className="w-20 h-20 bg-accent/10 rounded-full flex items-center justify-center mb-8 border border-accent/20">
+                                <Zap className="w-10 h-10 text-accent animate-pulse" />
+                            </div>
+                            <h3 className="text-3xl font-black text-white uppercase italic mb-4">Nenhuma Operação Ativa</h3>
+                            <p className="text-[#444] font-bold max-w-sm">Você ainda não possui projetos iniciados na rede Susanoo. Fale com um consultor para inicializar sua HQ.</p>
+                        </motion.div>
+                    ) : projects.map((proj, i) => {
                         const pct = proj.manual_progress || 0;
                         
                         return (

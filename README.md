@@ -28,6 +28,14 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-chave-anon-aqui
 VERCEL_TOKEN=seu-token-de-acesso-pessoal-da-vercel
 ```
 
+### 📦 Dependências Principais
+O comando `npm install` instalará automaticamente tudo o que é necessário. As principais bibliotecas utilizadas são:
+- **`@supabase/supabase-js`**: Comunicação com o Banco e Storage.
+- **`framer-motion`**: Animações fluidas e transições premium.
+- **`lucide-react`**: Biblioteca de ícones moderna.
+- **`three` & `@react-three/fiber`**: (Opcional) Para as animações de Shader na Home.
+- **`clsx` & `tailwind-merge`**: Utilitários para gestão de classes CSS.
+
 ---
 
 ## 🗄️ Estrutura do Banco de Dados

@@ -18,7 +18,8 @@ import {
     Paperclip,
     Image as ImageIcon,
     FileText,
-    Download
+    Download,
+    ChevronDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -57,9 +58,9 @@ export default function ChatPage() {
     const [replyingTo, setReplyingTo] = useState<Message | null>(null);
     const [editingMessage, setEditingMessage] = useState<Message | null>(null);
     
-    // File Staging (WhatsApp Style)
     const [stagedFiles, setStagedFiles] = useState<File[]>([]);
     const [previews, setPreviews] = useState<string[]>([]);
+    const [allProjects, setAllProjects] = useState<any[]>([]);
     
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const chatChannelRef = useRef<any>(null);
@@ -96,9 +97,21 @@ export default function ChatPage() {
           if (!session) return router.push("/login");
           if (!isMounted) return;
           setUser(session.user);
+
+          // Buscar perfil para saber a role
+          const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
           
-          const { data: projs } = await supabase.from('projects').select('*').eq('client_id', session.user.id);
+          let projectsQuery;
+          if (profile?.role === 'admin') {
+              projectsQuery = supabase.from('projects').select('*');
+          } else {
+              projectsQuery = supabase.from('projects').select('*').eq('client_id', session.user.id);
+          }
+
+          const { data: projs } = await projectsQuery;
+          
           if (projs && projs.length > 0 && isMounted) {
+              setAllProjects(projs);
               setProject(projs[0]);
               await loadMessages(projs[0].id);
               subscribeChat(projs[0].id);
@@ -264,10 +277,30 @@ export default function ChatPage() {
                         <span className="font-black text-2xl tracking-tighter bg-gradient-to-br from-accent to-blue-500 bg-clip-text text-transparent">{project?.name?.substring(0,2).toUpperCase() || 'HQ'}</span>
                     </div>
                     <div className="flex flex-col justify-center gap-1">
-                        <h1 className="font-black text-xl text-foreground tracking-tight flex items-center gap-3 leading-none">
-                            {project?.name || "Workspace"} 
-                            <span className="bg-emerald-500/10 border border-emerald-500/20 text-[9px] uppercase font-black tracking-[0.2em] px-2.5 py-1 rounded-full text-emerald-500">Live</span>
-                        </h1>
+                        <div className="relative group">
+                            <h1 className="font-black text-xl text-foreground tracking-tight flex items-center gap-3 leading-none cursor-pointer">
+                                {project?.name || "Workspace"} 
+                                {allProjects.length > 1 && <ChevronDown className="w-4 h-4 text-accent"/>}
+                                <span className="bg-emerald-500/10 border border-emerald-500/20 text-[9px] uppercase font-black tracking-[0.2em] px-2.5 py-1 rounded-full text-emerald-500">Live</span>
+                            </h1>
+                            {allProjects.length > 1 && (
+                                <div className="absolute top-10 left-0 w-64 bg-surface border border-surface-border rounded-2xl shadow-2xl p-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto z-[100]">
+                                    {allProjects.map(p => (
+                                        <button 
+                                            key={p.id} 
+                                            onClick={() => {
+                                                setProject(p);
+                                                loadMessages(p.id);
+                                                subscribeChat(p.id);
+                                            }}
+                                            className="w-full text-left p-4 hover:bg-white/5 rounded-xl transition-colors font-bold text-sm"
+                                        >
+                                            {p.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                         <p className="text-[11px] font-black text-foreground/30 uppercase tracking-[0.1em] flex items-center gap-2">
                            <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></span> Conexão Segura Ativa
                         </p>
