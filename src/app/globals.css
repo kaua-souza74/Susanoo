@@ -3,21 +3,71 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  /* Light mode colors: Light Gray and Purple */
-  --background: #fcfcfc;
-  --foreground: #0a0a0a;
-  --accent: #8b5cf6; /* Violet 500 */
+  /* Light mode colors - Refined Premium Palette */
+  --background: #fdfdfd;
+  --foreground: #09090b;
+  
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  
+  --popover: #ffffff;
+  --popover-foreground: #09090b;
+  
+  --primary: #8b5cf6; /* Violet 500 */
+  --primary-foreground: #ffffff;
+  
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  
+  --accent: #8b5cf6;
   --accent-foreground: #ffffff;
+  
+  --destructive: #ef4444;
+  --destructive-foreground: #fafafa;
+
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #8b5cf6;
+
   --surface: #ffffff;
-  --surface-border: #e5e5e5;
+  --surface-border: #e2e8f0;
+  
+  --radius: 0.75rem;
 }
 
 .dark {
-  /* Dark mode colors: Black and Purple */
-  --background: #050505;
-  --foreground: #f5f5f5;
-  --accent: #a855f7; /* Purple 500 */
+  /* Dark mode colors - Deep Premium Palette */
+  --background: #050505; /* Near black */
+  --foreground: #fafafa;
+  
+  --card: #0c0c0e;
+  --card-foreground: #fafafa;
+  
+  --popover: #0c0c0e;
+  --popover-foreground: #fafafa;
+  
+  --primary: #a855f7; /* Purple 500 */
+  --primary-foreground: #ffffff;
+  
+  --secondary: #18181b;
+  --secondary-foreground: #fafafa;
+  
+  --muted: #18181b;
+  --muted-foreground: #a1a1aa;
+  
+  --accent: #a855f7;
   --accent-foreground: #ffffff;
+  
+  --destructive: #7f1d1d;
+  --destructive-foreground: #fafafa;
+
+  --border: #222222;
+  --input: #222222;
+  --ring: #a855f7;
+
   --surface: #111111;
   --surface-border: #222222;
 }
@@ -25,11 +75,29 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
   --color-surface: var(--surface);
   --color-surface-border: var(--surface-border);
   --font-sans: var(--font-inter);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
 }
 
 body {

@@ -2,12 +2,36 @@
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
-import { Send, Hash, Info, MoreHorizontal, Video, Phone, UserRound, Search, CornerUpLeft, Trash2, Pencil, X } from "lucide-react";
+import { 
+    Send, 
+    Hash, 
+    Info, 
+    MoreHorizontal, 
+    Video, 
+    Phone, 
+    UserRound, 
+    Search, 
+    CornerUpLeft, 
+    Trash2, 
+    Pencil, 
+    X,
+    Paperclip,
+    Image as ImageIcon,
+    FileText,
+    Download
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-type Message = { id: string; content: string; created_at: string; user_id: string; profiles?: { name: string; role: string; } };
+type Message = { 
+    id: string; 
+    content: string; 
+    created_at: string; 
+    user_id: string; 
+    file_url?: string;
+    file_type?: string;
+    profiles?: { name: string; role: string; } 
+};
 
-// Helper to parse replied message syntax
 const parseReply = (content: string) => {
     if (content && content.startsWith("[REPLY:")) {
         const match = content.match(/^\[REPLY:([^|]+)\|([\s\S]*?)\]([\s\S]*)$/);
@@ -20,463 +44,466 @@ const parseReply = (content: string) => {
             };
         }
     }
-    return { isReply: false, replyToName: "", replyToContent: "", actualContent: content };
+    return { isReply: false, actualContent: content || "" };
 };
 
 export default function ChatPage() {
-   const [user, setUser] = useState<any>(null);
-   const [project, setProject] = useState<any>(null);
-   const [messages, setMessages] = useState<Message[]>([]);
-   const [content, setContent] = useState("");
-   const [loading, setLoading] = useState(true);
-   const router = useRouter();
-   const messagesEndRef = useRef<HTMLDivElement>(null);
+    const [messages, setMessages] = useState<Message[]>([]);
+    const [content, setContent] = useState("");
+    const [user, setUser] = useState<any>(null);
+    const [project, setProject] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
+    const [typingUsers, setTypingUsers] = useState<string[]>([]);
+    const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+    const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+    
+    // File Staging (WhatsApp Style)
+    const [stagedFiles, setStagedFiles] = useState<File[]>([]);
+    const [previews, setPreviews] = useState<string[]>([]);
+    
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const chatChannelRef = useRef<any>(null);
+    const typingTimeoutRef = useRef<any>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const router = useRouter();
 
-   // Reply, Edit and Delete local state
-   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
-   const [deletedMessageIds, setDeletedMessageIds] = useState<string[]>([]);
-   const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
+    const getMyName = () => user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Agente';
 
-   // Typing indicator state
-   const [typingUsers, setTypingUsers] = useState<string[]>([]);
-   const typingTimeoutRef = useRef<any>(null);
-   const chatChannelRef = useRef<any>(null);
+    const handleTyping = () => {
+        if (!chatChannelRef.current) return;
+        chatChannelRef.current.send({
+            type: 'broadcast',
+            event: 'typing',
+            payload: { name: getMyName(), isTyping: true }
+        });
 
-   const getMyName = () => {
-       if (user?.email) {
-           const emailLower = user.email.toLowerCase();
-           if (emailLower.startsWith('kaua') || emailLower === 'kauasesi156@gmail.com') return 'Kauã';
-           if (emailLower.startsWith('vinicius') || emailLower === 'vinicius172321@gmail.com') return 'Vinícius';
-           if (emailLower.startsWith('davi') || emailLower === 'davi@susanoo.com') return 'Davi';
-           if (emailLower.startsWith('lucas') || emailLower === 'limasilvallsss@gmail.com') return 'Lucas';
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => {
+            if (chatChannelRef.current) {
+                chatChannelRef.current.send({
+                    type: 'broadcast',
+                    event: 'typing',
+                    payload: { name: getMyName(), isTyping: false }
+                });
+            }
+        }, 2000);
+    };
 
-           if (user.user_metadata?.name) return user.user_metadata.name;
-           if (user.user_metadata?.full_name) return user.user_metadata.full_name;
-           const part = user.email.split('@')[0];
-           return part.charAt(0).toUpperCase() + part.slice(1);
-       }
-       return 'Cliente';
-   };
+    useEffect(() => {
+      let isMounted = true;
+      const init = async () => {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) return router.push("/login");
+          if (!isMounted) return;
+          setUser(session.user);
+          
+          const { data: projs } = await supabase.from('projects').select('*').eq('client_id', session.user.id);
+          if (projs && projs.length > 0 && isMounted) {
+              setProject(projs[0]);
+              await loadMessages(projs[0].id);
+              subscribeChat(projs[0].id);
+          }
+          if (isMounted) setTimeout(() => setLoading(false), 800); 
+      };
+      init();
+      return () => { 
+        isMounted = false;
+        supabase.removeAllChannels(); 
+      };
+    }, [router]);
 
-   useEffect(() => {
-       const stored = localStorage.getItem("susanoo_deleted_messages");
-       if (stored) {
-           try {
-               setDeletedMessageIds(JSON.parse(stored));
-           } catch (e) {
-               console.error(e);
-           }
-       }
-   }, []);
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [messages]);
 
-   const handleHideMessageLocal = (msgId: string) => {
-       const updated = [...deletedMessageIds, msgId];
-       setDeletedMessageIds(updated);
-       localStorage.setItem("susanoo_deleted_messages", JSON.stringify(updated));
-   };
+    // Otimização: O Realtime no subscribeChat já cuida de novos dados. 
+    // Removendo setInterval para evitar conflitos de cache e race conditions.
+    const loadMessages = async (pid: string) => {
+        const { data } = await supabase.from('messages').select('*, profiles:user_id(name, role)').eq('project_id', pid).order('created_at', { ascending: true });
+        if (data) setMessages(data as unknown as Message[]);
+    };
 
-   const handleDeleteMessageEveryone = async (msgId: string) => {
-       const { error } = await supabase.from('messages').delete().eq('id', msgId);
-       if (error) {
-           alert("Erro ao excluir mensagem: " + error.message);
-       }
-   };
+    const subscribeChat = (pid: string) => {
+        const chatChannel = supabase.channel(`project_chat_${pid}`)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `project_id=eq.${pid}` }, (payload) => {
+                const newMessage = payload.new as Message;
+                setMessages(prev => {
+                    if (prev.find(m => m.id === newMessage.id)) return prev;
+                    return [...prev, newMessage];
+                });
+                loadMessages(pid);
+            })
+            .on('broadcast', { event: 'typing' }, (payload) => {
+                const { name, isTyping } = payload.payload;
+                if (name === getMyName()) return;
+                
+                setTypingUsers(prev => {
+                    if (isTyping) {
+                        if (prev.includes(name)) return prev;
+                        return [...prev, name];
+                    } else {
+                        return prev.filter(n => n !== name);
+                    }
+                });
+            })
+            .subscribe();
 
-   const handleTyping = () => {
-       if (!chatChannelRef.current || !user) return;
-       chatChannelRef.current.send({
-           type: 'broadcast',
-           event: 'typing',
-           payload: { name: getMyName(), isTyping: true }
-       });
+        chatChannelRef.current = chatChannel;
+    };
 
-       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-       typingTimeoutRef.current = setTimeout(() => {
-           if (chatChannelRef.current) {
-               chatChannelRef.current.send({
-                   type: 'broadcast',
-                   event: 'typing',
-                   payload: { name: getMyName(), isTyping: false }
-               });
-           }
-       }, 2000);
-   };
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
 
-   useEffect(() => {
-     const init = async () => {
-         const { data: { session } } = await supabase.auth.getSession();
-         if (!session) return router.push("/login");
-         setUser(session.user);
-         
-         const { data: projs } = await supabase.from('projects').select('*').eq('client_id', session.user.id);
-         if (projs && projs.length > 0) {
-             setProject(projs[0]);
-             await loadMessages(projs[0].id);
-             subscribeChat(projs[0].id);
-         }
-         setTimeout(() => setLoading(false), 800); // Simulando handshake seguro e animado
-     };
-     init();
-     return () => { supabase.removeAllChannels(); };
-   }, [router]);
+        setStagedFiles(prev => [...prev, ...files]);
+        
+        const newPreviews = files.map(file => {
+            if (file.type.startsWith('image/')) return URL.createObjectURL(file);
+            return 'file'; // Placeholder for non-image files
+        });
+        setPreviews(prev => [...prev, ...newPreviews]);
+    };
 
-   useEffect(() => {
-       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-   }, [messages]);
+    const removeStagedFile = (index: number) => {
+        setStagedFiles(prev => prev.filter((_, i) => i !== index));
+        setPreviews(prev => {
+            const newPreviews = [...prev];
+            if (newPreviews[index] !== 'file') URL.revokeObjectURL(newPreviews[index]);
+            return newPreviews.filter((_, i) => i !== index);
+        });
+    };
 
-   // Fallback polling for new messages every 3 seconds (in case Supabase Realtime publication is not enabled by user)
-   useEffect(() => {
-       if (!project) return;
-       const interval = setInterval(() => {
-           supabase.from('messages')
-               .select('*, profiles:user_id(name, role)')
-               .eq('project_id', project.id)
-               .order('created_at', { ascending: true })
-               .then(({ data }) => {
-                   if (data) {
-                       setMessages(data as unknown as Message[]);
-                   }
-               });
-       }, 3000);
+    const handleSend = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if ((!content.trim() && stagedFiles.length === 0) || !project) return;
+        
+        const msgContent = content;
+        const currentStaged = [...stagedFiles];
+        
+        setContent("");
+        setStagedFiles([]);
+        setPreviews([]);
 
-       return () => clearInterval(interval);
-   }, [project]);
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        if (chatChannelRef.current) {
+            chatChannelRef.current.send({
+                type: 'broadcast',
+                event: 'typing',
+                payload: { name: getMyName(), isTyping: false }
+            });
+        }
 
-   const loadMessages = async (pid: string) => {
-       const { data } = await supabase.from('messages').select('*, profiles:user_id(name, role)').eq('project_id', pid).order('created_at', { ascending: true });
-       if (data) setMessages(data as unknown as Message[]);
-   };
+        // Upload files first if any
+        let uploadedUrls: {url: string, type: string}[] = [];
+        for (const file of currentStaged) {
+            const fileName = `${Date.now()}_${file.name}`;
+            const { data, error } = await supabase.storage.from('chat_attachments').upload(`${project.id}/${fileName}`, file);
+            if (!error && data) {
+                const { data: { publicUrl } } = supabase.storage.from('chat_attachments').getPublicUrl(data.path);
+                uploadedUrls.push({ url: publicUrl, type: file.type });
+            }
+        }
 
-   const subscribeChat = (pid: string) => {
-       const channelName = `chat-${pid}`;
-       const chatChannel = supabase.channel(channelName);
-       
-       chatChannel
-           .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `project_id=eq.${pid}` }, () => {
-               loadMessages(pid);
-           })
-           .on('broadcast', { event: 'typing' }, ({ payload }) => {
-               const { name, isTyping } = payload;
-               if (name === getMyName()) return;
-               
-               setTypingUsers(prev => {
-                   if (isTyping) {
-                       if (prev.includes(name)) return prev;
-                       return [...prev, name];
-                   } else {
-                       return prev.filter(n => n !== name);
-                   }
-               });
-           })
-           .subscribe((status) => {
-               console.log("Joined channel:", channelName, status);
-           });
+        if (editingMessage) {
+            const parsed = parseReply(editingMessage.content);
+            const newContent = parsed.isReply
+                ? `[REPLY:${parsed.replyToName}|${parsed.replyToContent}]${msgContent}`
+                : msgContent;
 
-       chatChannelRef.current = chatChannel;
-   };
+            await supabase.from('messages').update({ content: newContent }).eq('id', editingMessage.id);
+            setEditingMessage(null);
+            return;
+        }
 
-   const handleSend = async (e: React.FormEvent) => {
-       e.preventDefault();
-       if (!content.trim() || !project) return;
-       const msgContent = content;
-       setContent("");
+        let finalContent = msgContent;
+        if (replyingTo) {
+            const parsedParent = parseReply(replyingTo.content);
+            const parentAuthor = replyingTo.profiles?.name || (replyingTo.user_id === user?.id ? 'Você' : 'Suporte');
+            let snippet = parsedParent.actualContent;
+            if (snippet.length > 60) snippet = snippet.substring(0, 60) + "...";
+            finalContent = `[REPLY:${parentAuthor}|${snippet}]${msgContent}`;
+            setReplyingTo(null);
+        }
 
-       // Clear typing indicator instantly
-       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-       if (chatChannelRef.current) {
-           chatChannelRef.current.send({
-               type: 'broadcast',
-               event: 'typing',
-               payload: { name: getMyName(), isTyping: false }
-           });
-       }
+        // Send multiple messages if there are multiple files? 
+        // For now, let's send one message per file + text message if text exists
+        if (uploadedUrls.length > 0) {
+            for (const item of uploadedUrls) {
+                await supabase.from('messages').insert([{
+                    project_id: project.id,
+                    user_id: user.id,
+                    content: finalContent || (item.type.startsWith('image/') ? '📷 Imagem' : '📎 Arquivo'),
+                    file_url: item.url,
+                    file_type: item.type
+                }]);
+                finalContent = ""; // Send text only with the first file or as its own message later
+            }
+        } else {
+            await supabase.from('messages').insert([
+                { project_id: project.id, user_id: user.id, content: finalContent }
+            ]);
+        }
+        
+        loadMessages(project.id);
+    };
 
-       if (editingMessage) {
-           const parsed = parseReply(editingMessage.content);
-           const newContent = parsed.isReply
-               ? `[REPLY:${parsed.replyToName}|${parsed.replyToContent}]${msgContent}`
-               : msgContent;
+    if (loading) return (
+        <div className="flex-1 flex flex-col items-center justify-center bg-background">
+            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="w-12 h-12 border-[3px] border-surface-border border-t-accent rounded-full mb-4" />
+            <p className="text-sm font-black text-foreground/30 tracking-widest uppercase">Initializing Secure Channel...</p>
+        </div>
+    );
 
-           const { error } = await supabase
-               .from('messages')
-               .update({ content: newContent })
-               .eq('id', editingMessage.id);
+    return (
+        <div className="flex-1 flex flex-col h-full bg-background relative overflow-hidden">
+             {/* Topbar Modern Glass */}
+             <div className="p-6 px-10 border-b border-surface-border flex items-center justify-between bg-background/60 backdrop-blur-2xl sticky top-0 z-[60]">
+                <div className="flex items-center gap-6">
+                    <div className="w-14 h-14 rounded-[20px] bg-surface flex items-center justify-center text-foreground shadow-2xl border border-surface-border relative group">
+                        <div className="absolute inset-0 bg-gradient-to-br from-accent to-blue-600 opacity-0 group-hover:opacity-20 transition-opacity rounded-[20px]" />
+                        <span className="font-black text-2xl tracking-tighter bg-gradient-to-br from-accent to-blue-500 bg-clip-text text-transparent">{project?.name?.substring(0,2).toUpperCase() || 'HQ'}</span>
+                    </div>
+                    <div className="flex flex-col justify-center gap-1">
+                        <h1 className="font-black text-xl text-foreground tracking-tight flex items-center gap-3 leading-none">
+                            {project?.name || "Workspace"} 
+                            <span className="bg-emerald-500/10 border border-emerald-500/20 text-[9px] uppercase font-black tracking-[0.2em] px-2.5 py-1 rounded-full text-emerald-500">Live</span>
+                        </h1>
+                        <p className="text-[11px] font-black text-foreground/30 uppercase tracking-[0.1em] flex items-center gap-2">
+                           <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></span> Conexão Segura Ativa
+                        </p>
+                    </div>
+                </div>
+                
+                <div className="hidden md:flex flex-row items-center gap-4 text-foreground/50">
+                    <div className="flex -space-x-3 mr-4">
+                        {['D', 'V', 'L', 'K'].map((initial, i) => (
+                            <div key={i} className="w-9 h-9 rounded-full border-2 border-background bg-surface flex items-center justify-center text-[10px] font-black text-foreground/40 shadow-lg" title={`Agente ${initial}`}>
+                                {initial}
+                            </div>
+                        ))}
+                    </div>
+                    <button className="p-3 hover:bg-surface rounded-2xl transition-all border border-transparent hover:border-surface-border"><Video className="w-5 h-5"/></button>
+                    <button className="p-3 hover:bg-surface rounded-2xl transition-all border border-transparent hover:border-surface-border"><Phone className="w-5 h-5"/></button>
+                    <div className="w-px h-6 bg-surface-border mx-2" />
+                    <button className="p-3 hover:bg-surface rounded-2xl transition-all border border-transparent hover:border-surface-border"><Info className="w-5 h-5"/></button>
+                </div>
+             </div>
 
-           if (error) {
-               alert("Erro ao editar mensagem: " + error.message);
-           }
-           setEditingMessage(null);
-           return;
-       }
+             {/* Message Feed */}
+             <div className="flex-1 overflow-y-auto p-10 pt-20 custom-scrollbar relative z-10 flex flex-col gap-12">
+                {messages.length === 0 && (
+                    <div className="h-full flex flex-col items-center justify-center opacity-20 py-20">
+                        <UserRound className="w-20 h-20 mb-6" />
+                        <p className="font-black uppercase tracking-[0.4em] text-sm">Início da Transmissão Segura</p>
+                    </div>
+                )}
+                
+                {messages.map((msg, idx) => {
+                    const isMe = msg.user_id === user?.id;
+                    const parsed = parseReply(msg.content);
+                    const prevMsg = idx > 0 ? messages[idx-1] : null;
+                    const showAuthor = !prevMsg || prevMsg.user_id !== msg.user_id;
 
-       let finalContent = msgContent;
-       if (replyingTo) {
-           const parsedParent = parseReply(replyingTo.content);
-           const parentAuthor = replyingTo.profiles?.name || (replyingTo.user_id === user?.id ? 'Você' : 'Suporte');
-           let snippet = parsedParent.actualContent;
-           if (snippet.startsWith("[IMAGE](")) snippet = "📷 Imagem";
-           else if (snippet.startsWith("[VIDEO](")) snippet = "🎥 Vídeo";
-           else if (snippet.startsWith("[DOCUMENT](")) snippet = "📎 Arquivo";
-           
-           if (snippet.length > 60) snippet = snippet.substring(0, 60) + "...";
-           
-           finalContent = `[REPLY:${parentAuthor}|${snippet}]${msgContent}`;
-           setReplyingTo(null);
-       }
+                    return (
+                        <motion.div 
+                            initial={{ opacity: 0, x: isMe ? 20 : -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            key={msg.id} 
+                            className={`flex flex-col ${isMe ? 'items-end text-right' : 'items-start text-left'}`}
+                        >
+                            {showAuthor && (
+                                <div className="flex items-center gap-3 mb-4">
+                                    {!isMe && <div className="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center text-[10px] font-black text-accent">{msg.profiles?.name?.substring(0,1) || 'S'}</div>}
+                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-foreground/40">
+                                        {isMe ? 'VOCÊ (CLIENTE)' : `${msg.profiles?.name || 'SUSANOO HQ'} • ${msg.profiles?.role || 'Agente'}`}
+                                    </span>
+                                    {isMe && <div className="w-8 h-8 rounded-xl bg-blue-500/20 flex items-center justify-center text-[10px] font-black text-blue-500">C</div>}
+                                </div>
+                            )}
 
-       await supabase.from('messages').insert([
-           { project_id: project.id, user_id: user.id, content: finalContent }
-       ]);
-   };
+                            <div className={`group relative max-w-[85%] sm:max-w-2xl`}>
+                                {/* Context Menu Actions */}
+                                <div className={`absolute top-0 ${isMe ? '-left-12' : '-right-12'} opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-1`}>
+                                    <button onClick={() => setReplyingTo(msg)} className="p-2 hover:bg-surface rounded-lg text-foreground/40 hover:text-accent"><CornerUpLeft className="w-4 h-4"/></button>
+                                    {isMe && (
+                                        <>
+                                            <button onClick={() => { setEditingMessage(msg); setContent(parsed.actualContent); }} className="p-2 hover:bg-surface rounded-lg text-foreground/40 hover:text-blue-500"><Pencil className="w-3.5 h-3.5"/></button>
+                                            <button onClick={async () => await supabase.from('messages').delete().eq('id', msg.id)} className="p-2 hover:bg-surface rounded-lg text-foreground/40 hover:text-red-500"><Trash2 className="w-4 h-4"/></button>
+                                        </>
+                                    )}
+                                </div>
 
-   if (loading) return (
-       <div className="flex-1 flex flex-col items-center justify-center bg-[#111213]">
-           <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="w-12 h-12 border-[3px] border-[#2c2d30] border-t-accent rounded-full mb-4" />
-           <p className="text-sm font-semibold text-[#a0a0a0] tracking-wider uppercase">Conectando Canal Seguro...</p>
-       </div>
-   );
+                                <div className={`p-6 rounded-[32px] shadow-sm relative overflow-hidden transition-all ${
+                                    isMe 
+                                    ? 'bg-accent text-white rounded-tr-sm' 
+                                    : 'bg-surface border border-surface-border text-foreground rounded-tl-sm'
+                                }`}>
+                                    {parsed.isReply && (
+                                        <div className={`mb-4 p-4 rounded-2xl text-[13px] border-l-4 ${isMe ? 'bg-white/10 border-white/40' : 'bg-foreground/5 border-accent/40'} opacity-80 backdrop-blur-sm`}>
+                                            <p className="font-black uppercase tracking-widest text-[9px] mb-2">{parsed.replyToName}</p>
+                                            <p className="italic line-clamp-2">{parsed.replyToContent}</p>
+                                        </div>
+                                    )}
 
-   return (
-       <div className="flex-1 flex flex-col h-full bg-[#111213]">
-           {/* Topbar Inspirada no Teams / Slack */}
-           <div className="p-4 px-8 border-b border-[#2c2d30] flex items-center justify-between bg-[#141516]/95 backdrop-blur-lg sticky top-0 z-50">
-               <div className="flex items-center gap-4">
-                   <div className="w-12 h-12 rounded-2xl bg-[#1e1f24] flex items-center justify-center text-white shadow-xl shadow-black/20 border border-[#2c2d30]">
-                       <span className="font-black text-xl tracking-tighter bg-gradient-to-br from-accent to-blue-500 bg-clip-text text-transparent">{project?.name?.substring(0,2).toUpperCase() || 'HQ'}</span>
-                   </div>
-                   <div className="flex flex-col justify-center gap-0.5">
-                       <h1 className="font-bold text-[17px] text-white flex items-center gap-2 leading-none">
-                           General - {project?.name || "Aguardando Projeto"} 
-                           <span className="bg-accent/10 border border-accent/20 text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 rounded text-accent hidden sm:inline">Official</span>
-                       </h1>
-                       <p className="text-[12px] font-semibold text-[#888] flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Equipe Sincronizada
-                       </p>
-                   </div>
-               </div>
-               
-               <div className="hidden md:flex flex-row items-center gap-2 text-[#a0a0a0]">
-                   <button className="p-2.5 rounded-full hover:bg-[#1e1f24] hover:text-white transition-colors"><Search className="w-5 h-5"/></button>
-                   <div className="w-px h-6 bg-[#2c2d30] mx-2"></div>
-                   <button className="p-2.5 rounded-full hover:bg-[#1e1f24] hover:text-white transition-colors"><Video className="w-5 h-5"/></button>
-                   <button className="p-2.5 rounded-full hover:bg-[#1e1f24] hover:text-white transition-colors"><Phone className="w-5 h-5"/></button>
-                   <div className="w-px h-6 bg-[#2c2d30] mx-2"></div>
-                   <button className="p-2.5 rounded-full hover:bg-[#1e1f24] hover:text-white transition-colors"><MoreHorizontal className="w-5 h-5"/></button>
-               </div>
-           </div>
+                                    {msg.file_url && (
+                                        <div className="mb-4">
+                                            {msg.file_type?.startsWith('image/') ? (
+                                                <img src={msg.file_url} alt="Attachment" className="rounded-2xl max-w-full h-auto cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(msg.file_url, '_blank')} />
+                                            ) : (
+                                                <div className="bg-black/30 p-4 rounded-2xl flex items-center justify-between gap-4">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="p-2 bg-white/10 rounded-lg"><FileText className="w-5 h-5"/></div>
+                                                        <span className="text-xs font-bold truncate max-w-[150px]">Arquivo Anexo</span>
+                                                    </div>
+                                                    <a href={msg.file_url} download target="_blank" className="p-2 hover:bg-white/20 rounded-full transition-colors"><Download className="w-4 h-4"/></a>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
 
-           {/* Flow de Mensagens (Teams Layout Avançado) */}
-           <div className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col gap-6 scroll-smooth bg-[#111213]">
-               <div className="flex justify-center mb-8 mt-4">
-                   <div className="bg-[#1e1f24] text-[#a0a0a0] text-[11px] font-bold px-4 py-2 rounded-full border border-[#2c2d30] tracking-widest uppercase shadow-sm">
-                       Canal iniciado em {new Date().toLocaleDateString('pt-BR')}
-                   </div>
-               </div>
-               
-               <AnimatePresence initial={false}>
-               {messages
-                   .filter(msg => !deletedMessageIds.includes(msg.id))
-                   .map((msg, index) => {
-                   const isMe = msg.user_id === user?.id;
-                   const name = msg.profiles?.name || (isMe ? 'Você (Cliente)' : 'Suporte Criativo');
-                   const initials = name.substring(0, 2).toUpperCase();
-                   
-                   // Logica simples de agrupamento visual de conversa (Bubbles juntas)
-                   const prevMsg = index > 0 ? messages[index - 1] : null;
-                   const isSameUser = prevMsg && prevMsg.user_id === msg.user_id;
+                                    <p className="text-[15px] font-medium leading-relaxed whitespace-pre-wrap">{parsed.actualContent}</p>
+                                    
+                                    <div className={`mt-3 flex items-center gap-2 text-[9px] font-black uppercase tracking-widest opacity-40 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        {isMe && <div className="w-1 h-1 rounded-full bg-white/40" />}
+                                    </div>
+                                </div>
+                            </div>
+                        </motion.div>
+                    );
+                })}
+                <div ref={messagesEndRef} className="pb-10" />
 
-                   const parsed = parseReply(msg.content);
+                {/* Typing Indicator */}
+                <AnimatePresence>
+                {typingUsers.length > 0 && (
+                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex items-center gap-3">
+                        <div className="flex gap-1.5 p-3 px-4 bg-surface/50 border border-surface-border rounded-full shadow-lg">
+                            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0s' }}></span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0.2s' }}></span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0.4s' }}></span>
+                        </div>
+                        <span className="text-[10px] font-black text-foreground/40 uppercase tracking-widest">{typingUsers[0]} está digitando...</span>
+                    </motion.div>
+                )}
+                </AnimatePresence>
+             </div>
 
-                   return (
-                       <motion.div 
-                           initial={{ opacity: 0, y: 15 }}
-                           animate={{ opacity: 1, y: 0 }}
-                           key={msg.id} 
-                           className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} ${isSameUser ? '-mt-4' : 'mt-2'}`}
-                       >
-                           <div className={`flex gap-3.5 max-w-[90%] md:max-w-[75%] relative group ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                               {/* Avatar Teams Style */}
-                               {!isSameUser && (
-                                   <div className={`w-10 h-10 mt-1 shrink-0 rounded-2xl flex items-center justify-center font-bold text-sm text-white shadow-xl ${isMe ? 'bg-blue-600 shadow-blue-600/30' : 'bg-[#1e1f24] border border-[#2c2d30]'}`}>
-                                       {initials}
-                                   </div>
-                               )}
-                               {isSameUser && <div className="w-10 h-10 shrink-0"></div>}
+             {/* Input Area (WhatsApp Style with Preview) */}
+             <div className="p-6 md:p-10 relative z-[70]">
+                <div className="max-w-7xl mx-auto flex flex-col gap-4">
+                    
+                    {/* Staged Files Preview (WhatsApp Style) */}
+                    <AnimatePresence>
+                    {stagedFiles.length > 0 && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="bg-surface/50 backdrop-blur-2xl border border-surface-border rounded-[2rem] p-4 flex flex-wrap gap-4 mb-2 overflow-hidden items-center">
+                            <div className="w-full flex justify-between items-center px-2 mb-2">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-foreground/40">Anexos para enviar ({stagedFiles.length})</span>
+                                <button onClick={() => { setStagedFiles([]); setPreviews([]); }} className="text-[9px] font-black text-red-500 hover:scale-105 transition-transform uppercase tracking-widest">Limpar Tudo</button>
+                            </div>
+                            {previews.map((preview, i) => (
+                                <div key={i} className="relative group">
+                                    <div className="w-24 h-24 rounded-2xl border border-surface-border bg-black/40 overflow-hidden flex items-center justify-center relative">
+                                        {preview === 'file' ? (
+                                            <div className="flex flex-col items-center gap-1 opacity-40">
+                                                <FileText className="w-8 h-8" />
+                                                <span className="text-[8px] font-black uppercase tracking-tighter truncate max-w-[80px]">{stagedFiles[i].name}</span>
+                                            </div>
+                                        ) : (
+                                            <img src={preview} alt="Staged" className="w-full h-full object-cover" />
+                                        )}
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={() => removeStagedFile(i)}
+                                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform z-10"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            ))}
+                            <button 
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                className="w-24 h-24 rounded-2xl border-2 border-dashed border-surface-border flex items-center justify-center text-foreground/20 hover:text-accent hover:border-accent/40 transition-all"
+                            >
+                                <Paperclip className="w-8 h-8" />
+                            </button>
+                        </motion.div>
+                    )}
+                    </AnimatePresence>
 
-                               <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                                   {!isSameUser && (
-                                      <div className={`flex items-baseline gap-2 mb-1.5 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                         <span className="text-[13px] font-bold text-white">{name}</span>
-                                         <span className="text-[11px] text-[#666] font-medium">{new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute:'2-digit' })}</span>
-                                      </div>
-                                   )}
-                                   <div className={`p-4 px-5 rounded-[22px] min-w-[80px] border shadow-md flex flex-col relative ${isMe ? 'bg-[#1e1f24] text-white border-[#2c2d30] rounded-tr-[5px]' : 'bg-accent text-white border-accent/80 rounded-tl-[5px] shadow-accent/20'}`}>
-                                       
-                                       {/* Hover Actions Menu */}
-                                       <div className={`opacity-0 group-hover:opacity-100 transition-all duration-200 flex gap-1 items-center bg-[#0a0a0b] border border-[#222] p-1 rounded-xl absolute -top-3.5 z-20 shadow-xl ${isMe ? 'left-4' : 'right-4'}`}>
-                                           <button 
-                                               type="button"
-                                               onClick={() => setReplyingTo(msg)}
-                                               className="p-1.5 text-gray-400 hover:text-accent hover:bg-[#111] rounded-lg transition-colors"
-                                               title="Responder"
-                                           >
-                                               <CornerUpLeft className="w-3.5 h-3.5" />
-                                           </button>
-                                           {isMe && (
-                                               <button 
-                                                   type="button"
-                                                   onClick={() => {
-                                                       setEditingMessage(msg);
-                                                       const parsedMsg = parseReply(msg.content);
-                                                       setContent(parsedMsg.actualContent);
-                                                   }}
-                                                   className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-[#111] rounded-lg transition-colors"
-                                                   title="Editar"
-                                               >
-                                                   <Pencil className="w-3.5 h-3.5" />
-                                               </button>
-                                           )}
-                                           <button 
-                                               type="button"
-                                               onClick={() => setDeleteMenuMsgId(deleteMenuMsgId === msg.id ? null : msg.id)}
-                                               className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-[#111] rounded-lg transition-colors"
-                                               title="Excluir"
-                                           >
-                                               <Trash2 className="w-3.5 h-3.5" />
-                                           </button>
-                                       </div>
+                    {/* Staging reply/edit indicator */}
+                    <AnimatePresence>
+                    {(replyingTo || editingMessage) && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="flex items-center justify-between bg-surface/50 backdrop-blur-2xl border border-surface-border rounded-t-[2.5rem] p-6 pb-2 -mb-6 relative z-0 border-b-0">
+                            <div className="flex items-start gap-4">
+                                <div className={`p-2 rounded-xl ${editingMessage ? 'bg-blue-500/10 text-blue-500' : 'bg-accent/10 text-accent'}`}>
+                                    {editingMessage ? <Pencil className="w-4 h-4"/> : <CornerUpLeft className="w-4 h-4"/>}
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-foreground/40">{editingMessage ? 'Editando sua mensagem' : `Respondendo a ${replyingTo?.profiles?.name || 'Agente'}`}</span>
+                                    <p className="text-sm font-medium text-foreground/70 truncate italic max-w-[300px]">"{parseReply(replyingTo?.content || editingMessage?.content || "").actualContent}"</p>
+                                </div>
+                            </div>
+                            <button type="button" onClick={() => { setReplyingTo(null); setEditingMessage(null); if(editingMessage) setContent(""); }} className="p-2 hover:bg-foreground/5 rounded-full transition-colors"><X className="w-5 h-5"/></button>
+                        </motion.div>
+                    )}
+                    </AnimatePresence>
 
-                                       {/* Custom Popover Delete Menu */}
-                                       {deleteMenuMsgId === msg.id && (
-                                           <div className={`absolute bg-[#111213] border border-[#222] p-2 rounded-xl shadow-2xl z-30 flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider -top-24 min-w-[150px] ${isMe ? 'right-0' : 'left-0'}`}>
-                                               <button 
-                                                   type="button"
-                                                   onClick={() => { handleDeleteMessageEveryone(msg.id); setDeleteMenuMsgId(null); }}
-                                                   className="w-full text-left text-red-500 hover:bg-red-500/10 p-2 rounded-lg transition-colors flex items-center gap-2"
-                                               >
-                                                   Apagar para todos
-                                               </button>
-                                               <button 
-                                                   type="button"
-                                                   onClick={() => { handleHideMessageLocal(msg.id); setDeleteMenuMsgId(null); }}
-                                                   className="w-full text-left text-gray-300 hover:bg-white/5 p-2 rounded-lg transition-colors flex items-center gap-2"
-                                               >
-                                                   Apagar para mim
-                                               </button>
-                                               <button 
-                                                   type="button"
-                                                   onClick={() => setDeleteMenuMsgId(null)}
-                                                   className="w-full text-left text-gray-500 hover:bg-white/5 p-2 rounded-lg transition-colors flex items-center gap-2 border-t border-[#222] pt-2"
-                                               >
-                                                   Cancelar
-                                               </button>
-                                           </div>
-                                       )}
+                    {/* Main Input Floating Card */}
+                    <motion.form 
+                        onSubmit={handleSend}
+                        className="bg-surface/80 backdrop-blur-3xl border border-surface-border p-3 rounded-[2.5rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)] focus-within:border-accent/40 transition-all flex items-center gap-3 pr-4 group relative z-10"
+                    >
+                        <button 
+                            type="button" 
+                            onClick={() => fileInputRef.current?.click()}
+                            className="w-12 h-12 rounded-full flex items-center justify-center text-foreground/30 hover:text-accent hover:bg-accent/5 transition-all ml-2"
+                        >
+                            <Paperclip className="w-6 h-6" />
+                        </button>
+                        <input 
+                            type="file" 
+                            multiple 
+                            className="hidden" 
+                            ref={fileInputRef} 
+                            onChange={handleFileSelect}
+                        />
 
-                                       {parsed.isReply && (
-                                           <div className="bg-black/30 p-2.5 px-3 rounded-xl border-l-4 border-accent mb-2.5 text-left text-xs opacity-90 max-w-full">
-                                               <div className="font-bold text-accent mb-0.5">{parsed.replyToName}</div>
-                                               <div className="truncate text-white/70 text-[11px] font-medium">{parsed.replyToContent}</div>
-                                           </div>
-                                       )}
+                        <div className="flex-1 relative flex items-center">
+                            <input 
+                                type="text" 
+                                value={content}
+                                onChange={e => { setContent(e.target.value); handleTyping(); }}
+                                placeholder={editingMessage ? "Edite sua mensagem..." : "Fale com a Equipe Susanoo..."}
+                                className="w-full bg-transparent p-5 px-6 outline-none text-foreground font-medium text-[16px] placeholder:text-foreground/20"
+                                disabled={!project}
+                            />
+                            <div className="absolute inset-0 bg-accent/5 rounded-full blur-[20px] opacity-0 group-focus-within:opacity-100 transition-opacity pointer-events-none" />
+                        </div>
+                        
+                        <div className="hidden sm:flex items-center gap-2 pr-2">
+                             <div className="w-px h-6 bg-surface-border mx-2" />
+                             <button 
+                                type="button" 
+                                onClick={() => fileInputRef.current?.click()}
+                                className="p-3 text-foreground/30 hover:text-foreground/60 transition-colors"
+                             >
+                                <ImageIcon className="w-5 h-5"/>
+                             </button>
+                        </div>
 
-                                       <div className="text-[15px] leading-relaxed font-medium break-words">{parsed.actualContent}</div>
-                                   </div>
-                               </div>
-                           </div>
-                       </motion.div>
-                   );
-               })}
-               </AnimatePresence>
-
-               {/* Typing Indicator */}
-               {typingUsers.length > 0 && (
-                   <div className="flex items-center gap-2 text-xs text-accent font-semibold ml-14 animate-pulse">
-                       <div className="flex gap-1">
-                           <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0ms' }} />
-                           <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '150ms' }} />
-                           <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '300ms' }} />
-                       </div>
-                       <span>{typingUsers.join(', ')} {typingUsers.length === 1 ? 'está' : 'estão'} digitando...</span>
-                   </div>
-               )}
-
-               <div ref={messagesEndRef} className="h-2" />
-           </div>
-
-           {/* Input Box Advanced (Teams/Slack) */}
-           <div className="p-6 bg-[#161719] border-t border-[#2c2d30] shrink-0">
-               {replyingTo && (
-                   <div className="max-w-6xl mx-auto mb-3 bg-[#111213] border border-[#2c2d30] border-l-4 border-accent p-4 rounded-xl flex justify-between items-center shadow-lg">
-                       <div className="overflow-hidden pr-4">
-                           <span className="text-[10px] font-black text-accent uppercase tracking-widest block mb-1">Respondendo a {replyingTo.profiles?.name || 'Membro'}</span>
-                           <p className="text-white/60 text-sm truncate">{parseReply(replyingTo.content).actualContent}</p>
-                       </div>
-                       <button 
-                           type="button" 
-                           onClick={() => setReplyingTo(null)}
-                           className="p-1 rounded-full hover:bg-white/5 text-[#888] hover:text-white transition-colors"
-                       >
-                           <X className="w-4 h-4" />
-                       </button>
-                   </div>
-               )}
-
-               {editingMessage && (
-                   <div className="max-w-6xl mx-auto mb-3 bg-[#111213] border border-[#2c2d30] border-l-4 border-blue-500 p-4 rounded-xl flex justify-between items-center shadow-lg">
-                       <div className="overflow-hidden pr-4">
-                           <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest block mb-1">Modo de Edição</span>
-                           <p className="text-white/60 text-sm truncate">{parseReply(editingMessage.content).actualContent}</p>
-                       </div>
-                       <button 
-                           type="button" 
-                           onClick={() => { setEditingMessage(null); setContent(""); }}
-                           className="p-1 rounded-full hover:bg-white/5 text-[#888] hover:text-white transition-colors"
-                       >
-                           <X className="w-4 h-4" />
-                       </button>
-                   </div>
-               )}
-
-               <form onSubmit={handleSend} className="max-w-6xl mx-auto flex flex-col bg-[#111213] rounded-2xl border border-[#2c2d30] shadow-xl focus-within:border-accent/50 transition-colors p-2">
-                   <input 
-                       type="text" 
-                       value={content}
-                       onChange={e => {
-                           setContent(e.target.value);
-                           handleTyping();
-                       }}
-                       placeholder={editingMessage ? "Editar mensagem..." : `Envie uma mensagem em General - ${project?.name || 'Projeto'}...`} 
-                       className="w-full bg-transparent text-white placeholder:text-[#555] p-4 focus:outline-none transition-all font-medium text-[15px]"
-                       disabled={!project}
-                   />
-                   <div className="flex justify-between items-center px-2 pb-2 mt-1">
-                       <div className="flex gap-2">
-                          <button type="button" className="p-2 text-[#888] hover:bg-[#1e1f24] hover:text-[#e0e0e0] rounded-xl transition-colors"><div className="font-bold text-[16px] leading-none">A</div></button>
-                          <button type="button" className="p-2 text-[#888] hover:bg-[#1e1f24] hover:text-[#e0e0e0] rounded-xl transition-colors"><UserRound className="w-5 h-5"/></button>
-                       </div>
-                       <div className="flex gap-2">
-                           {(editingMessage || replyingTo) && (
-                               <button 
-                                   type="button"
-                                   onClick={() => { setEditingMessage(null); setReplyingTo(null); setContent(""); }}
-                                   className="px-4 py-2 bg-transparent hover:bg-white/5 text-white/60 hover:text-white font-bold text-[13px] rounded-xl transition-all"
-                               >
-                                   Cancelar
-                               </button>
-                           )}
-                           <button 
-                               type="submit" 
-                               disabled={!content.trim() || !project}
-                               className="px-5 py-2 bg-accent hover:bg-accent/80 text-white font-bold text-sm rounded-xl transition-all disabled:opacity-50 disabled:hover:bg-accent flex items-center gap-2 shadow-lg shadow-accent/20 cursor-pointer"
-                           >
-                               <Send className="w-4 h-4" /> {editingMessage ? "Salvar" : "Enviar"}
-                           </button>
-                       </div>
-                   </div>
-               </form>
-           </div>
-       </div>
-   );
+                        <button 
+                            type="submit"
+                            disabled={(!content.trim() && stagedFiles.length === 0) || !project}
+                            className="w-14 h-14 rounded-full bg-accent text-white flex items-center justify-center shadow-xl shadow-accent/20 hover:scale-105 active:scale-95 transition-all disabled:opacity-30 disabled:grayscale disabled:hover:scale-100"
+                        >
+                            <Send className="w-6 h-6" />
+                        </button>
+                    </motion.form>
+                </div>
+             </div>
+        </div>
+    );
 }

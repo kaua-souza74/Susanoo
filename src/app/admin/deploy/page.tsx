@@ -1,172 +1,246 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Globe, Rocket, ExternalLink, ShieldCheck, Activity, Terminal, RefreshCw, Layers, CheckCircle2, AlertCircle } from "lucide-react";
+import { deployToVercel } from "@/lib/vercel";
+import { 
+    Globe, 
+    Rocket, 
+    ExternalLink, 
+    ShieldCheck, 
+    Activity, 
+    Terminal, 
+    RefreshCw, 
+    Layers, 
+    CheckCircle2, 
+    AlertCircle, 
+    X,
+    FileCode,
+    FileText,
+    UploadCloud,
+    FolderOpen,
+    Plus,
+    Trash2,
+    Settings2,
+    Monitor,
+    Zap,
+    Loader2,
+    BarChart3
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function AdminDeploy() {
     const [projects, setProjects] = useState<any[]>([]);
     const [deployingId, setDeployingId] = useState<string | null>(null);
+    const [vercelDeployingId, setVercelDeployingId] = useState<string | null>(null);
+    const [selectedProjectFiles, setSelectedProjectFiles] = useState<string | null>(null);
+    const [projectFiles, setProjectFiles] = useState<any[]>([]);
+    const [loadingFiles, setLoadingFiles] = useState(false);
+    
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [newProject, setNewProject] = useState({ name: '', email: '', domain: '' });
+
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const loadProjects = async () => {
+        const { data } = await supabase.from('projects').select('*').order('name');
+        setProjects(data || []);
+    };
 
     useEffect(() => {
-        const load = async () => {
-            const { data } = await supabase.from('projects').select('*').order('name');
-            setProjects(data || []);
-        };
-        load();
-
-        const sub = supabase.channel('deploy_changes')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => {
-                load();
-            })
-            .subscribe();
-        
-        return () => { supabase.removeChannel(sub) };
+        loadProjects();
     }, []);
 
-    const handleDeploy = async (id: string) => {
-        setDeployingId(id);
-        
-        // Simulação de Deploy em Tempo Real
-        await supabase.from('projects').update({ 
-            deploy_status: 'building'
-        }).eq('id', id);
+    const updateManualProgress = async (id: string, value: number) => {
+        const { error } = await supabase.from('projects').update({ manual_progress: value }).eq('id', id);
+        if (!error) loadProjects();
+    };
 
+    const loadProjectFiles = async (projectId: string) => {
+        setLoadingFiles(true);
+        const { data } = await supabase.storage.from('project_files').list(projectId);
+        setProjectFiles(data || []);
+        setLoadingFiles(false);
+    };
+
+    useEffect(() => {
+        if (selectedProjectFiles) loadProjectFiles(selectedProjectFiles);
+    }, [selectedProjectFiles]);
+
+    const handleCreateProject = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const { data: profile } = await supabase.from('profiles').select('id').ilike('email', newProject.email.trim()).single();
+        if (!profile) {
+            alert(`Erro: E-mail "${newProject.email}" não encontrado.`);
+            return;
+        }
+        const { error } = await supabase.from('projects').insert([{
+            name: newProject.name,
+            client_id: profile.id,
+            deploy_url: newProject.domain || 'susanoo-waiting.host',
+            deploy_status: 'idle',
+            manual_progress: 0
+        }]);
+        if (!error) {
+            setIsModalOpen(false);
+            setNewProject({ name: '', email: '', domain: '' });
+            loadProjects();
+        }
+    };
+
+    const handleDeleteProject = async (id: string) => {
+        if (!confirm("Deletar PROJETO?")) return;
+        await supabase.from('projects').delete().eq('id', id);
+        loadProjects();
+    };
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !selectedProjectFiles) return;
+        const { error } = await supabase.storage.from('project_files').upload(`${selectedProjectFiles}/${file.name}`, file, {
+            upsert: true,
+            contentType: file.name.endsWith('.html') ? 'text/html' : (file.name.endsWith('.css') ? 'text/css' : undefined)
+        });
+        if (!error) loadProjectFiles(selectedProjectFiles);
+    };
+
+    const handleDeploy = async (projectId: string) => {
+        setDeployingId(projectId);
+        await supabase.from('projects').update({ deploy_status: 'building' }).eq('id', projectId);
         setTimeout(async () => {
+            const { data: files } = await supabase.storage.from('project_files').list(projectId);
+            const hasIndex = files?.find(f => f.name.toLowerCase() === 'index.html');
+            const finalUrl = hasIndex ? `/preview/${projectId}` : 'no-index';
             await supabase.from('projects').update({ 
                 deploy_status: 'ready',
+                deploy_url: finalUrl,
                 last_deploy: new Date().toISOString()
-            }).eq('id', id);
+            }).eq('id', projectId);
             setDeployingId(null);
-        }, 5000);
+            loadProjects();
+        }, 1500);
+    };
+
+    const handleVercelDeploy = async (project: any) => {
+        setVercelDeployingId(project.id);
+        try {
+            const { data: fileList } = await supabase.storage.from('project_files').list(project.id);
+            if (!fileList || fileList.length === 0) throw new Error("Sem arquivos.");
+            const filesToDeploy = [];
+            for (const f of fileList) {
+                const { data } = await supabase.storage.from('project_files').download(`${project.id}/${f.name}`);
+                if (data) filesToDeploy.push({ file: f.name, data: await data.text() });
+            }
+            const result = await deployToVercel(project.name, filesToDeploy);
+            await supabase.from('projects').update({ deploy_url: result.url, deploy_status: 'ready' }).eq('id', project.id);
+            alert("Sucesso Vercel!");
+            loadProjects();
+        } catch (error: any) {
+            alert(error.message);
+        } finally {
+            setVercelDeployingId(null);
+        }
     };
 
     return (
-        <div className="flex-1 overflow-y-auto p-8 md:p-12 2xl:p-16 bg-[#050505] flex flex-col h-full overflow-x-hidden">
+        <div className="flex-1 overflow-y-auto p-8 bg-[#050505] text-white h-full flex flex-col">
             
-            {/* Header Estratégico */}
-            <div className="mb-12">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="bg-accent/10 p-2 rounded-lg border border-accent/20">
-                        <Rocket className="w-6 h-6 text-accent" />
-                    </div>
-                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-accent">Susanoo Engine v2.0</span>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-16">
+                <div>
+                   <h1 className="text-6xl font-black tracking-tighter uppercase italic text-white flex items-center gap-4">
+                       Deploy HQ <Zap className="w-10 h-10 text-accent fill-accent" />
+                   </h1>
+                   <p className="text-[#444] font-bold text-lg mt-2 uppercase tracking-widest italic">Controle de Produção & Infraestrutura</p>
                 </div>
-                <h1 className="text-5xl font-black text-white tracking-tighter mb-4">Deploy HQ</h1>
-                <p className="text-[#888] font-medium text-lg max-w-2xl">Gerencie a infraestrutura, domínios e ciclos de publicação de todos os sites da agência em tempo real.</p>
-            </div>
-
-            {/* Grid de Projetos & Status */}
-            <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-8 mb-12">
-                {projects.map((proj) => (
-                    <motion.div 
-                        initial={{ opacity: 0, y: 20 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        key={proj.id}
-                        className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-[32px] p-8 flex flex-col relative overflow-hidden group hover:border-accent/30 transition-all shadow-2xl"
-                    >
-                        {/* Background subtle glow */}
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-accent/5 blur-[80px] -mr-16 -mt-16 pointer-events-none group-hover:bg-accent/10 transition-colors" />
-
-                        <div className="flex justify-between items-start mb-8">
-                            <div>
-                                <h3 className="text-2xl font-black text-white tracking-tight mb-2 uppercase">{proj.name}</h3>
-                                <div className="flex items-center gap-2">
-                                    <Globe className="w-3.5 h-3.5 text-[#555]" />
-                                    <span className="text-[#555] text-xs font-bold font-mono tracking-wider">{proj.deploy_url || "aguardando-dominio.com"}</span>
-                                </div>
-                            </div>
-                            <div className={`px-4 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${
-                                proj.deploy_status === 'ready' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
-                                proj.deploy_status === 'building' ? 'bg-blue-500/10 border-blue-500/20 text-blue-500 animate-pulse' :
-                                'bg-[#1a1a1a] border-[#333] text-[#666]'
-                            }`}>
-                                <div className={`w-1.5 h-1.5 rounded-full ${
-                                    proj.deploy_status === 'ready' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' :
-                                    proj.deploy_status === 'building' ? 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]' :
-                                    'bg-[#444]'
-                                }`} />
-                                {proj.deploy_status === 'ready' ? 'Produção: Ativo' : 
-                                 proj.deploy_status === 'building' ? 'Publicando...' : 'Aguardando Operação'}
-                            </div>
-                        </div>
-
-                        {/* Estatísticas de Deploy */}
-                        <div className="grid grid-cols-2 gap-4 mb-8">
-                            <div className="bg-[#111] border border-[#222] p-4 rounded-2xl">
-                                <span className="text-[10px] font-black text-[#555] uppercase block mb-1">Ambiente</span>
-                                <span className="text-white font-bold text-sm flex items-center gap-2">
-                                    <ShieldCheck className="w-3.5 h-3.5 text-accent" /> {proj.environment || "Production"}
-                                </span>
-                            </div>
-                            <div className="bg-[#111] border border-[#222] p-4 rounded-2xl">
-                                <span className="text-[10px] font-black text-[#555] uppercase block mb-1">Último Update</span>
-                                <span className="text-white font-bold text-sm">
-                                    {proj.last_deploy ? new Date(proj.last_deploy).toLocaleDateString('pt-BR') : "--/--/--"}
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* Ações */}
-                        <div className="flex gap-4 mt-auto">
-                            <button 
-                                onClick={() => handleDeploy(proj.id)}
-                                disabled={proj.deploy_status === 'building' || deployingId === proj.id}
-                                className="flex-1 bg-white text-black font-black uppercase text-[11px] tracking-[0.1em] py-4 rounded-xl hover:bg-neutral-200 transition-all shadow-[0_0_30px_rgba(255,255,255,0.05)] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {proj.deploy_status === 'building' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
-                                Push to Production
-                            </button>
-                            <a 
-                                href={proj.deploy_url ? (proj.deploy_url.startsWith('http') ? proj.deploy_url : `https://${proj.deploy_url}`) : '#'} 
-                                target="_blank"
-                                className="w-14 h-14 bg-[#111] border border-[#222] rounded-xl flex items-center justify-center text-[#888] hover:text-white hover:border-accent transition-all group/link"
-                            >
-                                <ExternalLink className="w-5 h-5 group-hover/link:scale-110 transition-transform" />
-                            </a>
-                        </div>
-                    </motion.div>
-                ))}
-
-                {/* Card de Adicionar Projeto Rapido */}
-                <button className="bg-[#050505] border-2 border-dashed border-[#222] rounded-[32px] p-8 flex flex-col items-center justify-center group hover:border-accent/40 transition-all min-h-[300px]">
-                    <div className="w-16 h-16 bg-[#111] rounded-full flex items-center justify-center border border-[#222] mb-4 group-hover:scale-110 transition-transform">
-                        <Layers className="w-6 h-6 text-[#555] group-hover:text-accent" />
-                    </div>
-                    <span className="font-black text-white uppercase tracking-widest text-sm">Escalável: Novo Domínio</span>
-                    <span className="text-[#555] text-xs font-medium mt-2">Vincular novo ambiente à Susanoo HQ</span>
+                <button onClick={() => setIsModalOpen(true)} className="bg-white text-black font-black px-12 py-5 rounded-[24px] hover:scale-105 transition-all text-xs tracking-widest shadow-2xl">
+                   NOVO PROJETO
                 </button>
             </div>
 
-            {/* Terminal de Logs Global */}
-            <div className="mt-auto">
-                <div className="flex items-center justify-between mb-4 px-2">
-                    <h2 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
-                        <Terminal className="w-5 h-5 text-accent" /> Network & Logs
-                    </h2>
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                            <span className="text-[10px] font-bold text-[#666] uppercase">Vercel API: Connected</span>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
+                {projects.map((proj) => (
+                    <motion.div layout key={proj.id} className="bg-[#0c0c0d] border border-white/5 rounded-[48px] p-10 flex flex-col relative group overflow-hidden">
+                        
+                        <div className="flex justify-between items-start mb-8">
+                            <div>
+                                <h2 className="text-4xl font-black text-white italic tracking-tighter leading-none mb-2">{proj.name}</h2>
+                                <span className="text-[10px] font-black text-accent uppercase bg-accent/5 px-4 py-1 rounded-full border border-accent/20">Operational</span>
+                            </div>
+                            <button onClick={() => handleDeleteProject(proj.id)} className="text-[#333] hover:text-red-500 transition-colors"><Trash2 className="w-6 h-6" /></button>
                         </div>
-                    </div>
-                </div>
-                <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-[24px] p-6 font-mono text-[12px] text-[#555] leading-relaxed shadow-2xl">
-                    <div className="flex gap-2 mb-2">
-                        <span className="text-accent underline underline-offset-4 font-bold">[SUS_LOG_OK]</span>
-                        <span>{new Date().toISOString()} - Módulo de Deploy Inicializado com sucesso.</span>
-                    </div>
-                    <div className="flex gap-2 mb-2 opacity-80">
-                        <span className="text-blue-500 font-bold">[NETWORK]</span>
-                        <span>Iniciando monitoramento de SSL de {projects.length} domínios ativos.</span>
-                    </div>
-                    <div className="flex gap-2 mb-2 opacity-60">
-                        <span className="text-[#333] font-bold">[IDLE]</span>
-                        <span>Aguardando comando do Sócio...</span>
-                    </div>
-                </div>
+
+                        {/* CONTROLE DE PORCENTAGEM (DEMANDADO) */}
+                        <div className="bg-[#050505] border border-white/5 p-8 rounded-[40px] mb-8 relative overflow-hidden">
+                            <div className="flex items-center justify-between mb-6">
+                                <h4 className="text-[10px] font-black text-[#444] uppercase tracking-[0.3em] flex items-center gap-2"><BarChart3 className="w-4 h-4"/> Progresso do Sistema</h4>
+                                <span className="text-2xl font-black text-white">{proj.manual_progress ?? 0}%</span>
+                            </div>
+                            <input 
+                                type="range" min="0" max="100" 
+                                value={proj.manual_progress ?? 0} 
+                                onChange={(e) => updateManualProgress(proj.id, parseInt(e.target.value))}
+                                className="w-full h-2 bg-white/5 rounded-lg appearance-none cursor-pointer accent-accent"
+                            />
+                            <div className="flex justify-between mt-4">
+                                <span className="text-[9px] font-bold text-[#222]">START</span>
+                                <span className="text-[9px] font-bold text-[#222]">DELIVERY</span>
+                            </div>
+                        </div>
+
+                        <div className="bg-[#050505] border border-white/5 p-8 rounded-[40px] mb-8">
+                             <div className="flex items-center justify-between mb-4">
+                                <h4 className="text-[10px] font-black text-[#444] uppercase tracking-[0.3em] flex items-center gap-2"><FolderOpen className="w-4 h-4"/> Repository</h4>
+                                <button onClick={() => setSelectedProjectFiles(selectedProjectFiles === proj.id ? null : proj.id)} className="text-[10px] font-black text-white p-2">
+                                    {selectedProjectFiles === proj.id ? <X/> : <Settings2/>}
+                                </button>
+                             </div>
+                             <AnimatePresence>
+                                {selectedProjectFiles === proj.id && (
+                                    <div className="space-y-3 pt-4 border-t border-white/5">
+                                        {projectFiles.map((f, i) => (
+                                            <div key={i} className="flex items-center justify-between p-4 bg-[#0c0c0d] rounded-2xl border border-white/5 text-[12px] font-bold text-[#666]">
+                                                {f.name}
+                                                <button onClick={() => supabase.storage.from('project_files').remove([`${proj.id}/${f.name}`]).then(() => loadProjectFiles(proj.id))}><X className="w-4 h-4 text-red-500/50"/></button>
+                                            </div>
+                                        ))}
+                                        <button onClick={() => fileInputRef.current?.click()} className="w-full py-4 border-2 border-dashed border-white/5 rounded-2xl text-[10px] font-black text-[#333] hover:text-white transition-all uppercase">Upload Cloud</button>
+                                    </div>
+                                )}
+                             </AnimatePresence>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <button onClick={() => handleDeploy(proj.id)} className="py-6 rounded-[32px] font-black text-[10px] uppercase tracking-widest bg-white text-black hover:bg-neutral-200 transition-all flex items-center justify-center gap-2">
+                                {deployingId === proj.id ? <Loader2 className="animate-spin w-4 h-4"/> : <Monitor className="w-4 h-4"/>} Local Live
+                            </button>
+                            <button onClick={() => handleVercelDeploy(proj)} className="py-6 rounded-[32px] font-black text-[10px] uppercase tracking-widest bg-accent text-white flex items-center justify-center gap-2 hover:scale-[1.02] transition-all">
+                                {vercelDeployingId === proj.id ? <Loader2 className="animate-spin w-4 h-4"/> : <Rocket className="w-4 h-4"/>} Vercel Push
+                            </button>
+                        </div>
+                    </motion.div>
+                ))}
             </div>
 
+            <input type="file" hidden ref={fileInputRef} onChange={handleFileUpload} />
+
+            {isModalOpen && (
+                <div className="fixed inset-0 bg-black/98 z-[400] flex items-center justify-center p-10">
+                    <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#0c0c0d] border border-white/5 p-16 rounded-[60px] w-full max-w-2xl relative">
+                        <button onClick={() => setIsModalOpen(false)} className="absolute top-12 right-12 text-[#333] hover:text-white"><X className="w-8 h-8"/></button>
+                        <h2 className="text-5xl font-black text-white italic tracking-tighter mb-10">NOVA INSTÂNCIA</h2>
+                        <form onSubmit={handleCreateProject} className="space-y-10">
+                            <div>
+                                <label className="text-[10px] font-black uppercase text-[#222] mb-4 block ml-4">Nome do Projeto</label>
+                                <input required className="w-full bg-[#050505] p-6 rounded-[32px] text-white border-2 border-white/5 focus:border-accent outline-none font-bold" value={newProject.name} onChange={e => setNewProject({...newProject, name: e.target.value})} />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black uppercase text-[#222] mb-4 block ml-4">Email do Cliente</label>
+                                <input required type="email" className="w-full bg-[#050505] p-6 rounded-[32px] text-white border-2 border-white/5 focus:border-accent outline-none font-bold" value={newProject.email} onChange={e => setNewProject({...newProject, email: e.target.value})} />
+                            </div>
+                            <button type="submit" className="w-full bg-white text-black font-black py-8 rounded-[40px] text-xl mt-4">CRIAR AGORA</button>
+                        </form>
+                    </motion.div>
+                </div>
+            )}
         </div>
     );
 }

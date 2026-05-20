@@ -1,12 +1,40 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Send, Search, Users, Phone, Video, MoreHorizontal, Hash, Plus, PlusCircle, Settings, Pin, X, Paperclip, CornerUpLeft, Trash2, Pencil } from "lucide-react";
+import { 
+    Send, 
+    Search, 
+    Users, 
+    Phone, 
+    Video, 
+    MoreHorizontal, 
+    Hash, 
+    Plus, 
+    PlusCircle, 
+    Settings, 
+    Pin, 
+    X, 
+    Paperclip, 
+    CornerUpLeft, 
+    Trash2, 
+    Pencil,
+    Image as ImageIcon,
+    FileText,
+    Download
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-type Message = { id: string; content: string; created_at: string; user_id: string; sender_name?: string; profiles?: { name: string; role?: string } };
+type Message = { 
+    id: string; 
+    content: string; 
+    created_at: string; 
+    user_id: string; 
+    sender_name?: string; 
+    file_url?: string;
+    file_type?: string;
+    profiles?: { name: string; role?: string } 
+};
 
-// Helper to parse replied message syntax
 const parseReply = (content: string) => {
     if (content && content.startsWith("[REPLY:")) {
         const match = content.match(/^\[REPLY:([^|]+)\|([\s\S]*?)\]([\s\S]*)$/);
@@ -19,12 +47,28 @@ const parseReply = (content: string) => {
             };
         }
     }
-    return { isReply: false, replyToName: "", replyToContent: "", actualContent: content };
+    return { isReply: false, replyToName: "", replyToContent: "", actualContent: content || "" };
 };
 
 export default function AdminTeamsChat() {
    const [user, setUser] = useState<any>(null);
    const [channels, setChannels] = useState<any[]>([]);
+   const [activeChannel, setActiveChannel] = useState<any>(null);
+   const [messages, setMessages] = useState<Message[]>([]);
+   const [content, setContent] = useState("");
+   const [searchTerm, setSearchTerm] = useState("");
+   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+   
+   // Attachment Staging
+   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
+   const [previews, setPreviews] = useState<string[]>([]);
+   
+   const messagesEndRef = useRef<HTMLDivElement>(null);
+   const chatChannelRef = useRef<any>(null);
+   const typingTimeoutRef = useRef<any>(null);
+   const fileInputRef = useRef<HTMLInputElement>(null);
 
    const getMyName = () => {
        if (user?.email) {
@@ -33,92 +77,16 @@ export default function AdminTeamsChat() {
            if (emailLower.startsWith('vinicius') || emailLower === 'vinicius172321@gmail.com') return 'Vinícius';
            if (emailLower.startsWith('davi') || emailLower === 'davi@susanoo.com') return 'Davi';
            if (emailLower.startsWith('lucas') || emailLower === 'limasilvallsss@gmail.com') return 'Lucas';
-
-           if (user.user_metadata?.name) return user.user_metadata.name;
-           const part = user.email.split('@')[0];
-           return part.charAt(0).toUpperCase() + part.slice(1);
+           return user.user_metadata?.name || user.email.split('@')[0];
        }
        return 'Membro Susanoo';
    };
-   const [activeChannel, setActiveChannel] = useState<any>(null);
-   const [messages, setMessages] = useState<Message[]>([]);
-   
-   const [content, setContent] = useState("");
-   const [searchTerm, setSearchTerm] = useState("");
-   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-   // Reply, Edit and Delete local state
-   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
-   const [deletedMessageIds, setDeletedMessageIds] = useState<string[]>([]);
-   const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
-
-   // Typing indicator state
-   const [typingUsers, setTypingUsers] = useState<string[]>([]);
-   const typingTimeoutRef = useRef<any>(null);
-   const chatChannelRef = useRef<any>(null);
-
-   useEffect(() => {
-       const stored = localStorage.getItem("susanoo_deleted_messages");
-       if (stored) {
-           try {
-               setDeletedMessageIds(JSON.parse(stored));
-           } catch (e) {
-               console.error(e);
-           }
-       }
-   }, []);
-
-   const handleHideMessageLocal = (msgId: string) => {
-       const updated = [...deletedMessageIds, msgId];
-       setDeletedMessageIds(updated);
-       localStorage.setItem("susanoo_deleted_messages", JSON.stringify(updated));
-   };
-
-   const handleDeleteMessageEveryone = async (msgId: string) => {
-       const { error } = await supabase.from('messages').delete().eq('id', msgId);
-       if (error) {
-           alert("Erro ao excluir mensagem: " + error.message);
-       }
-   };
-
-   const handleTyping = () => {
-       if (!chatChannelRef.current || !user) return;
-       chatChannelRef.current.send({
-           type: 'broadcast',
-           event: 'typing',
-           payload: { name: getMyName(), isTyping: true }
-       });
-
-       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-       typingTimeoutRef.current = setTimeout(() => {
-           if (chatChannelRef.current) {
-               chatChannelRef.current.send({
-                   type: 'broadcast',
-                   event: 'typing',
-                   payload: { name: getMyName(), isTyping: false }
-               });
-           }
-       }, 2000);
-   };
-
-   // Modal de Criação State
+   // Modals
    const [isModalOpen, setIsModalOpen] = useState(false);
    const [isManageOpen, setIsManageOpen] = useState(false);
    const [newChatName, setNewChatName] = useState("");
    const [newChatType, setNewChatType] = useState("group");
-
-   const handleDeleteChannel = async (id: string, isProject: boolean) => {
-       if (isProject) {
-           alert("Softwares Oficiais não podem ser apagados pelo Chat.");
-           return;
-       }
-       if (confirm("Deletar este grupo permanentemente da agência?")) {
-           await supabase.from('chats').delete().eq('id', id);
-           setChannels(prev => prev.filter(c => c.id !== id));
-           if (activeChannel?.id === id) setActiveChannel(null);
-       }
-   };
 
    useEffect(() => {
        fetchData();
@@ -127,42 +95,18 @@ export default function AdminTeamsChat() {
 
    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-   // Fallback polling for new messages every 3 seconds (in case Supabase Realtime publication is not enabled by user)
-   useEffect(() => {
-       if (!activeChannel) return;
-       const filterField = activeChannel.isProject ? 'project_id' : 'chat_id';
-       
-       const interval = setInterval(() => {
-           supabase.from('messages')
-               .select('*, profiles:user_id(name)')
-               .eq(filterField, activeChannel.id)
-               .order('created_at', { ascending: true })
-               .then(({ data }) => {
-                   if (data) {
-                       setMessages(data as any || []);
-                   }
-               });
-       }, 3000);
-
-       return () => clearInterval(interval);
-   }, [activeChannel]);
-
    const fetchData = async () => {
        const { data: { session } } = await supabase.auth.getSession();
        if (session) setUser(session.user);
        
-       // Pega Canais Oficiais (Projetos)
        const { data: projs } = await supabase.from('projects').select('*');
-       // Pega Grupos Personalizados (Chats Livres)
-       const { data: custChats, error: chatsError } = await supabase.from('chats').select('*');
-       if (chatsError) alert("Falha Mapeamento de Chats: " + chatsError.message);
+       const { data: custChats } = await supabase.from('chats').select('*');
        
-       const mappedProjects = (projs || []).map(p => ({ ...p, isProject: true }));
-       const mappedChats = (custChats || []).map(c => ({ ...c, isProject: false }));
-       
-       const all = [...mappedProjects, ...mappedChats];
+       const all = [
+           ...(projs || []).map(p => ({ ...p, isProject: true })),
+           ...(custChats || []).map(c => ({ ...c, isProject: false }))
+       ];
        setChannels(all);
-       
        if (all.length > 0 && !activeChannel) handleSelectChannel(all[0]);
    };
 
@@ -170,620 +114,251 @@ export default function AdminTeamsChat() {
        setActiveChannel(channel);
        setReplyingTo(null);
        setEditingMessage(null);
+       setStagedFiles([]);
+       setPreviews([]);
        setTypingUsers([]);
        
        const filterField = channel.isProject ? 'project_id' : 'chat_id';
-       
-       const { data, error } = await supabase.from('messages')
-           .select('*')
-           .eq(filterField, channel.id)
-           .order('created_at', { ascending: true });
-
+       const { data } = await supabase.from('messages').select('*').eq(filterField, channel.id).order('created_at', { ascending: true });
        setMessages(data as any || []);
        
        supabase.removeAllChannels();
-       const channelName = `chat-${channel.id}`;
-       const chatChannel = supabase.channel(channelName);
-       
+       const chatChannel = supabase.channel(`chat-${channel.id}`);
        chatChannel
            .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `${filterField}=eq.${channel.id}` }, () => {
-               supabase.from('messages').select('*, profiles:user_id(name)').eq(filterField, channel.id).order('created_at', { ascending: true }).then(({data}) => setMessages(data as any || []));
+               supabase.from('messages').select('*').eq(filterField, channel.id).order('created_at', { ascending: true }).then(({data}) => setMessages(data as any || []));
            })
            .on('broadcast', { event: 'typing' }, ({ payload }) => {
                const { name, isTyping } = payload;
                if (name === getMyName()) return;
-               setTypingUsers(prev => {
-                   if (isTyping) {
-                       if (prev.includes(name)) return prev;
-                       return [...prev, name];
-                   } else {
-                       return prev.filter(n => n !== name);
-                   }
-               });
+               setTypingUsers(prev => isTyping ? [...new Set([...prev, name])] : prev.filter(n => n !== name));
            })
-           .subscribe((status) => {
-               console.log("Joined channel:", channelName, status);
-           });
-
+           .subscribe();
        chatChannelRef.current = chatChannel;
+   };
+
+   const handleTyping = () => {
+       if (!chatChannelRef.current) return;
+       chatChannelRef.current.send({ type: 'broadcast', event: 'typing', payload: { name: getMyName(), isTyping: true }});
+       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+       typingTimeoutRef.current = setTimeout(() => {
+           if (chatChannelRef.current) chatChannelRef.current.send({ type: 'broadcast', event: 'typing', payload: { name: getMyName(), isTyping: false }});
+       }, 2000);
+   };
+
+   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+       const files = Array.from(e.target.files || []);
+       setStagedFiles(prev => [...prev, ...files]);
+       const newPreviews = files.map(file => file.type.startsWith('image/') ? URL.createObjectURL(file) : 'file');
+       setPreviews(prev => [...prev, ...newPreviews]);
+   };
+
+   const removeStagedFile = (index: number) => {
+       setStagedFiles(prev => prev.filter((_, i) => i !== index));
+       setPreviews(prev => {
+           if (prev[index] !== 'file') URL.revokeObjectURL(prev[index]);
+           return prev.filter((_, i) => i !== index);
+       });
    };
 
    const handleSend = async (e: React.FormEvent) => {
        e.preventDefault();
-       if (!content.trim()) return;
-       if (!activeChannel) { alert("Canal não selecionado."); return; }
+       if ((!content.trim() && stagedFiles.length === 0) || !activeChannel) return;
        
-       let senderId = user?.id;
-       if (!senderId) {
-           // Fallback supremo: Caso Supabase negue a sessão ativa por causa de e-mail pendente
-           senderId = '00000000-0000-0000-0000-000000000000';
-       }
-
        const temp = content;
+       const currentStaged = [...stagedFiles];
        setContent("");
+       setStagedFiles([]);
+       setPreviews([]);
 
-       // Clear typing indicator instantly
-       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-       if (chatChannelRef.current) {
-           chatChannelRef.current.send({
-               type: 'broadcast',
-               event: 'typing',
-               payload: { name: getMyName(), isTyping: false }
-           });
+       let uploaded = [];
+       for (const file of currentStaged) {
+           const name = `${Date.now()}_${file.name}`;
+           const { data } = await supabase.storage.from('teams_media').upload(name, file);
+           if (data) {
+               const { data: { publicUrl } } = supabase.storage.from('teams_media').getPublicUrl(data.path);
+               uploaded.push({ url: publicUrl, type: file.type });
+           }
        }
 
        if (editingMessage) {
            const parsed = parseReply(editingMessage.content);
-           const newContent = parsed.isReply
-               ? `[REPLY:${parsed.replyToName}|${parsed.replyToContent}]${temp}`
-               : temp;
-
-           const { error } = await supabase
-               .from('messages')
-               .update({ content: newContent })
-               .eq('id', editingMessage.id);
-
-           if (error) {
-               alert("Erro ao editar mensagem: " + error.message);
-           }
+           const newContent = parsed.isReply ? `[REPLY:${parsed.replyToName}|${parsed.replyToContent}]${temp}` : temp;
+           await supabase.from('messages').update({ content: newContent }).eq('id', editingMessage.id);
            setEditingMessage(null);
            return;
        }
 
        let finalContent = temp;
        if (replyingTo) {
-           const parsedParent = parseReply(replyingTo.content);
-           const parentAuthor = replyingTo.sender_name || 'Membro';
-           let snippet = parsedParent.actualContent;
-           if (snippet.startsWith("[IMAGE](")) snippet = "📷 Imagem";
-           else if (snippet.startsWith("[VIDEO](")) snippet = "🎥 Vídeo";
-           else if (snippet.startsWith("[DOCUMENT](")) snippet = "📎 Arquivo";
-           
-           if (snippet.length > 60) snippet = snippet.substring(0, 60) + "...";
-           
-           finalContent = `[REPLY:${parentAuthor}|${snippet}]${temp}`;
+           const author = replyingTo.sender_name || 'Staff';
+           let snippet = parseReply(replyingTo.content).actualContent;
+           if (snippet.length > 50) snippet = snippet.substring(0, 50) + "...";
+           finalContent = `[REPLY:${author}|${snippet}]${temp}`;
            setReplyingTo(null);
        }
+
+       const basePayload = activeChannel.isProject ? { project_id: activeChannel.id } : { chat_id: activeChannel.id };
        
-       const payload = activeChannel.isProject 
-           ? { project_id: activeChannel.id, user_id: senderId, content: finalContent, sender_name: getMyName() }
-           : { chat_id: activeChannel.id, user_id: senderId, content: finalContent, sender_name: getMyName() };
-           
-       const { data, error } = await supabase.from('messages').insert([payload]).select().single();
-       if (error) {
-           alert("SQL Block -> Tabela message negou o envio: " + error.message);
-           return;
-       }
-       if (data) {
-           const dataOtimista = { ...data, sender_name: getMyName() };
-           setMessages(prev => [...prev, dataOtimista as any]);
+       if (uploaded.length > 0) {
+           for (const item of uploaded) {
+               await supabase.from('messages').insert([{
+                   ...basePayload,
+                   user_id: user.id || '00000000-0000-0000-0000-000000000000',
+                   content: finalContent || (item.type.startsWith('image/') ? '📷 Imagem' : '📎 Arquivo'),
+                   file_url: item.url,
+                   file_type: item.type,
+                   sender_name: getMyName()
+               }]);
+               finalContent = "";
+           }
+       } else {
+           await supabase.from('messages').insert([{
+               ...basePayload,
+               user_id: user.id || '00000000-0000-0000-0000-000000000000',
+               content: finalContent,
+               sender_name: getMyName()
+           }]);
        }
    };
-
-   const handleTogglePin = async () => {
-       if (!activeChannel) return;
-       const nextVal = !activeChannel.is_pinned;
-       const table = activeChannel.isProject ? 'projects' : 'chats';
-       await supabase.from(table).update({ is_pinned: nextVal }).eq('id', activeChannel.id);
-       
-       setActiveChannel({ ...activeChannel, is_pinned: nextVal });
-       setChannels(prev => prev.map(c => c.id === activeChannel.id ? { ...c, is_pinned: nextVal } : c));
-   };
-
-   const handleCreateGroup = async (e: React.FormEvent) => {
-       e.preventDefault();
-       if(!newChatName) return;
-       const { data, error } = await supabase.from('chats').insert([{ name: newChatName, type: newChatType, is_pinned: false }]).select().single();
-       
-       if (error) {
-           alert("Supense RLS: Erro ao criar canal -> " + error.message);
-       }
-       
-       if (data) {
-           const novoGrupo = { ...data, isProject: false };
-           setChannels(prev => [...prev, novoGrupo]);
-           handleSelectChannel(novoGrupo); // Abre o chat na hora pra você
-       }
-       
-       setIsModalOpen(false);
-       setNewChatName("");
-   };
-
-   const handleFileUpload = async (e: any) => {
-       const file = e.target.files[0];
-       if (!file || !activeChannel) return;
-       
-       let senderId = user?.id;
-       if (!senderId) {
-           senderId = '00000000-0000-0000-0000-000000000000';
-       }
-       
-       const fileExt = file.name.split('.').pop();
-       const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-       
-       // Real Upload para a nuvem da SUSANOO
-       const { data, error } = await supabase.storage.from('teams_media').upload(fileName, file);
-       
-       if (error) {
-           alert("Alerta: Você não rodou o Comando 4 de Storage no SQL do Supabase! Rode os comandos do `tabelas_teams.sql` primeiro.");
-           return;
-       }
-
-       // Resgate da URL Pública Pós Download
-       const { data: publicData } = supabase.storage.from('teams_media').getPublicUrl(fileName);
-       const urlFinal = publicData.publicUrl;
-       
-       const tGroup = file.type.startsWith("image/") ? "IMAGE" : file.type.startsWith("video/") ? "VIDEO" : "DOCUMENT";
-       const contentString = `[${tGroup}](${urlFinal})|${file.name}`;
-       
-       const payload = activeChannel.isProject 
-           ? { project_id: activeChannel.id, user_id: senderId, content: contentString, sender_name: getMyName() }
-           : { chat_id: activeChannel.id, user_id: senderId, content: contentString, sender_name: getMyName() };
-           
-       const { data: dbData, error: dbError } = await supabase.from('messages').insert([payload]).select().single();
-       
-       if (dbError) {
-           alert("Erro ao atrelar mídia à mensagem: " + dbError.message);
-           return;
-       }
-       if (dbData) {
-           const mediaOtimista = { ...dbData, sender_name: getMyName() };
-           setMessages(prev => [...prev, mediaOtimista as any]);
-       }
-   };
-
-   // Renderização especial para Arquivos e Markdown
-   const renderMessageContent = (content: string) => {
-       
-       // Bloco de Código
-       if (content.includes("```")) {
-           const parts = content.split("```");
-           return parts.map((part, i) => {
-               if (i % 2 !== 0) {
-                   return <pre key={i} className="bg-[#050505] text-[#00ffcc] p-4 rounded-xl my-3 font-mono text-[13px] border border-[#333] shadow-inner overflow-x-auto"><code>{part}</code></pre>;
-               }
-               return <span key={i}>{part}</span>;
-           });
-       }
-       
-       // Imagens Visuais
-       if (content.startsWith("[IMAGE](")) {
-           const regex = /\[IMAGE\]\((.*?)\)\|(.+)/;
-           const match = content.match(regex);
-           if(match) return <img src={match[1]} alt={match[2]} className="max-w-[280px] rounded-xl border border-[#333] mt-2 shadow-xl cursor-pointer hover:opacity-80 transition-opacity" onClick={() => window.open(match[1], '_blank')}/>;
-       }
-       
-       // Videos Player Injetado
-       if (content.startsWith("[VIDEO](")) {
-           const regex = /\[VIDEO\]\((.*?)\)\|(.+)/;
-           const match = content.match(regex);
-           if(match) return <video src={match[1]} controls className="max-w-[320px] rounded-xl border border-[#333] mt-2 shadow-xl" />;
-       }
-
-       // Botão de Download Arquivos/PDFs
-       if (content.startsWith("[DOCUMENT](")) {
-           const regex = /\[DOCUMENT\]\((.*?)\)\|(.+)/;
-           const match = content.match(regex);
-           if(match) return <a href={match[1]} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-[#050505] p-3 rounded-xl border border-[#333] hover:border-accent text-[#888] hover:text-white mt-2 w-max transition-colors font-bold text-[12px]"><Paperclip className="w-4 h-4 text-accent"/> <span className="underline truncate max-w-[200px]">Acessar {match[2]}</span></a>;
-       }
-
-       return <span>{content}</span>;
-   };
-
-   const filteredChannels = channels.filter(c => c?.name?.toLowerCase().includes(searchTerm?.toLowerCase() || ""));
-   const pinned = filteredChannels.filter(c => c.is_pinned);
-   const unpinned = filteredChannels.filter(c => !c.is_pinned);
 
    return (
        <div className="flex-1 flex overflow-hidden bg-[#050505] h-full font-sans relative">
            
-           {/* Barra Lateral dos Canais (Teams list) */}
-           <div className="w-[320px] bg-[#0a0a0a] border-r border-[#222] flex flex-col h-full shrink-0">
-               <div className="p-6 border-b border-[#222] shrink-0">
-                   <div className="flex justify-between items-center mb-5">
-                       <h2 className="text-2xl font-black text-white tracking-tighter flex items-center gap-3">
-                           <Users className="w-6 h-6 text-accent"/> Equipes
-                       </h2>
-                       <button onClick={() => setIsModalOpen(true)} className="w-9 h-9 rounded-xl bg-white text-black hover:bg-neutral-200 flex items-center justify-center transition-all shadow-lg" title="Nova Interação (Chat/Grupo)">
-                           <Plus className="w-5 h-5"/>
-                       </button>
-                   </div>
-                   
-                   <div className="relative mb-5">
-                       <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-[#555]"/>
+           {/* Sidebar */}
+           <div className="w-[300px] bg-[#0a0a0a] border-r border-[#222] flex flex-col h-full shrink-0">
+               <div className="p-6 border-b border-[#222]">
+                   <h2 className="text-xl font-black text-white tracking-tighter flex items-center gap-3">
+                       <Users className="w-5 h-5 text-accent"/> Equipes HQ
+                   </h2>
+                   <div className="relative mt-5">
+                       <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#444]"/>
                        <input 
-                          type="text" 
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
-                          placeholder="Buscar canal ou grupo..." 
-                          className="w-full bg-[#11] border border-[#222] text-sm text-white placeholder:text-[#555] p-3 pl-10 rounded-xl focus:border-accent/50 outline-none transition-colors shadow-inner"
+                           type="text" placeholder="Filtrar..." 
+                           value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                           className="w-full bg-[#111] border border-[#222] text-xs p-2.5 pl-9 rounded-xl outline-none"
                        />
                    </div>
-
-                   <div className="flex gap-2">
-                       <button onClick={() => setIsModalOpen(true)} className="flex-1 bg-[#141516] border border-[#2c2d30] hover:bg-[#1e1f24] hover:text-white transition-all text-[#888] rounded-xl py-2.5 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-widest">
-                           <PlusCircle className="w-3.5 h-3.5"/> Criar
-                       </button>
-                       <button onClick={() => setIsManageOpen(true)} className="flex-1 bg-[#141516] border border-[#2c2d30] hover:bg-[#1e1f24] hover:text-white transition-all text-[#888] rounded-xl py-2.5 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-widest">
-                           <Settings className="w-3.5 h-3.5"/> OPÇÕES
-                       </button>
-                   </div>
                </div>
-
-               <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-1 custom-scrollbar">
-                   {/* Pinned Section */}
-                   {pinned.length > 0 && (
-                       <>
-                           <div className="text-[10px] font-bold uppercase tracking-widest text-[#a0a0a0] px-3 mt-2 mb-2 flex items-center gap-2">
-                               <Pin className="w-3 h-3 text-accent"/> FIXADOS
-                           </div>
-                           {pinned.map(proj => (
-                               <button 
-                                  key={proj.id} 
-                                  onClick={() => handleSelectChannel(proj)}
-                                  className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all cursor-pointer mb-1 ${activeChannel?.id === proj.id ? 'bg-[#1a1b1e] border border-[#333] shadow-md' : 'hover:bg-[#111] border border-transparent'}`}
-                               >
-                                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white shadow-inner shrink-0 ${activeChannel?.id === proj.id ? 'bg-gradient-to-br from-accent to-[#581c87]' : 'bg-[#222]'}`}>
-                                      {proj.name.substring(0,2).toUpperCase()}
-                                  </div>
-                                  <div className="flex flex-col items-start overflow-hidden w-full">
-                                      <span className={`font-bold truncate w-full text-left text-sm ${activeChannel?.id === proj.id ? 'text-white' : 'text-[#a0a0a0]'}`}>{proj.name}</span>
-                                      <span className="text-[11px] font-medium text-[#666] flex items-center gap-1"><Hash className="w-3 h-3"/> {proj.isProject ? 'Software' : proj.type}</span>
-                                  </div>
-                               </button>
-                           ))}
-                           <div className="h-px bg-[#222] my-4 mx-3"></div>
-                       </>
-                   )}
-
-                   <div className="text-[10px] font-bold uppercase tracking-widest text-[#555] px-3 mb-2 flex justify-between items-center">
-                       <span>Conversas Recentes</span>
-                       <span>{unpinned.length}</span>
-                   </div>
-                   
-                   {unpinned.map(proj => (
+               <div className="flex-1 overflow-y-auto p-4 space-y-1">
+                   {channels.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(c => (
                        <button 
-                          key={proj.id} 
-                          onClick={() => handleSelectChannel(proj)}
-                          className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all cursor-pointer ${activeChannel?.id === proj.id ? 'bg-[#1a1b1e] border border-[#333] shadow-md' : 'hover:bg-[#111] border border-transparent'}`}
+                           key={c.id} onClick={() => handleSelectChannel(c)}
+                           className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${activeChannel?.id === c.id ? 'bg-accent/10 border border-accent/20' : 'hover:bg-[#111]'}`}
                        >
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white shadow-inner shrink-0 ${activeChannel?.id === proj.id ? 'bg-gradient-to-br from-accent to-[#581c87]' : 'bg-[#222]'}`}>
-                              {proj.name.substring(0,2).toUpperCase()}
-                          </div>
-                          <div className="flex flex-col items-start overflow-hidden w-full">
-                              <span className={`font-bold truncate w-full text-left text-sm ${activeChannel?.id === proj.id ? 'text-white' : 'text-[#a0a0a0]'}`}>{proj.name}</span>
-                              <span className="text-[11px] font-medium text-[#666] flex items-center gap-1"><Hash className="w-3 h-3"/> {proj.isProject ? 'Software Oficial' : proj.type}</span>
-                          </div>
+                           <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-black text-sm ${activeChannel?.id === c.id ? 'bg-accent text-white' : 'bg-[#222]'}`}>
+                               {c.name.substring(0,2).toUpperCase()}
+                           </div>
+                           <div className="flex flex-col items-start overflow-hidden">
+                               <span className="text-sm font-bold text-white truncate w-full">{c.name}</span>
+                               <span className="text-[10px] text-[#555] font-black uppercase">{c.isProject ? 'Software' : 'Grupo'}</span>
+                           </div>
                        </button>
                    ))}
                </div>
            </div>
 
-           {/* Área Central do Chat */}
+           {/* Chat Main */}
            <div className="flex-1 flex flex-col h-full bg-[#050505]">
                {activeChannel ? (
                    <>
-                       <div className="p-5 px-8 border-b border-[#222] bg-[#0a0a0b]/80 backdrop-blur-md sticky top-0 z-10 shrink-0 flex justify-between items-center">
-                           <div className="flex items-center gap-4">
-                               <h1 className="font-bold text-lg text-white tracking-tight flex items-center gap-2">
-                                   # {activeChannel.name}
-                                   <span className="text-[10px] uppercase font-bold text-accent bg-accent/10 border border-accent/20 px-2 py-0.5 rounded ml-2">Monitoramento</span>
-                               </h1>
-                           </div>
+                       <div className="p-5 border-b border-[#222] flex justify-between items-center bg-[#0a0a0a]/80 backdrop-blur-xl">
+                           <h1 className="font-bold text-white flex items-center gap-2"># {activeChannel.name}</h1>
                            <div className="flex gap-2">
-                               <button onClick={handleTogglePin} title="Fixar Canal" className={`p-2.5 rounded-full hover:bg-[#111] transition-colors ${activeChannel.is_pinned ? 'text-accent' : 'text-[#777] hover:text-white'}`}>
-                                   <Pin className="w-5 h-5"/>
-                               </button>
-                               <button className="p-2.5 rounded-full hover:bg-[#111] text-[#777] hover:text-white transition-colors"><Video className="w-5 h-5"/></button>
-                               <button className="p-2.5 rounded-full hover:bg-[#111] text-[#777] hover:text-white transition-colors"><Phone className="w-5 h-5"/></button>
-                               <div className="w-px h-6 bg-[#222] mx-2 self-center"></div>
-                               <button className="p-2.5 rounded-full hover:bg-[#111] text-[#777] hover:text-white transition-colors"><MoreHorizontal className="w-5 h-5"/></button>
+                               <button className="p-2 text-[#555] hover:text-white transition-colors"><Video className="w-5 h-5"/></button>
+                               <button className="p-2 text-[#555] hover:text-white transition-colors"><Phone className="w-5 h-5"/></button>
                            </div>
                        </div>
 
-                       {/* Log de Mensagens */}
-                       <div className="flex-1 overflow-y-auto p-8 flex flex-col gap-6 w-full max-w-5xl mx-auto custom-scrollbar">
-                           <div className="flex flex-col items-center justify-center my-8 opacity-50">
-                               <div className="w-16 h-16 rounded-full bg-[#111] flex items-center justify-center mb-4"><Hash className="w-8 h-8 text-[#555]"/></div>
-                               <h2 className="text-xl font-bold text-[#888]">Canal {activeChannel.name}</h2>
-                               <p className="text-[#555] text-sm font-medium mt-1">
-                                   Este é o início do canal da Susanoo {activeChannel.isProject ? 'conectado ao projeto do cliente' : 'para comunicação interna'}.
-                               </p>
-                           </div>
-
-                           <AnimatePresence initial={false}>
-                           {messages
-                               .filter(msg => !deletedMessageIds.includes(msg.id))
-                               .map((msg, idx) => {
-                               const messageAuthor = msg.sender_name || 'Agência Susanoo';
-                               const isMe = messageAuthor === getMyName() || msg.user_id === user?.id;
-                               const initial = messageAuthor.charAt(0).toUpperCase();
-                               const isAgency = true; // Por enquanto visual admin puro
-                               
-                               const prev = idx > 0 ? messages[idx-1] : null;
-                               const group = prev && (prev.user_id === msg.user_id && prev.sender_name === msg.sender_name);
-
+                       <div className="flex-1 overflow-y-auto p-8 flex flex-col gap-8 custom-scrollbar">
+                           {messages.map((msg, idx) => {
+                               const isMe = msg.sender_name === getMyName();
                                const parsed = parseReply(msg.content);
-
                                return (
-                                   <motion.div initial={{opacity:0, y:15}} animate={{opacity:1, y:0}} key={msg.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} ${group ? '-mt-4' : 'mt-2'}`}>
-                                       <div className={`flex gap-4 max-w-[85%] relative group ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                           {!group && (
-                                               <div className={`w-10 h-10 mt-1 rounded-xl flex items-center justify-center font-bold text-white shadow-lg shrink-0 ${isAgency ? 'bg-gradient-to-br from-accent to-[#581c87]' : 'bg-[#222] border border-[#333]'}`}>
-                                                   {initial}
-                                               </div>
-                                           )}
-                                           {group && <div className="w-10 h-10 shrink-0"></div>}
-
-                                           <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                                               {!group && (
-                                                   <div className={`flex items-baseline gap-2 mb-1.5 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                                       <span className="text-[13px] font-bold text-white">{messageAuthor}</span>
-                                                       <span className="text-[11px] font-medium text-[#666]">{new Date(msg.created_at).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}</span>
+                                   <div key={msg.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                       <div className={`max-w-[80%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                                           {!isMe && <span className="text-[10px] font-black text-[#555] uppercase mb-2 tracking-widest">{msg.sender_name}</span>}
+                                           <div className={`p-4 rounded-2xl border ${isMe ? 'bg-accent/10 border-accent/20 text-white' : 'bg-[#111] border-[#222] text-[#ccc]'}`}>
+                                               {parsed.isReply && (
+                                                   <div className="mb-3 p-2 bg-black/20 rounded-lg border-l-2 border-accent text-[11px] opacity-60">
+                                                       <span className="font-black text-accent">{parsed.replyToName}</span>
+                                                       <p className="italic truncate">{parsed.replyToContent}</p>
                                                    </div>
                                                )}
-                                               <div className={`p-4 px-5 rounded-[20px] min-w-[80px] border shadow-md flex flex-col relative ${isMe ? 'bg-[#1e1f24] text-white border-[#222] rounded-tr-[5px]' : (isAgency ? 'bg-accent text-white border-accent/50 rounded-tl-[5px]' : 'bg-[#111213] text-white border-[#222] rounded-tl-[5px]')}`}>
-                                                   
-                                                   {/* Hover Actions Menu */}
-                                                   <div className={`opacity-0 group-hover:opacity-100 transition-all duration-200 flex gap-1 items-center bg-[#0a0a0b] border border-[#222] p-1 rounded-xl absolute -top-3.5 z-20 shadow-xl ${isMe ? 'left-4' : 'right-4'}`}>
-                                                       <button 
-                                                           type="button"
-                                                           onClick={() => setReplyingTo(msg)}
-                                                           className="p-1.5 text-gray-400 hover:text-accent hover:bg-[#111] rounded-lg transition-colors"
-                                                           title="Responder"
-                                                       >
-                                                           <CornerUpLeft className="w-3.5 h-3.5" />
-                                                       </button>
-                                                       {isMe && (
-                                                           <button 
-                                                               type="button"
-                                                               onClick={() => {
-                                                                   setEditingMessage(msg);
-                                                                   const parsedMsg = parseReply(msg.content);
-                                                                   setContent(parsedMsg.actualContent);
-                                                               }}
-                                                               className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-[#111] rounded-lg transition-colors"
-                                                               title="Editar"
-                                                           >
-                                                               <Pencil className="w-3.5 h-3.5" />
-                                                           </button>
+                                               {msg.file_url && (
+                                                   <div className="mb-3">
+                                                       {msg.file_type?.startsWith('image/') ? (
+                                                            <img src={msg.file_url} className="rounded-xl max-w-full hover:scale-[1.02] transition-transform cursor-pointer" onClick={() => window.open(msg.file_url, '_blank')} />
+                                                       ) : (
+                                                           <div className="flex items-center gap-3 bg-black/30 p-3 rounded-xl border border-white/5">
+                                                               <FileText className="w-5 h-5 text-accent"/>
+                                                               <span className="text-xs font-bold truncate max-w-[150px]">Arquivo</span>
+                                                               <a href={msg.file_url} target="_blank" className="ml-auto p-1.5 hover:bg-white/5 rounded-lg"><Download className="w-4 h-4"/></a>
+                                                           </div>
                                                        )}
-                                                       <button 
-                                                           type="button"
-                                                           onClick={() => setDeleteMenuMsgId(deleteMenuMsgId === msg.id ? null : msg.id)}
-                                                           className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-[#111] rounded-lg transition-colors"
-                                                           title="Excluir"
-                                                       >
-                                                           <Trash2 className="w-3.5 h-3.5" />
-                                                       </button>
                                                    </div>
-
-                                                   {/* Custom Popover Delete Menu */}
-                                                   {deleteMenuMsgId === msg.id && (
-                                                       <div className={`absolute bg-[#111213] border border-[#222] p-2 rounded-xl shadow-2xl z-30 flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider -top-24 min-w-[150px] ${isMe ? 'right-0' : 'left-0'}`}>
-                                                           <button 
-                                                               type="button"
-                                                               onClick={() => { handleDeleteMessageEveryone(msg.id); setDeleteMenuMsgId(null); }}
-                                                               className="w-full text-left text-red-500 hover:bg-red-500/10 p-2 rounded-lg transition-colors flex items-center gap-2"
-                                                           >
-                                                               Apagar para todos
-                                                           </button>
-                                                           <button 
-                                                               type="button"
-                                                               onClick={() => { handleHideMessageLocal(msg.id); setDeleteMenuMsgId(null); }}
-                                                               className="w-full text-left text-gray-300 hover:bg-white/5 p-2 rounded-lg transition-colors flex items-center gap-2"
-                                                           >
-                                                               Apagar para mim
-                                                           </button>
-                                                           <button 
-                                                               type="button"
-                                                               onClick={() => setDeleteMenuMsgId(null)}
-                                                               className="w-full text-left text-gray-500 hover:bg-white/5 p-2 rounded-lg transition-colors flex items-center gap-2 border-t border-[#222] pt-2"
-                                                           >
-                                                               Cancelar
-                                                           </button>
-                                                       </div>
-                                                   )}
-
-                                                   {parsed.isReply && (
-                                                       <div className="bg-black/30 p-2.5 px-3 rounded-xl border-l-4 border-accent mb-2.5 text-left text-xs opacity-90 max-w-full">
-                                                           <div className="font-bold text-accent mb-0.5">{parsed.replyToName}</div>
-                                                           <div className="truncate text-white/70 text-[11px] font-medium">{parsed.replyToContent}</div>
-                                                       </div>
-                                                   )}
-
-                                                   <div className="text-[15px] leading-relaxed font-medium break-words">
-                                                       {renderMessageContent(parsed.actualContent)}
-                                                   </div>
-                                               </div>
+                                               )}
+                                               <p className="text-sm font-medium leading-relaxed">{parsed.actualContent}</p>
+                                               <div className="mt-2 text-[8px] font-bold opacity-30 text-right">{new Date(msg.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+                                           </div>
+                                           <div className="flex gap-2 mt-1 opacity-0 hover:opacity-100 transition-opacity">
+                                               <button onClick={() => setReplyingTo(msg)} className="text-[9px] font-black text-accent uppercase tracking-widest">Responder</button>
+                                               {isMe && <button onClick={async () => await supabase.from('messages').delete().eq('id', msg.id)} className="text-[9px] font-black text-red-500 uppercase tracking-widest">Apagar</button>}
                                            </div>
                                        </div>
-                                   </motion.div>
+                                   </div>
                                );
                            })}
-                           </AnimatePresence>
-
-                           {/* Typing indicator */}
-                           {typingUsers.length > 0 && (
-                               <div className="flex items-center gap-2 text-xs text-accent font-semibold ml-14 animate-pulse">
-                                   <div className="flex gap-1">
-                                       <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0ms' }} />
-                                       <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '150ms' }} />
-                                       <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '300ms' }} />
-                                   </div>
-                                   <span>{typingUsers.join(', ')} {typingUsers.length === 1 ? 'está' : 'estão'} digitando...</span>
-                               </div>
-                           )}
-
                            <div ref={messagesEndRef} className="h-4"/>
                        </div>
 
-                       {/* Teams Input Box Complexo */}
-                       <div className="p-6 bg-[#0a0a0b] border-t border-[#222] shrink-0">
-                           
-                           {/* Reply Preview Bar */}
-                           {replyingTo && (
-                               <div className="max-w-5xl mx-auto mb-3 bg-[#111213] border border-[#2c2d30] border-l-4 border-accent p-4 rounded-xl flex justify-between items-center shadow-lg">
-                                   <div className="overflow-hidden pr-4">
-                                       <span className="text-[10px] font-black text-accent uppercase tracking-widest block mb-1">Respondendo a mensagem de {replyingTo.sender_name || 'Membro'}</span>
-                                       <p className="text-white/60 text-sm truncate">{parseReply(replyingTo.content).actualContent}</p>
-                                   </div>
-                                   <button 
-                                       type="button" 
-                                       onClick={() => setReplyingTo(null)}
-                                       className="p-1 rounded-full hover:bg-white/5 text-[#888] hover:text-white transition-colors"
-                                   >
-                                       <X className="w-4 h-4" />
-                                   </button>
-                               </div>
-                           )}
+                       {/* Input Area (With Staging) */}
+                       <div className="p-6 bg-[#0a0a0a] border-t border-[#222]">
+                           <div className="max-w-5xl mx-auto flex flex-col gap-3">
+                               
+                               {/* Previews */}
+                               <AnimatePresence>
+                               {stagedFiles.length > 0 && (
+                                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="flex gap-3 overflow-x-auto pb-2 p-3 bg-[#111] rounded-2xl border border-[#222]">
+                                       {previews.map((p, i) => (
+                                           <div key={i} className="relative w-20 h-20 shrink-0 border border-[#333] rounded-xl overflow-hidden bg-black/50">
+                                               {p === 'file' ? <div className="w-full h-full flex flex-col items-center justify-center gap-1"><FileText className="w-6 h-6 opacity-30"/><span className="text-[6px] truncate px-2">{stagedFiles[i].name}</span></div> : <img src={p} className="w-full h-full object-cover" />}
+                                               <button onClick={() => removeStagedFile(i)} className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5"><X className="w-3 h-3"/></button>
+                                           </div>
+                                       ))}
+                                   </motion.div>
+                               )}
+                               </AnimatePresence>
 
-                           {/* Edit Preview Bar */}
-                           {editingMessage && (
-                               <div className="max-w-5xl mx-auto mb-3 bg-[#111213] border border-[#2c2d30] border-l-4 border-blue-500 p-4 rounded-xl flex justify-between items-center shadow-lg">
-                                   <div className="overflow-hidden pr-4">
-                                       <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest block mb-1">Modo de Edição</span>
-                                       <p className="text-white/60 text-sm truncate">{parseReply(editingMessage.content).actualContent}</p>
-                                   </div>
-                                   <button 
-                                       type="button" 
-                                       onClick={() => { setEditingMessage(null); setContent(""); }}
-                                       className="p-1 rounded-full hover:bg-white/5 text-[#888] hover:text-white transition-colors"
-                                   >
-                                       <X className="w-4 h-4" />
-                                   </button>
-                               </div>
-                           )}
-
-                           <form onSubmit={handleSend} className="max-w-5xl mx-auto flex flex-col bg-[#111213] rounded-2xl border border-[#2c2d30] shadow-xl focus-within:border-accent/50 transition-colors p-2">
-                               <textarea 
-                                   rows={2}
-                                   value={content}
-                                   onChange={e => {
-                                       setContent(e.target.value);
-                                       handleTyping();
-                                   }}
-                                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(e); } }}
-                                   placeholder={editingMessage ? "Editar mensagem..." : `Responder em #${activeChannel.name}... (Use \`\`\` para código)`} 
-                                   className="w-full bg-transparent text-white placeholder:text-[#555] p-4 text-[15px] outline-none font-medium resize-none custom-scrollbar"
-                               />
-                               <div className="flex justify-between items-center px-2 pb-2 mt-1">
-                                   <div className="flex gap-2">
-                                       <label className="p-2 text-[#888] rounded-xl hover:text-accent hover:bg-[#111] transition-all cursor-pointer">
-                                           <Paperclip className="w-5 h-5"/>
-                                           <input type="file" multiple hidden onChange={handleFileUpload} />
-                                       </label>
-                                       <button type="button" className="p-2 text-[#888] rounded-xl hover:text-white transition-colors" title="Formatação"><div className="font-bold text-lg leading-none">A</div></button>
-                                   </div>
-                                   <div className="flex gap-2">
-                                       {(editingMessage || replyingTo) && (
-                                           <button 
-                                               type="button"
-                                               onClick={() => { setEditingMessage(null); setReplyingTo(null); setContent(""); }}
-                                               className="px-4 py-2 bg-transparent hover:bg-white/5 text-white/60 hover:text-white font-bold text-[13px] rounded-xl transition-all"
-                                           >
-                                               Cancelar
-                                           </button>
-                                       )}
-                                       <button type="submit" disabled={!content.trim()} className="px-6 py-2 bg-white hover:bg-neutral-200 text-black font-bold text-[13px] tracking-wide rounded-xl disabled:opacity-50 transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(255,255,255,0.1)] cursor-pointer">
-                                           <Send className="w-4 h-4"/> {editingMessage ? "Salvar" : "Enviar Staff"}
+                               {/* Form */}
+                               <form onSubmit={handleSend} className="bg-[#111] border border-[#2c2d30] rounded-2xl p-2 flex flex-col focus-within:border-accent transition-colors">
+                                   <textarea 
+                                       rows={2} value={content} onChange={e => { setContent(e.target.value); handleTyping(); }}
+                                       placeholder={editingMessage ? "Editando..." : "Escreva sua mensagem operacional..."}
+                                       className="bg-transparent text-white p-4 outline-none resize-none text-sm font-medium"
+                                       onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(e); } }}
+                                   />
+                                   <div className="flex justify-between items-center p-2 border-t border-[#222]/50 mt-2">
+                                       <div className="flex items-center gap-2">
+                                           <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 rounded-lg hover:bg-white/5 text-[#555] hover:text-accent"><Paperclip className="w-5 h-5"/></button>
+                                           <input type="file" multiple hidden ref={fileInputRef} onChange={handleFileSelect} />
+                                           <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 rounded-lg hover:bg-white/5 text-[#555] hover:text-white"><ImageIcon className="w-5 h-5"/></button>
+                                       </div>
+                                       <button type="submit" disabled={!content.trim() && stagedFiles.length === 0} className="bg-white text-black font-black text-[13px] px-6 py-2 rounded-xl hover:scale-105 active:scale-95 transition-all shadow-xl">
+                                           ENVIAR STAFF
                                        </button>
                                    </div>
-                                </div>
-                           </form>
+                               </form>
+                           </div>
                        </div>
                    </>
                ) : (
-                   <div className="flex-1 flex flex-col items-center justify-center opacity-50">
-                       <Users className="w-16 h-16 text-[#555] mb-4"/>
-                       <h2 className="text-xl font-bold text-[#888]">Nenhum Canal Selecionado</h2>
-                       <p className="text-sm font-medium text-[#555] mt-2">Escolha a equipe do cliente na barra lateral para abrir o Chat.</p>
+                   <div className="flex-1 flex flex-col items-center justify-center opacity-20">
+                       <Hash className="w-16 h-16 mb-4"/>
+                       <p className="font-black uppercase tracking-widest text-xs">Selecione uma Unidade de Operação</p>
                    </div>
                )}
            </div>
-
-           {/* Modais do Teams - Opções e Gerenciamento */}
-           {isManageOpen && (
-               <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                   <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className="w-full max-w-lg bg-[#111213] border border-[#222] p-8 rounded-[32px] shadow-2xl relative max-h-[80vh] flex flex-col">
-                       <button type="button" onClick={() => setIsManageOpen(false)} className="absolute top-6 right-6 text-[#555] hover:text-white"><X className="w-5 h-5"/></button>
-                       <h3 className="text-2xl font-black text-white tracking-tighter mb-2">Painel de Controle HQ</h3>
-                       <p className="text-[#888] text-[15px] mb-8 font-medium">Use este módulo para encerrar ou deletar grupos e DMs manuais.</p>
-                       
-                       <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar flex flex-col gap-3">
-                           {channels.filter(c => !c.isProject).map(chat => (
-                               <div key={chat.id} className="flex justify-between items-center bg-[#1a1b1e] p-4 rounded-xl border border-[#2c2d30]">
-                                   <div>
-                                       <p className="font-bold text-white text-sm">{chat.name}</p>
-                                       <span className="text-[10px] text-[#555] font-bold uppercase tracking-widest">{chat.type === 'direct' ? 'Cliente Externo' : 'Servidor ADM'}</span>
-                                   </div>
-                                   <button onClick={() => handleDeleteChannel(chat.id, false)} className="text-red-500 hover:text-white font-bold text-[10px] uppercase tracking-widest bg-red-500/10 hover:bg-red-500 px-4 py-2 rounded-lg transition-colors border border-red-500/20">Deletar Forçado</button>
-                               </div>
-                           ))}
-                           {channels.filter(c => !c.isProject).length === 0 && (
-                               <div className="text-[#555] text-sm text-center py-6 font-medium bg-[#1a1b1e] border border-[#2c2d30] rounded-xl border-dashed">Seus sócios ainda não registraram nenhum canal secundário.</div>
-                           )}
-                       </div>
-                   </motion.div>
-               </div>
-           )}
-
-           {/* Modais do Teams - Pop Up para Criação de Canal  */}
-           {isModalOpen && (
-               <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                   <motion.form 
-                       initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}}
-                       onSubmit={handleCreateGroup} 
-                       className="w-full max-w-md bg-[#111213] border border-[#222] p-8 rounded-[32px] shadow-2xl relative"
-                   >
-                       <button type="button" onClick={() => setIsModalOpen(false)} className="absolute top-6 right-6 text-[#555] hover:text-white"><X className="w-5 h-5"/></button>
-                       <h3 className="text-2xl font-black text-white tracking-tighter mb-6">Novo Grupo HQ</h3>
-                       
-                       <label className="block text-sm font-bold text-[#888] mb-2 uppercase tracking-widest">Nome do Ambiente</label>
-                       <input 
-                          type="text" autoFocus required
-                          value={newChatName} onChange={e => setNewChatName(e.target.value)}
-                          placeholder="Ex: Venda Oculta" 
-                          className="w-full bg-[#0a0a0a] border border-[#333] p-4 text-white rounded-xl mb-6 outline-none focus:border-accent"
-                       />
-                       
-                       <label className="block text-sm font-bold text-[#888] mb-2 uppercase tracking-widest">Categoria</label>
-                       <select 
-                          value={newChatType} onChange={e => setNewChatType(e.target.value)}
-                          className="w-full bg-[#0a0a0a] border border-[#333] p-4 text-white rounded-xl mb-8 outline-none focus:border-accent appearance-none cursor-pointer"
-                       >
-                           <option value="group">Grupo Interno Staff</option>
-                           <option value="direct">DM com Cliente</option>
-                       </select>
-
-                       <div className="flex gap-4">
-                           <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-4 rounded-xl font-bold text-[#888] hover:bg-[#1a1b1e] hover:text-white flex-1 transition-all">Cancelar</button>
-                           <button type="submit" className="px-6 py-4 rounded-xl font-bold bg-white text-black hover:bg-neutral-200 shadow-xl flex-1 transition-all">Configurar Sala</button>
-                       </div>
-                   </motion.form>
-               </div>
-           )}
-
        </div>
    );
 }

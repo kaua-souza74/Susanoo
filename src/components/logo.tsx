@@ -10,18 +10,18 @@ interface LogoProps {
 
 export function Logo({ className = "", size = "md" }: LogoProps) {
   // Determine dimensions based on size prop
-  let width = 220;
-  let height = 60;
-  let imgClass = "h-14 w-auto";
+  let width = 280;
+  let height = 80;
+  let imgClass = "h-20 w-auto md:h-24";
 
   if (size === "sm") {
-    width = 150;
-    height = 42;
-    imgClass = "h-10 w-auto";
+    width = 180;
+    height = 50;
+    imgClass = "h-12 w-auto";
   } else if (size === "lg") {
-    width = 280;
-    height = 78;
-    imgClass = "h-[70px] w-auto";
+    width = 350;
+    height = 100;
+    imgClass = "h-28 w-auto md:h-32";
   }
 
   return (

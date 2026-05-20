@@ -1,20 +1,53 @@
 "use client";
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Users, Search, Calendar, MoreHorizontal, UserPlus, Shield, BadgeCheck } from "lucide-react";
-import { motion } from "framer-motion";
+import { 
+    Users, 
+    Search, 
+    Calendar, 
+    MoreHorizontal, 
+    UserPlus, 
+    Shield, 
+    BadgeCheck,
+    Trash2,
+    Mail,
+    RefreshCw,
+    X
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function AdminClients() {
     const [clients, setClients] = useState<any[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
+    const [loading, setLoading] = useState(true);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
+
+    const loadClients = async () => {
+        setLoading(true);
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (data) setClients(data);
+        setLoading(false);
+    };
 
     useEffect(() => {
-        const load = async () => {
-            const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-            setClients(data || []);
-        };
-        load();
+        loadClients();
     }, []);
+
+    const handleDelete = async (id: string) => {
+        if (!confirm("Tem certeza que deseja excluir este perfil? Isso não apagará a conta de login, apenas o registro no banco de dados publico.")) return;
+        
+        const { error } = await supabase.from('profiles').delete().eq('id', id);
+        if (error) {
+            alert("Erro ao excluir: " + error.message);
+        } else {
+            setClients(prev => prev.filter(c => c.id !== id));
+        }
+        setDeletingId(null);
+    };
 
     const filteredClients = clients.filter(c => 
         c.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -35,6 +68,13 @@ export default function AdminClients() {
                     <p className="text-foreground/60 font-medium text-lg max-w-xl">Supervisione todos os parceiros que possuem acesso ao ecossistema Susanoo.</p>
                 </div>
                 <div className="flex gap-4 w-full md:w-auto">
+                    <button 
+                        onClick={loadClients}
+                        className="p-4 bg-surface border border-surface-border rounded-xl text-foreground hover:bg-foreground/5 transition-all"
+                        title="Atualizar Lista"
+                    >
+                        <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                    </button>
                     <div className="relative flex-1 md:w-80">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/30" />
                         <input 
@@ -48,78 +88,80 @@ export default function AdminClients() {
                 </div>
             </div>
 
-            {/* Tabela de Clientes */}
-            <div className="bg-surface border border-surface-border rounded-[32px] overflow-hidden shadow-2xl transition-colors duration-300">
-                <table className="w-full text-left border-collapse">
-                    <thead>
-                        <tr className="border-b border-surface-border bg-background transition-colors duration-300">
-                            <th className="p-6 text-[10px] font-black text-foreground/40 uppercase tracking-[0.2em]">Cliente</th>
-                            <th className="p-6 text-[10px] font-black text-foreground/40 uppercase tracking-[0.2em]">Email Principal</th>
-                            <th className="p-6 text-[10px] font-black text-foreground/40 uppercase tracking-[0.2em]">Data de Ingresso</th>
-                            <th className="p-6 text-[10px] font-black text-foreground/40 uppercase tracking-[0.2em]">Nível</th>
-                            <th className="p-6 text-[10px] font-black text-foreground/40 uppercase tracking-[0.2em] text-right">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {filteredClients.map((client) => (
-                            <tr key={client.id} className="border-b border-surface-border hover:bg-foreground/5 transition-colors group">
-                                <td className="p-6">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-xl bg-background border border-surface-border flex items-center justify-center text-foreground font-bold text-sm transition-colors duration-300">
-                                            {client.name?.charAt(0).toUpperCase() || "U"}
-                                        </div>
-                                        <div>
-                                            <span className="block text-foreground font-bold text-sm tracking-tight">{client.name || "Usuário Global"}</span>
-                                            <span className="text-[10px] text-foreground/40 font-bold uppercase tracking-wider">ID: {client.id.substring(0,8)}</span>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td className="p-6 text-sm text-foreground/60 font-medium">{client.email || "não-vinculado@site.com"}</td>
-                                <td className="p-6">
-                                    <div className="flex items-center gap-2 text-sm text-foreground/60 font-medium">
-                                        <Calendar className="w-4 h-4 text-foreground/30" />
-                                        {client.created_at ? new Date(client.created_at).toLocaleDateString('pt-BR') : "--/--/--"}
-                                    </div>
-                                </td>
-                                <td className="p-6">
-                                    <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-[9px] font-black uppercase tracking-widest ${
-                                        client.role === 'admin' ? 'bg-accent/10 border-accent/20 text-accent' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
-                                    }`}>
-                                        {client.role === 'admin' ? <Shield className="w-3 h-3" /> : <BadgeCheck className="w-3 h-3" />}
-                                        {client.role === 'admin' ? "Sócio" : "Parceiro"}
-                                    </div>
-                                </td>
-                                <td className="p-6 text-right">
-                                    <button className="p-2 text-foreground/30 hover:text-foreground transition-colors">
-                                        <MoreHorizontal className="w-5 h-5" />
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+            {/* Grid de Clientes (Mais moderno que tabela fixa) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <AnimatePresence>
+                    {filteredClients.map((client) => (
+                        <motion.div 
+                            layout
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            key={client.id}
+                            className="bg-surface border border-surface-border p-8 rounded-[40px] hover:border-accent/30 transition-all group relative overflow-hidden"
+                        >
+                            <div className="absolute top-0 right-0 p-6 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button 
+                                    onClick={() => handleDelete(client.id)}
+                                    className="p-3 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-2xl transition-all"
+                                >
+                                    <Trash2 className="w-5 h-5" />
+                                </button>
+                            </div>
 
-                {filteredClients.length === 0 && (
-                    <div className="p-20 flex flex-col items-center justify-center text-center">
-                        <div className="w-16 h-16 bg-background rounded-full flex items-center justify-center mb-4 border border-surface-border transition-colors duration-300">
-                            <UserPlus className="w-6 h-6 text-foreground/30" />
-                        </div>
-                        <h4 className="text-foreground font-bold mb-1">Nenhum parceiro encontrado</h4>
-                        <p className="text-foreground/40 text-sm font-medium">Tente ajustar os termos da sua busca.</p>
-                    </div>
-                )}
+                            <div className="flex flex-col gap-6">
+                                <div className="flex items-center gap-5">
+                                    <div className="w-16 h-16 rounded-3xl bg-accent/5 border border-accent/10 flex items-center justify-center text-accent font-black text-2xl">
+                                        {client.name?.charAt(0).toUpperCase() || "?"}
+                                    </div>
+                                    <div>
+                                        <h3 className="text-xl font-black tracking-tight text-foreground">{client.name || "Sem Nome"}</h3>
+                                        <div className={`mt-1 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[8px] font-black uppercase tracking-widest ${
+                                            client.role === 'admin' ? 'bg-accent/10 border-accent/20 text-accent' : 'bg-emerald-500/5 border-emerald-500/10 text-emerald-500'
+                                        }`}>
+                                            {client.role === 'admin' ? "Sócio Staff" : "Cliente Oficial"}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="flex items-center gap-3 text-foreground/40 font-bold text-xs uppercase tracking-widest break-all">
+                                        <Mail className="w-4 h-4 shrink-0" /> {client.email || "E-mail oculto"}
+                                    </div>
+                                    <div className="flex items-center gap-3 text-foreground/40 font-bold text-xs uppercase tracking-widest">
+                                        <Calendar className="w-4 h-4 shrink-0" /> 
+                                        Ingresso em {client.created_at ? new Date(client.created_at).toLocaleDateString('pt-BR') : "--"}
+                                    </div>
+                                </div>
+
+                                <div className="pt-6 border-t border-surface-border mt-2 flex justify-between items-center">
+                                    <span className="text-[10px] font-black text-foreground/20 uppercase tracking-[0.2em]">UID: {client.id.substring(0,12)}...</span>
+                                    <button className="text-[11px] font-black text-accent uppercase tracking-widest hover:underline">Ver Projeto</button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    ))}
+                </AnimatePresence>
             </div>
 
-            {/* Footer de Suporte */}
-            <div className="mt-12 flex flex-col sm:flex-row items-center justify-between border-t border-surface-border pt-8 gap-4 px-4 transition-colors duration-300">
-                <span className="text-[11px] font-bold text-foreground/30 uppercase tracking-widest">Base de Dados Supabase Realtime</span>
-                <div className="flex gap-8">
-                    <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-bold text-foreground/60">Total: {clients.length}</span>
-                    </div>
+            {filteredClients.length === 0 && !loading && (
+                <div className="flex-1 flex flex-col items-center justify-center py-40 opacity-20">
+                    <UserPlus className="w-20 h-20 mb-6" />
+                    <p className="font-black uppercase tracking-[0.4em] text-sm">Nenhum cliente mapeado</p>
                 </div>
-            </div>
+            )}
 
+            {loading && (
+                <div className="flex-1 flex items-center justify-center py-40">
+                    <div className="w-10 h-10 border-4 border-accent border-t-transparent rounded-full animate-spin" />
+                </div>
+            )}
+
+            {/* Stats */}
+            <div className="mt-12 pt-8 border-t border-surface-border flex justify-between items-center px-4">
+                <span className="text-[10px] font-black text-foreground/30 uppercase tracking-[0.3em]">Susanoo Cloud Records</span>
+                <span className="text-[10px] font-black text-accent bg-accent/5 px-4 py-2 rounded-full border border-accent/10">Total de {clients.length} Contas Ativas</span>
+            </div>
         </div>
     );
 }

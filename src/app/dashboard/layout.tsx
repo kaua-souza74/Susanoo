@@ -1,7 +1,7 @@
 "use client";
 import { ReactNode, useState, useEffect } from "react";
 import Link from "next/link";
-import { Zap, Grid, MessageSquareText, FolderUp, Settings, LogOut, Bot, Sparkles } from "lucide-react";
+import { Zap, Grid, MessageSquareText, Calendar, Settings, LogOut, Bot, Sparkles } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useRouter, usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -43,7 +43,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                <NavItem icon={<Grid className="w-5 h-5"/>} label="Meus Projetos" active={mounted ? pathname?.includes('/projects') || pathname?.includes('/kanban') : false} href="/dashboard/projects" />
                <NavItem icon={<MessageSquareText className="w-5 h-5"/>} label="Chat com a Equipe" active={mounted ? pathname?.includes('/chat') : false} href="/dashboard/chat" />
                <NavItem icon={<Bot className="w-5 h-5"/>} label="Assistente IA" active={mounted ? pathname?.includes('/ai') : false} href="/dashboard/ai" />
-               <NavItem icon={<FolderUp className="w-5 h-5"/>} label="Arquivos e Mídias" active={mounted ? pathname?.includes('/files') : false} href="/dashboard/files" />
+               <NavItem icon={<Calendar className="w-5 h-5"/>} label="Cronograma" active={mounted ? pathname?.includes('/timeline') : false} href="/dashboard/timeline" />
                <NavItem icon={<Settings className="w-5 h-5"/>} label="Configurações" active={mounted ? pathname?.includes('/settings') : false} href="/dashboard/settings" />
             </div>
         </div>
