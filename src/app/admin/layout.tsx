@@ -9,19 +9,19 @@ import { ThemeToggle } from "@/components/theme-toggle";
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [unreadChat, setUnreadChat] = useState(false);
-  const [unreadTasks, setUnreadTasks] = useState(false);
+  const [unreadChat, setUnreadChat] = useState(0);
+  const [unreadTasks, setUnreadTasks] = useState(0);
 
   useEffect(() => {
-     if (pathname?.includes('/admin/chat')) setUnreadChat(false);
-     if (pathname?.includes('/admin/tasks')) setUnreadTasks(false);
+     if (pathname?.includes('/admin/chat')) setUnreadChat(0);
+     if (pathname?.includes('/admin/tasks')) setUnreadTasks(0);
 
      const ch = supabase.channel('admin-notifs')
        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
-           if (!pathname?.includes('/admin/chat')) setUnreadChat(true);
+           if (!pathname?.includes('/admin/chat')) setUnreadChat(prev => prev + 1);
        })
        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tasks' }, () => {
-           if (!pathname?.includes('/admin/tasks')) setUnreadTasks(true);
+           if (!pathname?.includes('/admin/tasks')) setUnreadTasks(prev => prev + 1);
        }).subscribe();
      return () => { supabase.removeChannel(ch); }
   }, [pathname]);
@@ -86,12 +86,16 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   );
 }
 
-function NavItem({ icon, label, active = false, href, badge }: { icon: ReactNode, label: string, active?: boolean, href: string, badge?: boolean }) {
+function NavItem({ icon, label, active = false, href, badge }: { icon: ReactNode, label: string, active?: boolean, href: string, badge?: number }) {
     return (
         <Link href={href} className={`flex items-center gap-4 px-3 py-3 rounded-xl text-[14px] transition-all duration-200 cursor-pointer ${active ? 'bg-foreground text-background font-extrabold shadow-md' : 'text-foreground/60 font-semibold hover:bg-foreground/5 hover:text-foreground border border-transparent'}`}>
             <div className="relative shrink-0 ml-1">
                 {icon}
-                {badge && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-surface animate-pulse"></span>}
+                {badge !== undefined && badge > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-surface shadow-lg flex-shrink-0">
+                        {badge > 9 ? '9+' : badge}
+                    </span>
+                )}
             </div>
             <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">{label}</span>
         </Link>

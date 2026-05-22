@@ -1,16 +1,84 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { User, Shield, Bell, CreditCard, Camera } from "lucide-react";
-import { motion } from "framer-motion";
+import { User, Shield, Bell, Camera, Loader2, CheckCircle2 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function SettingsPage() {
     const [user, setUser] = useState<any>(null);
+    const [profile, setProfile] = useState<any>(null);
     const [activeTab, setActiveTab] = useState("profile");
+    const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+    const [uploading, setUploading] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        supabase.auth.getSession().then(({data}) => setUser(data.session?.user));
+        const load = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) return;
+            setUser(session.user);
+
+            const { data: prof } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', session.user.id)
+                .single();
+
+            if (prof) {
+                setProfile(prof);
+                if (prof.avatar_url) setAvatarUrl(prof.avatar_url);
+            }
+        };
+        load();
     }, []);
+
+    const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !user) return;
+
+        setUploading(true);
+        try {
+            const ext = file.name.split('.').pop();
+            const fileName = `avatar_${user.id}.${ext}`;
+
+            const { data, error } = await supabase.storage
+                .from('avatars')
+                .upload(fileName, file, { upsert: true });
+
+            if (error) throw error;
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('avatars')
+                .getPublicUrl(data.path);
+
+            // Adiciona timestamp para forçar refresh do cache
+            const urlWithTs = `${publicUrl}?t=${Date.now()}`;
+
+            await supabase.from('profiles').upsert({
+                id: user.id,
+                avatar_url: publicUrl,
+                updated_at: new Date().toISOString()
+            });
+
+            setAvatarUrl(urlWithTs);
+        } catch (err) {
+            console.error('Erro ao enviar avatar:', err);
+            alert('Erro ao enviar foto. Verifique as permissões do bucket "avatars" no Supabase.');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleSave = async () => {
+        if (!user) return;
+        await supabase.from('profiles').upsert({
+            id: user.id,
+            updated_at: new Date().toISOString()
+        });
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2500);
+    };
 
     const tabs = [
         { id: "profile", label: "Meu Perfil", icon: <User className="w-5 h-5"/> },
@@ -31,7 +99,7 @@ export default function SettingsPage() {
             </motion.h1>
             
             <div className="flex flex-col md:flex-row gap-10">
-                {/* Sidebar das Settings */}
+                {/* Sidebar */}
                 <motion.div initial={{opacity:0, x:-20}} animate={{opacity:1, x:0}} transition={{delay: 0.1}} className="w-full md:w-64 flex flex-col gap-2 shrink-0">
                     {tabs.map((t) => (
                         <button 
@@ -44,7 +112,7 @@ export default function SettingsPage() {
                     ))}
                 </motion.div>
 
-                {/* Conteúdo principal */}
+                {/* Conteúdo */}
                 <motion.div 
                     key={activeTab}
                     initial={{opacity:0, y:20}} 
@@ -58,17 +126,52 @@ export default function SettingsPage() {
                                 <h2 className="text-2xl font-bold text-foreground mb-8 border-b border-surface-border pb-4">Identificação do Workspace</h2>
                                 <div className="flex flex-col gap-8">
                                     <div className="flex items-center gap-8">
-                                        <div className="relative">
-                                            <div className="w-28 h-28 rounded-full bg-gradient-to-tr from-blue-600 to-accent flex items-center justify-center text-4xl font-black text-white shadow-lg border-4 border-surface">
-                                                {user.email?.substring(0,2).toUpperCase()}
+                                        {/* Avatar com upload */}
+                                        <div className="relative group">
+                                            {avatarUrl ? (
+                                                <img
+                                                    src={avatarUrl}
+                                                    alt="Foto de perfil"
+                                                    className="w-28 h-28 rounded-full object-cover shadow-lg border-4 border-surface"
+                                                />
+                                            ) : (
+                                                <div className="w-28 h-28 rounded-full bg-gradient-to-tr from-blue-600 to-accent flex items-center justify-center text-4xl font-black text-white shadow-lg border-4 border-surface">
+                                                    {user.email?.substring(0,2).toUpperCase()}
+                                                </div>
+                                            )}
+
+                                            {/* Overlay ao hover */}
+                                            <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                <Camera className="w-7 h-7 text-white" />
                                             </div>
-                                            <button className="absolute bottom-0 right-0 p-3 bg-surface border border-surface-border rounded-full text-foreground hover:bg-background transition-colors shadow-lg cursor-pointer">
-                                               <Camera className="w-5 h-5" />
+
+                                            {/* Botão câmera */}
+                                            <button
+                                                onClick={() => fileInputRef.current?.click()}
+                                                disabled={uploading}
+                                                className="absolute bottom-0 right-0 p-2.5 bg-accent border-2 border-surface rounded-full text-white hover:bg-accent/80 transition-all shadow-lg cursor-pointer disabled:opacity-60"
+                                            >
+                                                {uploading
+                                                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                                                    : <Camera className="w-4 h-4" />
+                                                }
                                             </button>
+
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                hidden
+                                                ref={fileInputRef}
+                                                onChange={handleAvatarUpload}
+                                            />
                                         </div>
+
                                         <div className="flex flex-col gap-3">
-                                            <h3 className="text-2xl font-bold text-foreground tracking-tight">{user.user_metadata?.full_name || 'Conta Corporativa'}</h3>
+                                            <h3 className="text-2xl font-bold text-foreground tracking-tight">{profile?.name || user.user_metadata?.full_name || 'Conta Corporativa'}</h3>
                                             <span className="bg-accent/10 border border-accent/20 text-accent uppercase text-[10px] font-bold px-3 py-1.5 rounded w-max tracking-widest shadow-lg shadow-accent/10">Plano Oficial Susanoo</span>
+                                            {uploading && (
+                                                <span className="text-xs text-foreground/40 font-medium animate-pulse">Enviando foto...</span>
+                                            )}
                                         </div>
                                     </div>
 
@@ -83,9 +186,21 @@ export default function SettingsPage() {
                                         </div>
                                     </div>
 
-                                    <div className="mt-8 pt-8 border-t border-surface-border flex justify-end">
+                                    <div className="mt-8 pt-8 border-t border-surface-border flex justify-end items-center gap-4">
+                                        <AnimatePresence>
+                                            {saved && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, x: 10 }}
+                                                    animate={{ opacity: 1, x: 0 }}
+                                                    exit={{ opacity: 0 }}
+                                                    className="flex items-center gap-2 text-emerald-500 font-bold text-sm"
+                                                >
+                                                    <CheckCircle2 className="w-4 h-4" /> Salvo com sucesso!
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
                                         <button 
-                                            onClick={() => alert("Alterações salvas com sucesso no núcleo Susanoo!")}
+                                            onClick={handleSave}
                                             className="bg-foreground text-background font-bold px-10 py-4 rounded-xl transition-all shadow-xl shadow-foreground/10 text-[15px] cursor-pointer hover:opacity-90"
                                         >
                                             Salvar Alterações
@@ -146,7 +261,6 @@ export default function SettingsPage() {
                                 </div>
                             </>
                         )}
-
                     </div>
                 </motion.div>
             </div>

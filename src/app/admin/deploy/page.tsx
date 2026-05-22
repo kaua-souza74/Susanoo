@@ -18,7 +18,8 @@ import {
     Image as ImageIcon,
     Eye,
     EyeOff,
-    Link as LinkIcon
+    Link as LinkIcon,
+    Search
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -28,6 +29,10 @@ export default function AdminDeploy() {
     const [vercelDeployingId, setVercelDeployingId] = useState<string | null>(null);
     const [configProjectId, setConfigProjectId] = useState<string | null>(null);
     const [projectFiles, setProjectFiles] = useState<any[]>([]);
+    const [profiles, setProfiles] = useState<any[]>([]);
+    const [filteredProfiles, setFilteredProfiles] = useState<any[]>([]);
+    const [profileSearch, setProfileSearch] = useState("");
+    const [selectedProfile, setSelectedProfile] = useState<any>(null);
     
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [newProject, setNewProject] = useState({ name: '', email: '', domain: '' });
@@ -41,7 +46,25 @@ export default function AdminDeploy() {
 
     useEffect(() => {
         loadProjects();
+        loadProfiles();
     }, []);
+
+    const loadProfiles = async () => {
+        const { data } = await supabase.from('profiles').select('id, name, email').order('name');
+        setProfiles(data || []);
+        setFilteredProfiles(data || []);
+    };
+
+    useEffect(() => {
+        if (!profileSearch.trim()) {
+            setFilteredProfiles(profiles);
+        } else {
+            const low = profileSearch.toLowerCase();
+            setFilteredProfiles(profiles.filter(p => 
+                (p.name?.toLowerCase().includes(low)) || (p.email?.toLowerCase().includes(low))
+            ));
+        }
+    }, [profileSearch, profiles]);
 
     const updateProjectField = async (id: string, field: string, value: any) => {
         const { error } = await supabase.from('projects').update({ [field]: value }).eq('id', id);
@@ -59,14 +82,15 @@ export default function AdminDeploy() {
 
     const handleCreateProject = async (e: React.FormEvent) => {
         e.preventDefault();
-        const { data: profile } = await supabase.from('profiles').select('id').ilike('email', newProject.email.trim()).single();
-        if (!profile) {
-            alert(`Erro: E-mail "${newProject.email}" não encontrado.`);
+        
+        if (!selectedProfile) {
+            alert("Selecione um cliente na lista abaixo.");
             return;
         }
+
         const { error } = await supabase.from('projects').insert([{
             name: newProject.name,
-            client_id: profile.id,
+            client_id: selectedProfile.id,
             deploy_url: newProject.domain || 'susanoo-waiting.host',
             deploy_status: 'idle',
             manual_progress: 0,
@@ -75,6 +99,8 @@ export default function AdminDeploy() {
         if (!error) {
             setIsModalOpen(false);
             setNewProject({ name: '', email: '', domain: '' });
+            setSelectedProfile(null);
+            setProfileSearch("");
             loadProjects();
         }
     };
@@ -84,6 +110,57 @@ export default function AdminDeploy() {
         await supabase.from('projects').delete().eq('id', id);
         loadProjects();
         setConfigProjectId(null);
+    };
+
+    const handlePreview = (proj: any) => {
+        if (!proj.deploy_url) {
+            alert("Este projeto ainda não possui um ambiente de publicação ativo. Realize o Deploy primeiro.");
+            return;
+        }
+        const url = proj.deploy_url.startsWith('http') ? proj.deploy_url : `https://${proj.deploy_url}`;
+        window.open(url, '_blank');
+    };
+
+    const handleDeploy = async (project: any) => {
+        try {
+            setVercelDeployingId(project.id);
+            
+            // 1. Buscar arquivos do Repositório (Supabase Storage)
+            const { data: fileItems, error: listError } = await supabase.storage.from('project_files').list(project.id);
+            
+            if (listError || !fileItems || fileItems.length === 0) {
+                alert("Erro: O Repositório está vazio. Envie os arquivos (HTML/CSS) no Gerenciador antes de publicar.");
+                return;
+            }
+
+            // 2. Baixar o conteúdo binário e converter para texto
+            const fileContents = await Promise.all(fileItems.map(async (file) => {
+                const { data: blob, error: downloadError } = await supabase.storage.from('project_files').download(`${project.id}/${file.name}`);
+                if (downloadError || !blob) return null;
+                const text = await blob.text();
+                return { file: file.name, data: text };
+            }));
+
+            const validFiles = fileContents.filter(f => f !== null) as { file: string, data: string }[];
+
+            if (validFiles.length === 0) {
+                alert("Erro ao processar arquivos do repositório.");
+                return;
+            }
+
+            // 3. Chamar a Server Action da Vercel
+            const deployResult = await deployToVercel(project.name, validFiles);
+            
+            // 4. Salvar o novo link na base de dados
+            await updateProjectField(project.id, 'deploy_url', deployResult.url);
+            alert(`OPERACIONAL: Deploy realizado com sucesso!\nURL: ${deployResult.url}`);
+            
+        } catch (err: any) {
+            console.error(err);
+            alert(`FALHA NO MOTOR DE DEPLOY: ${err.message || 'Erro de conexão com Vercel'}`);
+        } finally {
+            setVercelDeployingId(null);
+        }
     };
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -156,8 +233,24 @@ export default function AdminDeploy() {
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
-                            <button className="py-4 rounded-2xl font-black text-[9px] uppercase tracking-widest bg-white text-black hover:bg-neutral-200 transition-all">Preview</button>
-                            <button className="py-4 rounded-2xl font-black text-[9px] uppercase tracking-widest bg-accent text-white hover:scale-105 transition-all">Deploy</button>
+                            <button 
+                                onClick={() => handlePreview(proj)}
+                                className="py-4 rounded-2xl font-black text-[9px] uppercase tracking-widest bg-white text-black hover:bg-neutral-200 transition-all"
+                            >
+                                Preview
+                            </button>
+                            <button 
+                                onClick={() => handleDeploy(proj)}
+                                disabled={vercelDeployingId === proj.id}
+                                className="py-4 rounded-2xl font-black text-[9px] uppercase tracking-widest bg-accent text-white hover:scale-105 transition-all flex items-center justify-center gap-2"
+                            >
+                                {vercelDeployingId === proj.id ? (
+                                    <>
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                        Publicando...
+                                    </>
+                                ) : 'Deploy'}
+                            </button>
                         </div>
 
                     </motion.div>
@@ -188,6 +281,25 @@ export default function AdminDeploy() {
                                             <button onClick={() => handleDeleteProject(configProjectId)} className="flex items-center gap-2 text-red-500/50 hover:text-red-500 text-[10px] font-black uppercase tracking-widest bg-red-500/5 p-2 px-4 rounded-full transition-all">
                                                 <Trash2 className="w-4 h-4" /> Deletar Projeto
                                             </button>
+                                        </div>
+
+                                        {/* Domain Edit Field */}
+                                        <div className="bg-[#050505] p-8 rounded-[32px] border border-white/5 mb-12 flex flex-col gap-4">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-[10px] font-black text-[#222] uppercase tracking-[0.4em] flex items-center gap-3"><LinkIcon className="w-5 h-5"/> Domínio Customizado</h4>
+                                                <span className="text-[10px] font-black text-[#333] uppercase">Pressione Enter para Salvar</span>
+                                            </div>
+                                            <input 
+                                                type="text" 
+                                                defaultValue={projects.find(p => p.id === configProjectId).deploy_url || ''}
+                                                placeholder="exemplo.com.br"
+                                                className="w-full bg-[#0c0c0d] p-6 rounded-2xl text-xl font-bold text-white border border-white/5 focus:border-accent outline-none"
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        updateProjectField(configProjectId, 'deploy_url', (e.target as HTMLInputElement).value);
+                                                    }
+                                                }}
+                                            />
                                         </div>
                                     </div>
 
@@ -262,10 +374,49 @@ export default function AdminDeploy() {
                     <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#0c0c0d] border border-white/5 p-16 rounded-[80px] w-full max-w-2xl relative shadow-3xl">
                         <button onClick={() => setIsModalOpen(false)} className="absolute top-12 right-12 text-[#333] hover:text-white"><X className="w-10 h-10"/></button>
                         <h2 className="text-6xl font-black text-white italic tracking-tighter mb-12 uppercase leading-none">Nova Operação</h2>
-                        <form onSubmit={handleCreateProject} className="space-y-10">
-                            <input required placeholder="NOME DO PROJETO" className="w-full bg-[#050505] p-8 rounded-[40px] text-white border-2 border-white/5 focus:border-accent outline-none font-black text-2xl uppercase italic" value={newProject.name} onChange={e => setNewProject({...newProject, name: e.target.value})} />
-                            <input required type="email" placeholder="E-MAIL DO CLIENTE" className="w-full bg-[#050505] p-8 rounded-[40px] text-white border-2 border-white/5 focus:border-accent outline-none font-bold text-2xl" value={newProject.email} onChange={e => setNewProject({...newProject, email: e.target.value})} />
-                            <button type="submit" className="w-full bg-white text-black font-black py-10 rounded-[50px] text-2xl mt-4 hover:bg-accent hover:text-white transition-all uppercase italic">Inicializar HQ</button>
+                        <form onSubmit={handleCreateProject} className="space-y-8">
+                            <div className="space-y-4">
+                                <label className="text-[10px] font-black text-foreground/40 uppercase tracking-[0.3em] ml-4">Dados da Operação</label>
+                                <input required placeholder="NOME DO PROJETO" className="w-full bg-[#050505] p-6 rounded-[30px] text-white border-2 border-white/5 focus:border-accent outline-none font-black text-xl uppercase italic transition-all" value={newProject.name} onChange={e => setNewProject({...newProject, name: e.target.value})} />
+                                <input placeholder="DOMÍNIO CUSTOMIZADO (OPCIONAL)" className="w-full bg-[#050505] p-6 rounded-[30px] text-white border-2 border-white/5 focus:border-accent outline-none font-bold text-lg uppercase transition-all" value={newProject.domain} onChange={e => setNewProject({...newProject, domain: e.target.value})} />
+                            </div>
+
+                            <div className="space-y-4">
+                                <label className="text-[10px] font-black text-foreground/40 uppercase tracking-[0.3em] ml-4">Seleção de Cliente</label>
+                                <div className="bg-[#050505] p-4 rounded-[40px] border-2 border-white/5">
+                                    <div className="relative mb-4">
+                                        <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-foreground/20" />
+                                        <input 
+                                            type="text" 
+                                            placeholder="Procurar cliente (nome ou email)..." 
+                                            className="w-full bg-white/5 p-5 pl-14 rounded-full text-sm outline-none border border-transparent focus:border-accent/30 transition-all font-bold"
+                                            value={profileSearch}
+                                            onChange={e => setProfileSearch(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="max-h-[200px] overflow-y-auto custom-scrollbar space-y-2 px-2">
+                                        {filteredProfiles.map(p => (
+                                            <button 
+                                                key={p.id}
+                                                type="button" 
+                                                onClick={() => setSelectedProfile(p)}
+                                                className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${selectedProfile?.id === p.id ? 'bg-accent/10 border-accent/40 shadow-lg shadow-accent/5' : 'bg-[#0c0c0d] border-white/5 hover:border-white/10'}`}
+                                            >
+                                                <div className="flex flex-col items-start">
+                                                    <span className={`text-sm font-black uppercase italic ${selectedProfile?.id === p.id ? 'text-accent' : 'text-white'}`}>{p.name || 'Sem Nome'}</span>
+                                                    <span className="text-[10px] font-bold text-foreground/20 lowercase">{p.email}</span>
+                                                </div>
+                                                {selectedProfile?.id === p.id && <Zap className="w-4 h-4 text-accent animate-pulse" />}
+                                            </button>
+                                        ))}
+                                        {filteredProfiles.length === 0 && <p className="text-center py-6 text-[10px] font-black text-foreground/10 uppercase tracking-widest">Nenhum cliente encontrado</p>}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button type="submit" className="w-full bg-white text-black font-black py-8 rounded-[40px] text-xl mt-4 hover:bg-accent hover:text-white transition-all uppercase italic shadow-2xl">
+                                Inicializar HQ
+                            </button>
                         </form>
                     </motion.div>
                 </div>

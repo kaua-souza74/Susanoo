@@ -1,542 +1,447 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
-import { 
-    Send, 
-    Hash, 
-    Info, 
-    MoreHorizontal, 
-    Video, 
-    Phone, 
-    UserRound, 
-    Search, 
-    CornerUpLeft, 
-    Trash2, 
-    Pencil, 
-    X,
-    Paperclip,
-    Image as ImageIcon,
-    FileText,
-    Download,
-    ChevronDown
-} from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { Send, Paperclip, Video, Phone, X, FileText, Download, UserRound, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-type Message = { 
-    id: string; 
-    content: string; 
-    created_at: string; 
-    user_id: string; 
+type Message = {
+    id: string;
+    content: string;
+    created_at: string;
+    user_id: string;
+    sender_name?: string;
     file_url?: string;
     file_type?: string;
-    profiles?: { name: string; role: string; } 
 };
 
-const parseReply = (content: string) => {
-    if (content && content.startsWith("[REPLY:")) {
-        const match = content.match(/^\[REPLY:([^|]+)\|([\s\S]*?)\]([\s\S]*)$/);
-        if (match) {
-            return {
-                isReply: true,
-                replyToName: match[1],
-                replyToContent: match[2],
-                actualContent: match[3]
-            };
-        }
-    }
-    return { isReply: false, actualContent: content || "" };
-};
+// Extrai imagens embutidas no formato markdown [IMAGE](url)|filename
+function parseMessageContent(content: string): { text: string; inlineImages: { url: string; name: string }[] } {
+    const inlineImages: { url: string; name: string }[] = [];
+    // Regex para capturar [IMAGE](url)|filename ou padrão markdown ![alt](url)
+    const replaced = content.replace(/\[IMAGE\]\((https?:\/\/[^\)]+)\)\|([^\n]+)/g, (_, url, name) => {
+        inlineImages.push({ url, name });
+        return '';
+    }).replace(/!\[([^\]]*)\]\((https?:\/\/[^\)]+)\)/g, (_, alt, url) => {
+        inlineImages.push({ url, name: alt || 'Imagem' });
+        return '';
+    }).trim();
+
+    return { text: replaced, inlineImages };
+}
 
 export default function ChatPage() {
+    const router = useRouter();
+    const [user, setUser] = useState<any>(null);
+    const [profile, setProfile] = useState<any>(null);
+    const [activeChannel, setActiveChannel] = useState<any>(null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [content, setContent] = useState("");
-    const [user, setUser] = useState<any>(null);
-    const [project, setProject] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [typingUsers, setTypingUsers] = useState<string[]>([]);
-    const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-    const [editingMessage, setEditingMessage] = useState<Message | null>(null);
-    
+    const [showOnboarding, setShowOnboarding] = useState(false);
+    const [newName, setNewName] = useState("");
     const [stagedFiles, setStagedFiles] = useState<File[]>([]);
     const [previews, setPreviews] = useState<string[]>([]);
-    const [allProjects, setAllProjects] = useState<any[]>([]);
-    
+
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const chatChannelRef = useRef<any>(null);
     const typingTimeoutRef = useRef<any>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const router = useRouter();
 
-    const getMyName = () => user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Agente';
-
-    const handleTyping = () => {
-        if (!chatChannelRef.current) return;
-        chatChannelRef.current.send({
-            type: 'broadcast',
-            event: 'typing',
-            payload: { name: getMyName(), isTyping: true }
-        });
-
-        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = setTimeout(() => {
-            if (chatChannelRef.current) {
-                chatChannelRef.current.send({
-                    type: 'broadcast',
-                    event: 'typing',
-                    payload: { name: getMyName(), isTyping: false }
-                });
-            }
-        }, 2000);
+    const getMyName = () => {
+        if (profile?.name) return profile.name;
+        if (user?.email) return user.email.split('@')[0];
+        return 'Cliente';
     };
 
+    // Init
     useEffect(() => {
-      let isMounted = true;
-      const init = async () => {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (!session) return router.push("/login");
-          if (!isMounted) return;
-          setUser(session.user);
+        let mounted = true;
+        const init = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) { router.push("/login"); return; }
+            if (!mounted) return;
+            setUser(session.user);
 
-          // Buscar perfil para saber a role
-          const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
-          
-          let projectsQuery;
-          if (profile?.role === 'admin') {
-              projectsQuery = supabase.from('projects').select('*');
-          } else {
-              projectsQuery = supabase.from('projects').select('*').eq('client_id', session.user.id);
-          }
+            const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+            if (prof) {
+                setProfile(prof);
+                if (!prof.name) setShowOnboarding(true);
+            } else {
+                setShowOnboarding(true);
+            }
 
-          const { data: projs } = await projectsQuery;
-          
-          if (projs && projs.length > 0 && isMounted) {
-              setAllProjects(projs);
-              setProject(projs[0]);
-              await loadMessages(projs[0].id);
-              subscribeChat(projs[0].id);
-          }
-          if (isMounted) setTimeout(() => setLoading(false), 800); 
-      };
-      init();
-      return () => { 
-        isMounted = false;
-        supabase.removeAllChannels(); 
-      };
+            const { data: projs } = await supabase.from('projects').select('*').eq('client_id', session.user.id);
+            let ch: any = null;
+            if (projs && projs.length > 0) {
+                ch = { ...projs[0], isProject: true };
+            } else {
+                const { data: np } = await supabase.from('projects').insert([{
+                    name: 'Central de Suporte',
+                    client_id: session.user.id,
+                    status: 'active'
+                }]).select().single();
+                if (np) ch = { ...np, isProject: true };
+            }
+            if (ch && mounted) {
+                setActiveChannel(ch);
+                await loadMessages(ch.id, ch.isProject);
+            }
+            if (mounted) setLoading(false);
+        };
+        init();
+        return () => { mounted = false; };
     }, [router]);
 
+    // Realtime
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messages]);
-
-    // Otimização: O Realtime no subscribeChat já cuida de novos dados. 
-    // Removendo setInterval para evitar conflitos de cache e race conditions.
-    const loadMessages = async (pid: string) => {
-        const { data } = await supabase.from('messages').select('*, profiles:user_id(name, role)').eq('project_id', pid).order('created_at', { ascending: true });
-        if (data) setMessages(data as unknown as Message[]);
-    };
-
-    const subscribeChat = (pid: string) => {
-        const chatChannel = supabase.channel(`project_chat_${pid}`)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `project_id=eq.${pid}` }, (payload) => {
-                const newMessage = payload.new as Message;
-                setMessages(prev => {
-                    if (prev.find(m => m.id === newMessage.id)) return prev;
-                    return [...prev, newMessage];
-                });
-                loadMessages(pid);
+        if (!activeChannel) return;
+        const cid = activeChannel.id;
+        const field = activeChannel.isProject ? 'project_id' : 'chat_id';
+        const ch = supabase.channel(`chat-${cid}`, { config: { broadcast: { ack: true } } })
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload: any) => {
+                if (payload.new[field] === cid) {
+                    setMessages(prev => prev.find(m => m.id === payload.new.id) ? prev : [...prev, payload.new]);
+                }
             })
-            .on('broadcast', { event: 'typing' }, (payload) => {
-                const { name, isTyping } = payload.payload;
-                if (name === getMyName()) return;
-                
-                setTypingUsers(prev => {
-                    if (isTyping) {
-                        if (prev.includes(name)) return prev;
-                        return [...prev, name];
-                    } else {
-                        return prev.filter(n => n !== name);
-                    }
-                });
+            .on('broadcast', { event: 'sync' }, ({ payload }) => {
+                const msg = payload?.newMessage;
+                if (msg && msg[field] === cid) {
+                    setMessages(prev => prev.find(m => m.id === msg.id) ? prev : [...prev, msg]);
+                }
+            })
+            .on('broadcast', { event: 'typing' }, (raw: any) => {
+                const { name, isTyping } = raw.payload ?? {};
+                if (!name || name === getMyName()) return;
+                setTypingUsers(prev => isTyping ? [...new Set([...prev, name])] : prev.filter(n => n !== name));
             })
             .subscribe();
+        chatChannelRef.current = ch;
+        return () => { supabase.removeChannel(ch); };
+    }, [activeChannel?.id]);
 
-        chatChannelRef.current = chatChannel;
+    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+    const loadMessages = async (id: string, isProject: boolean) => {
+        const field = isProject ? 'project_id' : 'chat_id';
+        const { data } = await supabase.from('messages').select('*').eq(field, id).order('created_at', { ascending: true });
+        if (data) setMessages(data as Message[]);
+    };
+
+    const handleUpdateName = async () => {
+        if (!newName.trim() || !user) return;
+        const { error } = await supabase.from('profiles').upsert({ id: user.id, name: newName, updated_at: new Date().toISOString() });
+        if (!error) { setProfile((p: any) => ({ ...p, name: newName })); setShowOnboarding(false); }
+    };
+
+    const handleTyping = () => {
+        chatChannelRef.current?.send({ type: 'broadcast', event: 'typing', payload: { name: getMyName(), isTyping: true } });
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => {
+            chatChannelRef.current?.send({ type: 'broadcast', event: 'typing', payload: { name: getMyName(), isTyping: false } });
+        }, 2000);
     };
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
-        if (files.length === 0) return;
-
         setStagedFiles(prev => [...prev, ...files]);
-        
-        const newPreviews = files.map(file => {
-            if (file.type.startsWith('image/')) return URL.createObjectURL(file);
-            return 'file'; // Placeholder for non-image files
-        });
-        setPreviews(prev => [...prev, ...newPreviews]);
+        setPreviews(prev => [...prev, ...files.map(f => f.type.startsWith('image/') ? URL.createObjectURL(f) : 'file')]);
+        e.target.value = '';
     };
 
-    const removeStagedFile = (index: number) => {
-        setStagedFiles(prev => prev.filter((_, i) => i !== index));
-        setPreviews(prev => {
-            const newPreviews = [...prev];
-            if (newPreviews[index] !== 'file') URL.revokeObjectURL(newPreviews[index]);
-            return newPreviews.filter((_, i) => i !== index);
-        });
+    const removeStagedFile = (i: number) => {
+        setStagedFiles(prev => prev.filter((_, idx) => idx !== i));
+        setPreviews(prev => { if (prev[i] !== 'file') URL.revokeObjectURL(prev[i]); return prev.filter((_, idx) => idx !== i); });
     };
 
     const handleSend = async (e: React.FormEvent) => {
         e.preventDefault();
-        if ((!content.trim() && stagedFiles.length === 0) || !project) return;
-        
+        if ((!content.trim() && stagedFiles.length === 0) || !activeChannel || loading) return;
+
         const msgContent = content;
-        const currentStaged = [...stagedFiles];
-        
-        setContent("");
-        setStagedFiles([]);
-        setPreviews([]);
+        const filesToSend = [...stagedFiles];
+        setContent(""); setStagedFiles([]); setPreviews([]);
 
-        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-        if (chatChannelRef.current) {
-            chatChannelRef.current.send({
-                type: 'broadcast',
-                event: 'typing',
-                payload: { name: getMyName(), isTyping: false }
-            });
-        }
+        const base = activeChannel.isProject ? { project_id: activeChannel.id } : { chat_id: activeChannel.id };
 
-        // Upload files first if any
-        let uploadedUrls: {url: string, type: string}[] = [];
-        for (const file of currentStaged) {
-            const fileName = `${Date.now()}_${file.name}`;
-            const { data, error } = await supabase.storage.from('chat_attachments').upload(`${project.id}/${fileName}`, file);
-            if (!error && data) {
-                const { data: { publicUrl } } = supabase.storage.from('chat_attachments').getPublicUrl(data.path);
-                uploadedUrls.push({ url: publicUrl, type: file.type });
-            }
-        }
-
-        if (editingMessage) {
-            const parsed = parseReply(editingMessage.content);
-            const newContent = parsed.isReply
-                ? `[REPLY:${parsed.replyToName}|${parsed.replyToContent}]${msgContent}`
-                : msgContent;
-
-            await supabase.from('messages').update({ content: newContent }).eq('id', editingMessage.id);
-            setEditingMessage(null);
-            return;
-        }
-
-        let finalContent = msgContent;
-        if (replyingTo) {
-            const parsedParent = parseReply(replyingTo.content);
-            const parentAuthor = replyingTo.profiles?.name || (replyingTo.user_id === user?.id ? 'Você' : 'Suporte');
-            let snippet = parsedParent.actualContent;
-            if (snippet.length > 60) snippet = snippet.substring(0, 60) + "...";
-            finalContent = `[REPLY:${parentAuthor}|${snippet}]${msgContent}`;
-            setReplyingTo(null);
-        }
-
-        // Send multiple messages if there are multiple files? 
-        // For now, let's send one message per file + text message if text exists
-        if (uploadedUrls.length > 0) {
-            for (const item of uploadedUrls) {
-                await supabase.from('messages').insert([{
-                    project_id: project.id,
+        // Upload arquivos
+        for (const file of filesToSend) {
+            const fname = `${Date.now()}_${file.name}`;
+            const { data: up } = await supabase.storage.from('chat_attachments').upload(fname, file);
+            if (up) {
+                const { data: { publicUrl } } = supabase.storage.from('chat_attachments').getPublicUrl(up.path);
+                const { data: nm } = await supabase.from('messages').insert([{
+                    ...base,
                     user_id: user.id,
-                    content: finalContent || (item.type.startsWith('image/') ? '📷 Imagem' : '📎 Arquivo'),
-                    file_url: item.url,
-                    file_type: item.type
-                }]);
-                finalContent = ""; // Send text only with the first file or as its own message later
+                    content: '',
+                    file_url: publicUrl,
+                    file_type: file.type,
+                    sender_name: getMyName()
+                }]).select().single();
+                if (nm) {
+                    chatChannelRef.current?.send({ type: 'broadcast', event: 'sync', payload: { newMessage: nm } });
+                    setMessages(prev => prev.find(m => m.id === nm.id) ? prev : [...prev, nm]);
+                }
             }
-        } else {
-            await supabase.from('messages').insert([
-                { project_id: project.id, user_id: user.id, content: finalContent }
-            ]);
         }
-        
-        loadMessages(project.id);
+
+        if (msgContent.trim()) {
+            const { data: nm } = await supabase.from('messages').insert([{
+                ...base, user_id: user.id, content: msgContent, sender_name: getMyName()
+            }]).select().single();
+            if (nm) {
+                chatChannelRef.current?.send({ type: 'broadcast', event: 'sync', payload: { newMessage: nm } });
+                setMessages(prev => prev.find(m => m.id === nm.id) ? prev : [...prev, nm]);
+            }
+        }
     };
 
-    if (loading) return (
-        <div className="flex-1 flex flex-col items-center justify-center bg-background">
-            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="w-12 h-12 border-[3px] border-surface-border border-t-accent rounded-full mb-4" />
-            <p className="text-sm font-black text-foreground/30 tracking-widest uppercase">Initializing Secure Channel...</p>
-        </div>
-    );
-
     return (
-        <div className="flex-1 flex flex-col h-full bg-background relative overflow-hidden">
-             {/* Topbar Modern Glass */}
-             <div className="p-6 px-10 border-b border-surface-border flex items-center justify-between bg-background/60 backdrop-blur-2xl sticky top-0 z-[60]">
-                <div className="flex items-center gap-6">
-                    <div className="w-14 h-14 rounded-[20px] bg-surface flex items-center justify-center text-foreground shadow-2xl border border-surface-border relative group">
-                        <div className="absolute inset-0 bg-gradient-to-br from-accent to-blue-600 opacity-0 group-hover:opacity-20 transition-opacity rounded-[20px]" />
-                        <span className="font-black text-2xl tracking-tighter bg-gradient-to-br from-accent to-blue-500 bg-clip-text text-transparent">{project?.name?.substring(0,2).toUpperCase() || 'HQ'}</span>
-                    </div>
-                    <div className="flex flex-col justify-center gap-1">
-                        <div className="relative group">
-                            <h1 className="font-black text-xl text-foreground tracking-tight flex items-center gap-3 leading-none cursor-pointer">
-                                {project?.name || "Workspace"} 
-                                {allProjects.length > 1 && <ChevronDown className="w-4 h-4 text-accent"/>}
-                                <span className="bg-emerald-500/10 border border-emerald-500/20 text-[9px] uppercase font-black tracking-[0.2em] px-2.5 py-1 rounded-full text-emerald-500">Live</span>
-                            </h1>
-                            {allProjects.length > 1 && (
-                                <div className="absolute top-10 left-0 w-64 bg-surface border border-surface-border rounded-2xl shadow-2xl p-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto z-[100]">
-                                    {allProjects.map(p => (
-                                        <button 
-                                            key={p.id} 
-                                            onClick={() => {
-                                                setProject(p);
-                                                loadMessages(p.id);
-                                                subscribeChat(p.id);
-                                            }}
-                                            className="w-full text-left p-4 hover:bg-white/5 rounded-xl transition-colors font-bold text-sm"
-                                        >
-                                            {p.name}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
+        <div className="flex-1 flex flex-col h-full bg-background relative overflow-hidden text-white">
+
+            {/* Onboarding overlay */}
+            <AnimatePresence>
+                {showOnboarding && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="absolute inset-0 z-[200] bg-black/80 backdrop-blur-xl flex items-center justify-center p-6">
+                        <div className="bg-surface p-10 rounded-[3rem] border border-surface-border max-w-md w-full shadow-2xl">
+                            <div className="w-16 h-16 bg-accent/10 rounded-2xl flex items-center justify-center mb-6">
+                                <UserRound className="w-8 h-8 text-accent" />
+                            </div>
+                            <h2 className="text-3xl font-black mb-2 tracking-tighter">Como podemos te chamar?</h2>
+                            <p className="text-sm text-foreground/40 mb-8">Seu nome ficará visível no chat com nossa equipe.</p>
+                            <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleUpdateName()}
+                                placeholder="Seu nome ou apelido..." autoFocus
+                                className="w-full bg-background border border-surface-border p-5 rounded-2xl outline-none mb-6 focus:border-accent transition-colors" />
+                            <button onClick={handleUpdateName} className="w-full bg-white text-black font-black py-5 rounded-2xl hover:scale-[1.02] active:scale-[0.98] transition-all">
+                                VAMOS LÁ
+                            </button>
                         </div>
-                        <p className="text-[11px] font-black text-foreground/30 uppercase tracking-[0.1em] flex items-center gap-2">
-                           <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></span> Conexão Segura Ativa
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Navbar */}
+            <div className="px-8 py-5 border-b border-surface-border flex justify-between items-center bg-background/60 backdrop-blur-md z-50">
+                <div className="flex items-center gap-4">
+                    {/* Avatar do perfil do usuário na navbar */}
+                    {profile?.avatar_url ? (
+                        <img src={profile.avatar_url} alt="Avatar" className="w-10 h-10 rounded-xl object-cover border border-surface-border" />
+                    ) : (
+                        <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center">
+                            <span className="text-accent font-black text-xs">HQ</span>
+                        </div>
+                    )}
+                    <div>
+                        <h1 className="font-bold text-white flex items-center gap-2">
+                            Canal Susanoo
+                            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                        </h1>
+                        <p className="text-[10px] font-black text-foreground/30 uppercase tracking-widest">
+                            {getMyName()}
                         </p>
                     </div>
                 </div>
-                
-                <div className="hidden md:flex flex-row items-center gap-4 text-foreground/50">
-                    <div className="flex -space-x-3 mr-4">
-                        {['D', 'V', 'L', 'K'].map((initial, i) => (
-                            <div key={i} className="w-9 h-9 rounded-full border-2 border-background bg-surface flex items-center justify-center text-[10px] font-black text-foreground/40 shadow-lg" title={`Agente ${initial}`}>
-                                {initial}
-                            </div>
-                        ))}
-                    </div>
-                    <button className="p-3 hover:bg-surface rounded-2xl transition-all border border-transparent hover:border-surface-border"><Video className="w-5 h-5"/></button>
-                    <button className="p-3 hover:bg-surface rounded-2xl transition-all border border-transparent hover:border-surface-border"><Phone className="w-5 h-5"/></button>
-                    <div className="w-px h-6 bg-surface-border mx-2" />
-                    <button className="p-3 hover:bg-surface rounded-2xl transition-all border border-transparent hover:border-surface-border"><Info className="w-5 h-5"/></button>
+                <div className="flex items-center gap-2">
+                    <button className="p-2.5 hover:bg-surface rounded-xl transition-all"><Video className="w-5 h-5 text-foreground/40" /></button>
+                    <button className="p-2.5 hover:bg-surface rounded-xl transition-all"><Phone className="w-5 h-5 text-foreground/40" /></button>
                 </div>
-             </div>
+            </div>
 
-             {/* Message Feed */}
-             <div className="flex-1 overflow-y-auto p-10 pt-20 custom-scrollbar relative z-10 flex flex-col gap-12">
-                {messages.length === 0 && (
-                    <div className="h-full flex flex-col items-center justify-center opacity-20 py-20">
-                        <UserRound className="w-20 h-20 mb-6" />
-                        <p className="font-black uppercase tracking-[0.4em] text-sm">Início da Transmissão Segura</p>
+            {/* Feed de mensagens */}
+            <div className="flex-1 overflow-y-auto px-6 py-8 flex flex-col gap-6 custom-scrollbar">
+                {loading && (
+                    <div className="flex-1 flex items-center justify-center opacity-30">
+                        <Loader2 className="w-8 h-8 animate-spin" />
                     </div>
                 )}
-                
-                {messages.map((msg, idx) => {
-                    const isMe = msg.user_id === user?.id;
-                    const parsed = parseReply(msg.content);
-                    const prevMsg = idx > 0 ? messages[idx-1] : null;
-                    const showAuthor = !prevMsg || prevMsg.user_id !== msg.user_id;
+
+                {!loading && messages.length === 0 && (
+                    <div className="flex-1 flex flex-col items-center justify-center opacity-20 py-20 gap-4">
+                        <UserRound className="w-16 h-16" />
+                        <p className="font-black uppercase tracking-[0.3em] text-xs">Início da conversa</p>
+                    </div>
+                )}
+
+                {messages.map((msg) => {
+                    const isStaff = msg.sender_name?.startsWith('[STAFF]');
+                    const isMe = !isStaff;
+                    const displayName = isStaff ? msg.sender_name!.replace('[STAFF] ', '') : (msg.sender_name || 'Cliente');
+                    const { text, inlineImages } = parseMessageContent(msg.content || '');
+
+                    // Verificar se é uma URL de imagem direta no content (legado)
+                    const isDirectImageUrl = !msg.file_url && msg.content?.match(/^https?:\/\/.+\.(png|jpg|jpeg|gif|webp)/i);
 
                     return (
-                        <motion.div 
-                            initial={{ opacity: 0, x: isMe ? 20 : -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            key={msg.id} 
-                            className={`flex flex-col ${isMe ? 'items-end text-right' : 'items-start text-left'}`}
-                        >
-                            {showAuthor && (
-                                <div className="flex items-center gap-3 mb-4">
-                                    {!isMe && <div className="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center text-[10px] font-black text-accent">{msg.profiles?.name?.substring(0,1) || 'S'}</div>}
-                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-foreground/40">
-                                        {isMe ? 'VOCÊ (CLIENTE)' : `${msg.profiles?.name || 'SUSANOO HQ'} • ${msg.profiles?.role || 'Agente'}`}
-                                    </span>
-                                    {isMe && <div className="w-8 h-8 rounded-xl bg-blue-500/20 flex items-center justify-center text-[10px] font-black text-blue-500">C</div>}
+                        <motion.div key={msg.id}
+                            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                            className={`flex w-full gap-3 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+
+                            {/* Avatar */}
+                            {isStaff ? (
+                                <div className="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-[10px] font-black uppercase border bg-accent border-accent/40 text-white shadow-[0_0_12px_rgba(var(--accent-rgb),0.4)]">
+                                    HQ
                                 </div>
+                            ) : (
+                                profile?.avatar_url ? (
+                                    <img
+                                        src={profile.avatar_url}
+                                        alt={displayName}
+                                        className="w-9 h-9 rounded-full shrink-0 object-cover border border-surface-border"
+                                    />
+                                ) : (
+                                    <div className="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-[10px] font-black uppercase border bg-surface border-surface-border text-foreground/50">
+                                        {displayName.charAt(0)}
+                                    </div>
+                                )
                             )}
 
-                            <div className={`group relative max-w-[85%] sm:max-w-2xl`}>
-                                {/* Context Menu Actions */}
-                                <div className={`absolute top-0 ${isMe ? '-left-12' : '-right-12'} opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-1`}>
-                                    <button onClick={() => setReplyingTo(msg)} className="p-2 hover:bg-surface rounded-lg text-foreground/40 hover:text-accent"><CornerUpLeft className="w-4 h-4"/></button>
-                                    {isMe && (
-                                        <>
-                                            <button onClick={() => { setEditingMessage(msg); setContent(parsed.actualContent); }} className="p-2 hover:bg-surface rounded-lg text-foreground/40 hover:text-blue-500"><Pencil className="w-3.5 h-3.5"/></button>
-                                            <button onClick={async () => await supabase.from('messages').delete().eq('id', msg.id)} className="p-2 hover:bg-surface rounded-lg text-foreground/40 hover:text-red-500"><Trash2 className="w-4 h-4"/></button>
-                                        </>
-                                    )}
-                                </div>
+                            <div className={`flex flex-col gap-1.5 max-w-[75%] ${isMe ? 'items-end' : 'items-start'}`}>
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${isStaff ? 'text-accent' : 'text-foreground/40'}`}>
+                                    {isMe ? `Você` : `${displayName} · STAFF`}
+                                </span>
 
-                                <div className={`p-6 rounded-[32px] shadow-sm relative overflow-hidden transition-all ${
-                                    isMe 
-                                    ? 'bg-accent text-white rounded-tr-sm' 
-                                    : 'bg-surface border border-surface-border text-foreground rounded-tl-sm'
-                                }`}>
-                                    {parsed.isReply && (
-                                        <div className={`mb-4 p-4 rounded-2xl text-[13px] border-l-4 ${isMe ? 'bg-white/10 border-white/40' : 'bg-foreground/5 border-accent/40'} opacity-80 backdrop-blur-sm`}>
-                                            <p className="font-black uppercase tracking-widest text-[9px] mb-2">{parsed.replyToName}</p>
-                                            <p className="italic line-clamp-2">{parsed.replyToContent}</p>
-                                        </div>
-                                    )}
+                                <div className={`px-5 py-4 shadow-xl relative
+                                    ${isMe
+                                        ? 'bg-white text-black rounded-[1.5rem] rounded-tr-sm'
+                                        : 'bg-surface border border-surface-border text-white rounded-[1.5rem] rounded-tl-sm'
+                                    }`}>
 
+                                    {/* Arquivo/Imagem via file_url */}
                                     {msg.file_url && (
-                                        <div className="mb-4">
-                                            {msg.file_type?.startsWith('image/') ? (
-                                                <img src={msg.file_url} alt="Attachment" className="rounded-2xl max-w-full h-auto cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(msg.file_url, '_blank')} />
+                                        <div className="mb-3">
+                                            {msg.file_type?.startsWith('image/') || msg.file_url?.match(/\.(png|jpg|jpeg|gif|webp)/i) ? (
+                                                <img
+                                                    src={msg.file_url}
+                                                    alt="Imagem"
+                                                    onClick={() => window.open(msg.file_url, '_blank')}
+                                                    className="rounded-2xl max-w-full max-h-72 object-cover cursor-pointer hover:scale-[1.02] transition-transform border border-black/5"
+                                                />
                                             ) : (
-                                                <div className="bg-black/30 p-4 rounded-2xl flex items-center justify-between gap-4">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="p-2 bg-white/10 rounded-lg"><FileText className="w-5 h-5"/></div>
-                                                        <span className="text-xs font-bold truncate max-w-[150px]">Arquivo Anexo</span>
-                                                    </div>
-                                                    <a href={msg.file_url} download target="_blank" className="p-2 hover:bg-white/20 rounded-full transition-colors"><Download className="w-4 h-4"/></a>
+                                                <div className={`flex items-center gap-3 p-3 rounded-xl ${isMe ? 'bg-black/5' : 'bg-white/5'}`}>
+                                                    <FileText className="w-5 h-5" />
+                                                    <span className="text-xs font-bold flex-1 truncate">
+                                                        {msg.file_url.split('/').pop()?.substring(14) || 'Documento'}
+                                                    </span>
+                                                    <a href={msg.file_url} target="_blank" className="p-1.5 rounded-lg hover:bg-black/10 transition-all">
+                                                        <Download className="w-4 h-4" />
+                                                    </a>
                                                 </div>
                                             )}
                                         </div>
                                     )}
 
-                                    <p className="text-[15px] font-medium leading-relaxed whitespace-pre-wrap">{parsed.actualContent}</p>
-                                    
-                                    <div className={`mt-3 flex items-center gap-2 text-[9px] font-black uppercase tracking-widest opacity-40 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                    {/* Imagens inline parseadas do content (legado markdown) */}
+                                    {inlineImages.map((img, i) => (
+                                        <div key={i} className="mb-3">
+                                            <img
+                                                src={img.url}
+                                                alt={img.name}
+                                                onClick={() => window.open(img.url, '_blank')}
+                                                className="rounded-2xl max-w-full max-h-72 object-cover cursor-pointer hover:scale-[1.02] transition-transform border border-black/5"
+                                            />
+                                            {img.name && img.name !== 'Imagem' && (
+                                                <p className="text-[10px] opacity-40 mt-1">{img.name}</p>
+                                            )}
+                                        </div>
+                                    ))}
+
+                                    {/* URL de imagem direta no content (legado) */}
+                                    {isDirectImageUrl && (
+                                        <div className="mb-3">
+                                            <img
+                                                src={msg.content}
+                                                alt="Imagem"
+                                                onClick={() => window.open(msg.content, '_blank')}
+                                                className="rounded-2xl max-w-full max-h-72 object-cover cursor-pointer hover:scale-[1.02] transition-transform"
+                                            />
+                                        </div>
+                                    )}
+
+                                    {/* Texto da mensagem */}
+                                    {text && !isDirectImageUrl && (
+                                        <p className="text-[15px] font-medium leading-relaxed whitespace-pre-wrap">{text}</p>
+                                    )}
+
+                                    <p className={`text-[9px] font-black mt-2 opacity-30 ${isMe ? 'text-right' : 'text-left'}`}>
                                         {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                        {isMe && <div className="w-1 h-1 rounded-full bg-white/40" />}
-                                    </div>
+                                    </p>
                                 </div>
                             </div>
                         </motion.div>
                     );
                 })}
-                <div ref={messagesEndRef} className="pb-10" />
 
-                {/* Typing Indicator */}
+                {/* Typing indicator */}
                 <AnimatePresence>
-                {typingUsers.length > 0 && (
-                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex items-center gap-3">
-                        <div className="flex gap-1.5 p-3 px-4 bg-surface/50 border border-surface-border rounded-full shadow-lg">
-                            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0s' }}></span>
-                            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0.2s' }}></span>
-                            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0.4s' }}></span>
-                        </div>
-                        <span className="text-[10px] font-black text-foreground/40 uppercase tracking-widest">{typingUsers[0]} está digitando...</span>
-                    </motion.div>
-                )}
+                    {typingUsers.length > 0 && (
+                        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                            className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-[10px] font-black text-accent">HQ</div>
+                            <div className="flex gap-1.5 px-4 py-3 bg-surface border border-surface-border rounded-2xl rounded-tl-sm">
+                                {[0, 0.15, 0.3].map((delay, i) => (
+                                    <span key={i} className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: `${delay}s` }} />
+                                ))}
+                            </div>
+                            <span className="text-[9px] text-foreground/30 font-black uppercase tracking-widest">
+                                {typingUsers[0]} digitando...
+                            </span>
+                        </motion.div>
+                    )}
                 </AnimatePresence>
-             </div>
 
-             {/* Input Area (WhatsApp Style with Preview) */}
-             <div className="p-6 md:p-10 relative z-[70]">
-                <div className="max-w-7xl mx-auto flex flex-col gap-4">
-                    
-                    {/* Staged Files Preview (WhatsApp Style) */}
+                <div ref={messagesEndRef} />
+            </div>
+
+            {/* Área de input */}
+            <div className="px-6 pb-6 bg-background">
+                <div className="max-w-5xl mx-auto flex flex-col gap-3">
+
+                    {/* Preview de arquivos staged */}
                     <AnimatePresence>
-                    {stagedFiles.length > 0 && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="bg-surface/50 backdrop-blur-2xl border border-surface-border rounded-[2rem] p-4 flex flex-wrap gap-4 mb-2 overflow-hidden items-center">
-                            <div className="w-full flex justify-between items-center px-2 mb-2">
-                                <span className="text-[10px] font-black uppercase tracking-widest text-foreground/40">Anexos para enviar ({stagedFiles.length})</span>
-                                <button onClick={() => { setStagedFiles([]); setPreviews([]); }} className="text-[9px] font-black text-red-500 hover:scale-105 transition-transform uppercase tracking-widest">Limpar Tudo</button>
-                            </div>
-                            {previews.map((preview, i) => (
-                                <div key={i} className="relative group">
-                                    <div className="w-24 h-24 rounded-2xl border border-surface-border bg-black/40 overflow-hidden flex items-center justify-center relative">
-                                        {preview === 'file' ? (
-                                            <div className="flex flex-col items-center gap-1 opacity-40">
-                                                <FileText className="w-8 h-8" />
-                                                <span className="text-[8px] font-black uppercase tracking-tighter truncate max-w-[80px]">{stagedFiles[i].name}</span>
-                                            </div>
-                                        ) : (
-                                            <img src={preview} alt="Staged" className="w-full h-full object-cover" />
-                                        )}
+                        {previews.length > 0 && (
+                            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                                className="flex gap-3 flex-wrap p-4 bg-surface border border-surface-border rounded-2xl">
+                                {previews.map((p, i) => (
+                                    <div key={i} className="relative w-20 h-20 group">
+                                        {p === 'file'
+                                            ? <div className="w-full h-full bg-background border border-surface-border rounded-xl flex items-center justify-center">
+                                                <FileText className="w-7 h-7 text-foreground/20" />
+                                              </div>
+                                            : <img src={p} className="w-full h-full object-cover rounded-xl border border-surface-border" />
+                                        }
+                                        <button onClick={() => removeStagedFile(i)}
+                                            className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <X className="w-3 h-3" />
+                                        </button>
                                     </div>
-                                    <button 
-                                        type="button"
-                                        onClick={() => removeStagedFile(i)}
-                                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform z-10"
-                                    >
-                                        <X className="w-3 h-3" />
-                                    </button>
-                                </div>
-                            ))}
-                            <button 
-                                type="button"
-                                onClick={() => fileInputRef.current?.click()}
-                                className="w-24 h-24 rounded-2xl border-2 border-dashed border-surface-border flex items-center justify-center text-foreground/20 hover:text-accent hover:border-accent/40 transition-all"
-                            >
-                                <Paperclip className="w-8 h-8" />
-                            </button>
-                        </motion.div>
-                    )}
+                                ))}
+                            </motion.div>
+                        )}
                     </AnimatePresence>
 
-                    {/* Staging reply/edit indicator */}
-                    <AnimatePresence>
-                    {(replyingTo || editingMessage) && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="flex items-center justify-between bg-surface/50 backdrop-blur-2xl border border-surface-border rounded-t-[2.5rem] p-6 pb-2 -mb-6 relative z-0 border-b-0">
-                            <div className="flex items-start gap-4">
-                                <div className={`p-2 rounded-xl ${editingMessage ? 'bg-blue-500/10 text-blue-500' : 'bg-accent/10 text-accent'}`}>
-                                    {editingMessage ? <Pencil className="w-4 h-4"/> : <CornerUpLeft className="w-4 h-4"/>}
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-foreground/40">{editingMessage ? 'Editando sua mensagem' : `Respondendo a ${replyingTo?.profiles?.name || 'Agente'}`}</span>
-                                    <p className="text-sm font-medium text-foreground/70 truncate italic max-w-[300px]">"{parseReply(replyingTo?.content || editingMessage?.content || "").actualContent}"</p>
-                                </div>
-                            </div>
-                            <button type="button" onClick={() => { setReplyingTo(null); setEditingMessage(null); if(editingMessage) setContent(""); }} className="p-2 hover:bg-foreground/5 rounded-full transition-colors"><X className="w-5 h-5"/></button>
-                        </motion.div>
-                    )}
-                    </AnimatePresence>
-
-                    {/* Main Input Floating Card */}
-                    <motion.form 
-                        onSubmit={handleSend}
-                        className="bg-surface/80 backdrop-blur-3xl border border-surface-border p-3 rounded-[2.5rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)] focus-within:border-accent/40 transition-all flex items-center gap-3 pr-4 group relative z-10"
-                    >
-                        <button 
-                            type="button" 
-                            onClick={() => fileInputRef.current?.click()}
-                            className="w-12 h-12 rounded-full flex items-center justify-center text-foreground/30 hover:text-accent hover:bg-accent/5 transition-all ml-2"
-                        >
-                            <Paperclip className="w-6 h-6" />
+                    <form onSubmit={handleSend}
+                        className="bg-surface border border-surface-border rounded-[2rem] p-2 flex items-center gap-2 focus-within:border-accent/40 transition-colors">
+                        <button type="button" onClick={() => fileInputRef.current?.click()}
+                            className="w-11 h-11 rounded-full flex items-center justify-center text-foreground/30 hover:text-accent transition-colors">
+                            <Paperclip className="w-5 h-5" />
                         </button>
-                        <input 
-                            type="file" 
-                            multiple 
-                            className="hidden" 
-                            ref={fileInputRef} 
-                            onChange={handleFileSelect}
-                        />
+                        <input type="file" multiple hidden ref={fileInputRef} onChange={handleFileSelect} />
 
-                        <div className="flex-1 relative flex items-center">
-                            <input 
-                                type="text" 
-                                value={content}
-                                onChange={e => { setContent(e.target.value); handleTyping(); }}
-                                placeholder={editingMessage ? "Edite sua mensagem..." : "Fale com a Equipe Susanoo..."}
-                                className="w-full bg-transparent p-5 px-6 outline-none text-foreground font-medium text-[16px] placeholder:text-foreground/20"
-                                disabled={!project}
-                            />
-                            <div className="absolute inset-0 bg-accent/5 rounded-full blur-[20px] opacity-0 group-focus-within:opacity-100 transition-opacity pointer-events-none" />
-                        </div>
-                        
-                        <div className="hidden sm:flex items-center gap-2 pr-2">
-                             <div className="w-px h-6 bg-surface-border mx-2" />
-                             <button 
-                                type="button" 
-                                onClick={() => fileInputRef.current?.click()}
-                                className="p-3 text-foreground/30 hover:text-foreground/60 transition-colors"
-                             >
-                                <ImageIcon className="w-5 h-5"/>
-                             </button>
-                        </div>
+                        <input type="text" value={content}
+                            onChange={e => { setContent(e.target.value); handleTyping(); }}
+                            placeholder="Fale com a equipe Susanoo..."
+                            className="flex-1 bg-transparent py-3 px-2 outline-none text-white font-medium placeholder:text-foreground/20" />
 
-                        <button 
-                            type="submit"
-                            disabled={(!content.trim() && stagedFiles.length === 0) || !project}
-                            className="w-14 h-14 rounded-full bg-accent text-white flex items-center justify-center shadow-xl shadow-accent/20 hover:scale-105 active:scale-95 transition-all disabled:opacity-30 disabled:grayscale disabled:hover:scale-100"
-                        >
-                            <Send className="w-6 h-6" />
+                        <button type="submit" disabled={loading || (!content.trim() && stagedFiles.length === 0)}
+                            className="w-12 h-12 rounded-full bg-accent flex items-center justify-center shadow-lg shadow-accent/20 hover:scale-110 active:scale-95 transition-all disabled:opacity-30">
+                            <Send className="w-5 h-5 text-white" />
                         </button>
-                    </motion.form>
+                    </form>
                 </div>
-             </div>
+            </div>
         </div>
     );
 }

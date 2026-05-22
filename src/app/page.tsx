@@ -57,7 +57,7 @@ export default function Home() {
       </nav>
 
       {/* Hero Section */}
-      <section ref={targetRef} className="relative pt-44 pb-24 px-6 min-h-screen flex flex-col items-center justify-center overflow-hidden">
+      <section ref={targetRef} className="relative pt-32 pb-24 px-6 min-h-screen flex flex-col items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0 opacity-40">
            <ShaderAnimation />
         </div>
@@ -77,16 +77,16 @@ export default function Home() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.2 }}
-            className="text-7xl md:text-9xl lg:text-[12rem] font-black tracking-tighter leading-[0.8] mb-16 uppercase italic"
+            className="text-5xl md:text-8xl lg:text-[10rem] font-black tracking-tighter leading-none mb-8 uppercase italic"
           >
-            SUSA<br />NOO<span className="text-accent underline decoration-white/10 decoration-8 underline-offset-[20px]">.</span>
+            SUSANOO<span className="text-accent underline decoration-white/10 decoration-8 underline-offset-[20px]">.</span>
           </motion.h1>
 
           <motion.p 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.4 }}
-            className="max-w-2xl mx-auto text-lg md:text-2xl font-bold text-foreground/40 leading-relaxed mb-16 px-4 italic"
+            className="max-w-2xl mx-auto text-lg md:text-xl font-bold text-foreground/40 leading-relaxed mb-10 px-4 italic"
           >
             A nova era da produção digital. Design agressivo, performance nuclear e transparência absoluta.
           </motion.p>
