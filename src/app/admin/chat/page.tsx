@@ -416,9 +416,9 @@ export default function AdminTeamsChat() {
                        <div key={c.id} className="group relative flex items-center">
                             <button 
                                 onClick={() => handleSelectChannel(c)}
-                                className={`flex-1 flex items-center gap-3 p-3 rounded-xl transition-all ${activeChannel?.id === c.id ? 'bg-accent/10 border border-accent/20' : 'hover:bg-[#111]'}`}
+                                className={`flex-1 flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] ${activeChannel?.id === c.id ? 'bg-accent/10 border border-accent/20 shadow-sm' : 'hover:bg-[#111] hover:shadow-sm'}`}
                             >
-                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-black text-sm ${activeChannel?.id === c.id ? 'bg-accent text-white' : 'bg-[#222]'}`}>
+                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-black text-sm transition-colors ${activeChannel?.id === c.id ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-[#222] text-[#888] group-hover:bg-accent/20 group-hover:text-accent'}`}>
                                     {c.name.substring(0,2).toUpperCase()}
                                 </div>
                                 <div className="flex flex-col items-start overflow-hidden">
@@ -444,8 +444,6 @@ export default function AdminTeamsChat() {
                        <div className="p-5 border-b border-[#222] flex justify-between items-center bg-[#0a0a0a]/80 backdrop-blur-xl">
                            <h1 className="font-bold text-white flex items-center gap-2"># {activeChannel.name}</h1>
                            <div className="flex gap-2">
-                               <button className="p-2 text-[#555] hover:text-white transition-colors"><Video className="w-5 h-5"/></button>
-                               <button className="p-2 text-[#555] hover:text-white transition-colors"><Phone className="w-5 h-5"/></button>
                            </div>
                        </div>
 

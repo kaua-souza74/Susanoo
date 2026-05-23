@@ -22,11 +22,21 @@ export default function LoginPage() {
     let { error } = await supabase.auth.signInWithPassword({ email, password });
 
     // Criação Automática Imediata caso não existam no Banco (MVP Fast-Track)
-    if (error && ADM_EMAILS.includes(email.toLowerCase())) {
-        const { error: signUpError } = await supabase.auth.signUp({ 
-            email, password, options: { data: { full_name: email.split('@')[0], role: 'admin' } } 
-        });
-        if (!signUpError) error = null; // Auto-Aprovado como HQ
+    if (error) {
+        // Se for admin
+        if (ADM_EMAILS.includes(email.toLowerCase())) {
+            const { error: signUpError } = await supabase.auth.signUp({ 
+                email, password, options: { data: { full_name: email.split('@')[0], role: 'admin' } } 
+            });
+            if (!signUpError) error = null; // Auto-Aprovado como HQ
+        } else {
+            // Se for cliente ou dev (qualquer outro email)
+            const role = email.includes('dev') ? 'developer' : 'client';
+            const { error: signUpError } = await supabase.auth.signUp({ 
+                email, password, options: { data: { full_name: email.split('@')[0], role } } 
+            });
+            if (!signUpError) error = null; // Auto-Aprovado como User Comum
+        }
     }
 
     if (error) {

@@ -1,7 +1,7 @@
 "use client";
 import { ReactNode, useState, useEffect } from "react";
 import Link from "next/link";
-import { Zap, Grid, MessageSquareText, Calendar, Settings, LogOut, Bot, Sparkles } from "lucide-react";
+import { Zap, Grid, MessageSquareText, Calendar, Settings, LogOut, Bot, Sparkles, User } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useRouter, usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -39,11 +39,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
             {/* Menu Sections Focadas no Cliente SaaS */}
             <div className="p-4 flex flex-col gap-2">
-               <NavItem icon={<Sparkles className="w-5 h-5"/>} label="Discover" active={mounted ? pathname === '/dashboard' : false} href="/dashboard" />
+               <NavItem icon={<Sparkles className="w-5 h-5"/>} label="Marketplace" active={mounted ? pathname === '/dashboard' : false} href="/dashboard" />
+               <NavItem icon={<User className="w-5 h-5"/>} label="Desenvolvedores" active={mounted ? pathname?.includes('/developers') : false} href="/dashboard/developers" />
                <NavItem icon={<Grid className="w-5 h-5"/>} label="Meus Projetos" active={mounted ? pathname?.includes('/projects') || pathname?.includes('/kanban') : false} href="/dashboard/projects" />
                <NavItem icon={<MessageSquareText className="w-5 h-5"/>} label="Chat com a Equipe" active={mounted ? pathname?.includes('/chat') : false} href="/dashboard/chat" />
                <NavItem icon={<Bot className="w-5 h-5"/>} label="Assistente IA" active={mounted ? pathname?.includes('/ai') : false} href="/dashboard/ai" />
                <NavItem icon={<Calendar className="w-5 h-5"/>} label="Cronograma" active={mounted ? pathname?.includes('/timeline') : false} href="/dashboard/timeline" />
+               
+               <div className="my-2 border-t border-surface-border" /> {/* Separator */}
+               
+               <NavItem icon={<User className="w-5 h-5"/>} label="Meu Perfil" active={mounted ? pathname?.includes('/profile') : false} href="/dashboard/profile" />
                <NavItem icon={<Settings className="w-5 h-5"/>} label="Configurações" active={mounted ? pathname?.includes('/settings') : false} href="/dashboard/settings" />
             </div>
         </div>

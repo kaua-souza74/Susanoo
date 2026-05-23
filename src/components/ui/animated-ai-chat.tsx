@@ -437,8 +437,9 @@ export function AnimatedAIChat() {
                                 <motion.button
                                     type="button"
                                     onClick={handleAttachFile}
+                                    whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.94 }}
-                                    className="p-2 text-foreground/40 hover:text-foreground/90 rounded-lg transition-colors relative group"
+                                    className="p-2 text-foreground/40 hover:text-foreground/90 rounded-lg transition-colors relative group cursor-pointer"
                                 >
                                     <Paperclip className="w-4 h-4" />
                                     <motion.span
@@ -453,9 +454,10 @@ export function AnimatedAIChat() {
                                         e.stopPropagation();
                                         setShowCommandPalette(prev => !prev);
                                     }}
+                                    whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.94 }}
                                     className={cn(
-                                        "p-2 text-foreground/40 hover:text-foreground/90 rounded-lg transition-colors relative group",
+                                        "p-2 text-foreground/40 hover:text-foreground/90 rounded-lg transition-colors relative group cursor-pointer",
                                         showCommandPalette && "bg-foreground/10 text-foreground"
                                     )}
                                 >
@@ -470,11 +472,11 @@ export function AnimatedAIChat() {
                             <motion.button
                                 type="button"
                                 onClick={handleSendMessage}
-                                whileHover={{ scale: 1.01 }}
+                                whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.98 }}
                                 disabled={isTyping || !value.trim()}
                                 className={cn(
-                                    "px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                                    "px-4 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer",
                                     "flex items-center gap-2",
                                     value.trim()
                                         ? "bg-accent text-white shadow-lg shadow-accent/10"
@@ -496,10 +498,12 @@ export function AnimatedAIChat() {
                             <motion.button
                                 key={suggestion.prefix}
                                 onClick={() => selectCommandSuggestion(index)}
-                                className="flex items-center gap-2 px-3 py-2 bg-surface hover:bg-foreground/5 rounded-lg text-sm text-foreground/60 hover:text-foreground/90 transition-all border border-surface-border relative group"
+                                className="flex items-center gap-2 px-3 py-2 bg-surface hover:bg-foreground/5 rounded-lg text-sm text-foreground/60 hover:text-foreground/90 transition-all border border-surface-border relative group cursor-pointer"
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: index * 0.1 }}
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.95 }}
                             >
                                 {suggestion.icon}
                                 <span>{suggestion.label}</span>
