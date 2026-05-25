@@ -1,191 +1,185 @@
 "use client";
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
-import { ArrowRight, ExternalLink, ShieldCheck, Monitor, Sparkles, Store } from "lucide-react";
+import { Search, ChevronDown, ExternalLink, ShieldCheck, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import PublishMarketplaceModal from "@/components/ui/publish-marketplace-modal";
+import { supabase } from "@/lib/supabase";
 
-export default function ClientProjectsPage() {
-    const [projects, setProjects] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
-    const router = useRouter();
+type MainMode = "Susanoo" | "Geral";
 
-    useEffect(() => {
-      const fetchData = async () => {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (!session) {
-             router.push("/login"); return;
-          }
-          
-          const { data: projs } = await supabase.from('projects').select('*').eq('client_id', session.user.id);
-          setProjects(projs || []);
-          setLoading(false);
-      };
+export default function DiscoverHome() {
+   const [mainMode, setMainMode] = useState<MainMode>("Susanoo");
+   const [subFilter, setSubFilter] = useState("Templates");
+   const [search, setSearch] = useState("");
+   const [projects, setProjects] = useState<any[]>([]);
+   const [loading, setLoading] = useState(true);
 
-      fetchData();
+   useEffect(() => {
+     const fetchProjects = async () => {
+         const { data } = await supabase
+            .from('projects')
+            .select('*')
+            .eq('show_in_gallery', true)
+            .order('created_at', { ascending: false });
+         
+         setProjects(data || []);
+         setLoading(false);
+     };
+     fetchProjects();
+   }, []);
 
-      const sub = supabase.channel('client_projects_sync')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => {
-              fetchData();
-          })
-          .subscribe();
+   const susanooCategories = ["Templates", "Sites Prontos"];
+   const geralCategories = ["Todos", "Templates de Devs", "Sites de Devs"];
+
+   const currentCategories = mainMode === "Susanoo" ? susanooCategories : geralCategories;
+
+   useEffect(() => {
+      if (mainMode === "Susanoo") setSubFilter("Templates");
+      else setSubFilter("Todos");
+   }, [mainMode]);
+
+   const filtered = projects.filter(proj => {
+      const matchSearch = proj.name.toLowerCase().includes(search.toLowerCase());
       
-      return () => { supabase.removeChannel(sub) };
-    }, [router]);
+      // Mock logic for filtering based on categories since we don't have exact db fields for this yet
+      // In a real scenario, you'd check proj.author_type === 'Susanoo' and proj.product_type === 'Template' etc.
+      const cat = proj.category || 'Templates';
+      
+      let matchCat = true;
+      if (subFilter !== "Todos") {
+         matchCat = cat.includes(subFilter) || subFilter === cat;
+         // fallback mock for the example
+         if (!proj.category) matchCat = true; 
+      }
 
-    if (loading) return (
-        <div className="flex-1 h-full w-full bg-background flex items-center justify-center">
-            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }} className="w-10 h-10 border-[3px] border-surface-border border-t-accent rounded-full" />
-        </div>
-    );
+      return matchSearch && matchCat;
+   });
 
-    return (
-        <div className="flex-1 overflow-y-auto w-full bg-background custom-scrollbar pb-20 p-6 md:p-10">
-            <div className="w-full max-w-6xl mx-auto flex flex-col">
+   const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
+   const itemVariants = { 
+       hidden: { opacity: 0, y: 20 }, 
+       show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 80, damping: 15 } }, 
+       exit: { opacity: 0, scale: 0.95, transition: { duration: 0.2 } } 
+   };
 
-                {/* ── Header ─────────────────────────────────────────────── */}
-                <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mb-12 flex flex-col sm:flex-row sm:items-end justify-between gap-6"
-                >
-                    <div>
-                        <h1 className="text-3xl md:text-4xl font-extrabold text-foreground tracking-tight mb-2">
-                            Meus Projetos
-                        </h1>
-                        <p className="text-foreground/50 text-sm font-medium">
-                            Gerencie, visualize e acompanhe o andamento das suas aplicações.
-                        </p>
-                    </div>
+   return (
+       <div className="flex-1 overflow-y-auto w-full bg-background text-foreground transition-colors duration-300">
+           <div className="flex items-center justify-between p-4 px-8 border-b border-surface-border bg-background/80 backdrop-blur-md sticky top-0 z-50 transition-colors duration-300">
+               <div className="flex items-center gap-6">
+                 <span className="font-bold text-[17px] tracking-tight text-foreground flex items-center gap-2">Marketplace </span>
+                 <div className="hidden md:flex items-center gap-2 cursor-pointer text-foreground/50 hover:text-foreground transition-colors">
+                    <span className="font-medium text-sm">Projetos & Templates</span>
+                    <ChevronDown className="w-4 h-4"/>
+                 </div>
+               </div>
+           </div>
 
-                    {/* ✨ Botão "Publicar no Marketplace" */}
-                    <motion.button
-                        onClick={() => setIsPublishModalOpen(true)}
-                        whileHover={{ scale: 1.03 }}
-                        whileTap={{ scale: 0.97 }}
-                        className="group relative flex items-center gap-3 px-5 py-3.5 rounded-2xl font-bold text-sm cursor-pointer overflow-hidden shrink-0
-                                   bg-gradient-to-r from-accent to-accent/80 text-white shadow-lg shadow-accent/20
-                                   hover:shadow-accent/40 transition-all duration-300"
-                    >
-                        {/* Shimmer effect */}
-                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-                        
-                        <div className="w-7 h-7 rounded-xl bg-white/10 flex items-center justify-center border border-white/20">
-                            <Store className="w-4 h-4" />
-                        </div>
-                        <span>Publicar no Marketplace</span>
-                        <Sparkles className="w-4 h-4 opacity-70" />
-                    </motion.button>
-                </motion.div>
+           <div className="w-full max-w-7xl mx-auto py-12 px-6 flex flex-col items-center overflow-x-hidden">
+               <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: "easeOut" }} className="w-full flex flex-col items-center text-center">
+                   <h1 className="text-4xl md:text-5xl font-black mb-5 flex justify-center items-center gap-4 tracking-tighter text-foreground">
+                       Marketplace <span className="bg-accent/10 flex items-center gap-1 text-accent border border-accent/20 text-[10px] font-bold px-2.5 py-1 rounded shadow-lg uppercase tracking-[0.3em] hidden sm:flex italic"><ShieldCheck className="w-3 h-3"/> Susanoo Verify</span>
+                   </h1>
+                   <p className="text-foreground/40 mb-10 max-w-xl text-[16px] font-bold leading-relaxed italic">
+                       Encontre o site perfeito para o seu comércio ou descubra assets incríveis na nossa galeria.
+                   </p>
+               </motion.div>
 
-                {/* ── Grid de Projetos ───────────────────────────────────── */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {projects.length === 0 ? (
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="col-span-full bg-surface border border-surface-border rounded-3xl p-16 text-center flex flex-col items-center"
-                        >
-                            <div className="w-16 h-16 bg-accent/10 rounded-2xl flex items-center justify-center mb-6">
-                                <Monitor className="w-8 h-8 text-accent opacity-50" />
+               {/* Top Level Toggle */}
+               <motion.div initial={{opacity:0}} animate={{opacity:1}} className="flex p-1 bg-surface border border-surface-border rounded-full mb-8">
+                   <button 
+                       onClick={() => setMainMode("Susanoo")}
+                       className={`px-8 py-3 rounded-full text-xs font-black uppercase tracking-widest transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${mainMode === "Susanoo" ? 'bg-accent text-white shadow-lg' : 'text-foreground/40 hover:text-foreground hover:bg-surface-border'}`}
+                   >
+                       Por Susanoo
+                   </button>
+                   <button 
+                       onClick={() => setMainMode("Geral")}
+                       className={`px-8 py-3 rounded-full text-xs font-black uppercase tracking-widest transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${mainMode === "Geral" ? 'bg-white text-black shadow-lg' : 'text-foreground/40 hover:text-foreground hover:bg-surface-border'}`}
+                   >
+                       Comunidade (Geral)
+                   </button>
+               </motion.div>
+
+               <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4, delay: 0.1 }} className="w-full max-w-2xl relative mb-8">
+                   <Search className="w-5 h-5 absolute left-5 top-1/2 -translate-y-1/2 text-foreground/20" />
+                   <input 
+                      type="text" 
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Pesquisar sites, restaurantes, lojas..."
+                      className="w-full bg-surface/50 border border-surface-border shadow-2xl rounded-[32px] py-5 pl-14 pr-6 text-[15px] font-bold text-foreground focus:border-accent/50 focus:outline-none transition-all placeholder:text-foreground/20"
+                   />
+               </motion.div>
+
+               {/* Sub Filters */}
+               <motion.div initial={{opacity: 0}} animate={{opacity:1}} transition={{delay:0.2}} className="flex flex-wrap gap-3 justify-center mb-16">
+                   {currentCategories.map((cat) => (
+                       <button 
+                           key={cat} 
+                           onClick={() => setSubFilter(cat)}
+                           className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer hover:scale-[1.05] active:scale-[0.95] ${subFilter === cat ? (mainMode === 'Susanoo' ? 'bg-accent/20 text-accent border border-accent/40' : 'bg-foreground/10 text-foreground border border-foreground/20') : 'bg-surface text-foreground/40 hover:text-foreground hover:bg-surface/80 border border-surface-border'}`}
+                       >
+                           {cat}
+                       </button>
+                   ))}
+               </motion.div>
+
+               {/* Showcase Templates - Real Data from Projects */}
+               <motion.div variants={containerVariants} initial="hidden" animate="show" className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+                   <AnimatePresence mode="popLayout">
+                   {filtered.length > 0 ? filtered.map(proj => (
+                        <motion.div variants={itemVariants} layout key={proj.id} className="group flex flex-col">
+                            <div className="aspect-[4/3] w-full rounded-[24px] bg-[#050505] mb-4 overflow-hidden relative shadow-3xl transition-all duration-500 group-hover:-translate-y-2 border border-surface-border group-hover:border-accent/30 cursor-pointer">
+                                
+                                {proj.cover_url ? (
+                                    <img src={proj.cover_url} className="absolute inset-0 w-full h-full object-cover grayscale-[0.5] group-hover:grayscale-0 transition-all duration-700" alt={proj.name}/>
+                                ) : (
+                                    <div className="absolute inset-0 flex items-center justify-center text-5xl font-black text-foreground/5 opacity-20 uppercase tracking-tighter italic">
+                                       {proj.name.substring(0,3)}
+                                    </div>
+                                )}
+                                
+                                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-80 group-hover:opacity-60 transition-opacity z-10" />
+                                
+                                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 z-20 gap-4 scale-90 group-hover:scale-100">
+                                   <button 
+                                      onClick={() => {
+                                        if (proj.deploy_url) window.open(proj.deploy_url.startsWith('http') ? proj.deploy_url : `https://${proj.deploy_url}`, '_blank')
+                                      }}
+                                      className="w-12 h-12 bg-white rounded-full flex items-center justify-center text-black hover:scale-110 active:scale-90 transition-transform shadow-2xl"
+                                   >
+                                      <ExternalLink className="w-5 h-5" />
+                                   </button>
+                                </div>
+
+                                {mainMode === "Susanoo" && (
+                                   <div className="absolute top-3 left-3 bg-accent/90 backdrop-blur-md px-3 py-1 rounded-full flex items-center gap-1 z-20 shadow-lg">
+                                       <ShieldCheck className="w-3 h-3 text-white" />
+                                       <span className="text-[9px] font-black uppercase tracking-widest text-white">Verified</span>
+                                   </div>
+                                )}
                             </div>
-                            <h3 className="text-xl font-bold text-foreground mb-3">Nenhum projeto ativo</h3>
-                            <p className="text-foreground/50 text-sm max-w-sm mb-6">
-                                Fale conosco ou acesse o Marketplace para adquirir seu primeiro Website ou Template.
-                            </p>
-                            <button
-                                onClick={() => router.push('/dashboard/chat')}
-                                className="px-6 py-2.5 bg-accent text-white rounded-xl font-bold text-sm hover:opacity-90 transition-opacity"
-                            >
-                                Falar com Consultor
-                            </button>
-                        </motion.div>
-                    ) : projects.map((proj, i) => {
-                        const pct = proj.manual_progress || 0;
-                        
-                        return (
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            transition={{ delay: i * 0.05 }}
-                            key={proj.id}
-                            className="bg-surface border border-surface-border rounded-3xl p-6 shadow-lg hover:shadow-xl hover:border-foreground/10 transition-all flex flex-col items-start relative overflow-hidden group"
-                        >
-                            <div className="w-full aspect-video bg-background border border-surface-border rounded-2xl mb-6 relative overflow-hidden">
-                               <div className="absolute inset-0 bg-accent/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                               <div className="h-full w-full flex items-center justify-center">
-                                   {proj.deploy_url ? (
-                                       <Monitor className="w-12 h-12 text-foreground/10" />
-                                   ) : (
-                                       <h3 className="text-5xl font-black text-foreground/5 uppercase tracking-tighter mix-blend-overlay">
-                                           {proj.name.substring(0, 3)}
-                                       </h3>
-                                   )}
-                               </div>
-                               <div className="absolute top-4 left-4 flex items-center gap-1.5 bg-background/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-surface-border text-xs font-bold text-foreground">
-                                   <div className={`w-2 h-2 rounded-full ${pct === 100 ? 'bg-emerald-500' : 'bg-accent animate-pulse'}`} />
-                                   {pct === 100 ? 'Publicado' : 'Em Progresso'}
-                               </div>
-                            </div>
-
-                            <div className="flex flex-col w-full">
-                                <h2 className="text-xl font-bold text-foreground mb-2 truncate" title={proj.name}>
-                                    {proj.name}
-                                </h2>
-                                <p className="text-xs text-foreground/50 mb-6 flex items-center gap-1.5">
-                                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-500"/>
-                                   ID: {proj.id.substring(0, 8)}
+                            <div className="px-2">
+                                <div className="flex items-center justify-between mb-1">
+                                    <h4 className="text-xl font-bold text-white tracking-tight">{proj.name}</h4>
+                                    <span className="text-secondary text-[12px] font-bold">R$ 49/m</span>
+                                </div>
+                                <p className="text-xs font-medium text-foreground/40 flex items-center gap-1.5 mt-1">
+                                    <User className="w-3 h-3"/> 
+                                    {mainMode === "Susanoo" ? "Susanoo Production" : "Dev Independente"}
                                 </p>
-
-                                <div className="mb-6 w-full">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="text-xs font-bold text-foreground">Desenvolvimento</span>
-                                        <span className="text-xs font-black text-accent">{pct}%</span>
-                                    </div>
-                                    <div className="w-full bg-background border border-surface-border h-2 rounded-full overflow-hidden">
-                                        <motion.div
-                                            initial={{ width: 0 }}
-                                            animate={{ width: `${pct}%` }}
-                                            transition={{ duration: 1 }}
-                                            className="bg-accent h-full rounded-full"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center gap-3 w-full mt-auto">
-                                    <button
-                                        onClick={() => router.push(`/dashboard/kanban/${proj.id}`)}
-                                        className="flex-1 bg-background border border-surface-border hover:bg-surface-border/50 text-foreground font-bold py-2.5 rounded-xl transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] text-[13px]"
-                                    >
-                                        Kanban
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            if (proj.deploy_url) {
-                                                const url = proj.deploy_url.startsWith('http') ? proj.deploy_url : `https://${proj.deploy_url}`;
-                                                window.open(url, '_blank');
-                                            } else {
-                                                alert("Aguardando homologação do Sócio.");
-                                            }
-                                        }}
-                                        className="w-10 h-10 flex shrink-0 items-center justify-center bg-foreground text-background font-bold rounded-xl hover:opacity-90 transition-all cursor-pointer hover:scale-[1.05] active:scale-[0.95]"
-                                    >
-                                        <ExternalLink className="w-4 h-4" />
-                                    </button>
-                                </div>
                             </div>
                         </motion.div>
-                    )})}
-                </div>
-            </div>
-
-            {/* ── Modal de Publicação ─────────────────────────────────────── */}
-            <PublishMarketplaceModal
-                isOpen={isPublishModalOpen}
-                onClose={() => setIsPublishModalOpen(false)}
-            />
-        </div>
-    );
+                   )) : (
+                        <motion.div initial={{opacity:0}} animate={{opacity:1}} className="col-span-full py-20 text-center">
+                            <div className="inline-flex p-5 rounded-full bg-surface mb-4">
+                                <Search className="w-8 h-8 text-foreground/10" />
+                            </div>
+                            <h3 className="text-lg font-bold text-foreground/30 italic">Nenhum projeto encontrado nesta categoria.</h3>
+                        </motion.div>
+                   )}
+                   </AnimatePresence>
+               </motion.div>
+           </div>
+       </div>
+   );
 }
