@@ -1,18 +1,30 @@
 "use client";
 import { ReactNode, useState, useEffect } from "react";
 import Link from "next/link";
-import { Zap, Grid, MessageSquareText, Calendar, Settings, LogOut, Bot, Sparkles, User } from "lucide-react";
+import { Zap, Grid, MessageSquareText, Calendar, Settings, LogOut, Bot, Sparkles, User, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useRouter, usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SusanooAIWidget } from "@/components/SusanooAIWidget";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
+  const [userType, setUserType] = useState<"Comércio" | "Desenvolvedor">("Comércio");
 
   useEffect(() => {
      setMounted(true);
+     
+     const checkType = () => {
+         const type = localStorage.getItem("susanoo_profile_type") as "Comércio" | "Desenvolvedor";
+         if (type) setUserType(type);
+     };
+     
+     checkType();
+     
+     window.addEventListener("profileTypeChanged", checkType);
+     return () => window.removeEventListener("profileTypeChanged", checkType);
   }, []);
 
   const handleLogout = () => {
@@ -41,9 +53,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <div className="p-4 flex flex-col gap-2">
                <NavItem icon={<Sparkles className="w-5 h-5"/>} label="Marketplace" active={mounted ? pathname === '/dashboard' : false} href="/dashboard" />
                <NavItem icon={<User className="w-5 h-5"/>} label="Desenvolvedores" active={mounted ? pathname?.includes('/developers') : false} href="/dashboard/developers" />
-               <NavItem icon={<Grid className="w-5 h-5"/>} label="Meus Projetos" active={mounted ? pathname?.includes('/projects') || pathname?.includes('/kanban') : false} href="/dashboard/projects" />
+               
+               {userType === "Comércio" ? (
+                   <NavItem icon={<Grid className="w-5 h-5"/>} label="Meus Projetos" active={mounted ? pathname?.includes('/projects') || pathname?.includes('/kanban') : false} href="/dashboard/projects" />
+               ) : (
+                   <NavItem icon={<Plus className="w-5 h-5"/>} label="Adicionar Site" active={mounted ? pathname?.includes('/add-site') : false} href="/dashboard/add-site" />
+               )}
+
                <NavItem icon={<MessageSquareText className="w-5 h-5"/>} label="Chat com a Equipe" active={mounted ? pathname?.includes('/chat') : false} href="/dashboard/chat" />
-               <NavItem icon={<Bot className="w-5 h-5"/>} label="Assistente IA" active={mounted ? pathname?.includes('/ai') : false} href="/dashboard/ai" />
                <NavItem icon={<Calendar className="w-5 h-5"/>} label="Cronograma" active={mounted ? pathname?.includes('/timeline') : false} href="/dashboard/timeline" />
                
                <div className="my-2 border-t border-surface-border" /> {/* Separator */}
@@ -64,6 +81,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       <main className="flex-1 flex flex-col overflow-hidden h-screen bg-background transition-colors duration-300">
          {children}
       </main>
+      
+      {/* Susanoo AI Floating Widget */}
+      <SusanooAIWidget />
     </div>
   );
 }

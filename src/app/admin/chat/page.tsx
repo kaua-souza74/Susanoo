@@ -196,9 +196,24 @@ export default function AdminTeamsChat() {
        const { data: projs } = await supabase.from('projects').select('*');
        const { data: custChats } = await supabase.from('chats').select('*');
        
+       // Buscar perfis dos clientes para mostrar o nome real
+       const clientIds = (custChats || []).filter(c => c.user_id).map(c => c.user_id);
+       let profilesMap: Record<string, any> = {};
+       if (clientIds.length > 0) {
+           const { data: profiles } = await supabase.from('profiles').select('id, name, email').in('id', clientIds);
+           (profiles || []).forEach(p => { profilesMap[p.id] = p; });
+       }
+       
        const all = [
            ...(projs || []).map(p => ({ ...p, isProject: true })),
-           ...(custChats || []).map(c => ({ ...c, isProject: false }))
+           ...(custChats || []).map(c => ({
+               ...c,
+               isProject: false,
+               // Para chats de suporte, usar o nome real do cliente
+               name: c.type === 'support' && c.user_id && profilesMap[c.user_id]?.name
+                   ? `${profilesMap[c.user_id].name} (Suporte)`
+                   : c.name
+           }))
        ];
        setChannels(all);
        if (all.length > 0 && !activeChannel) setActiveChannel(all[0]);
@@ -423,7 +438,7 @@ export default function AdminTeamsChat() {
                                 </div>
                                 <div className="flex flex-col items-start overflow-hidden">
                                     <span className="text-sm font-bold text-white truncate w-full">{c.name}</span>
-                                    <span className="text-[10px] text-[#555] font-black uppercase">{c.isProject ? 'Software' : 'Grupo HQ'}</span>
+                                    <span className="text-[10px] text-[#555] font-black uppercase">{c.isProject ? 'Software' : (c.type === 'support' ? 'Suporte Oficial' : (c.type === 'dm' ? 'Direct Message' : 'Grupo HQ'))}</span>
                                 </div>
                             </button>
                             {!c.isProject && (

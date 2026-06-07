@@ -75,52 +75,54 @@ function ChatPageContent() {
                 setShowOnboarding(true);
             }
 
-            // Chat de Suporte Oficial (Project 0)
-            const { data: projs } = await supabase.from('projects').select('*').eq('client_id', session.user.id);
-            let supportChannel: any = null;
-            if (projs && projs.length > 0) {
-                supportChannel = { ...projs[0], isProject: true, name: 'Susanoo HQ', isStaff: true };
-            } else {
-                const { data: np } = await supabase.from('projects').insert([{
-                    name: 'Central de Suporte',
-                    client_id: session.user.id,
-                    status: 'active'
-                }]).select().single();
-                if (np) supportChannel = { ...np, isProject: true, name: 'Susanoo HQ', isStaff: true };
-            }
-
-            // Chats diretos (DMs com desenvolvedores ou clientes)
-            const { data: directChats } = await supabase.from('chats')
+            // Chat de Suporte Oficial (Tabela chats de type 'support')
+            // Usando user_id para identificar o dono do chat de suporte
+            const { data: existingSupportChats, error: supportErr } = await supabase.from('chats')
                 .select('*')
-                .or(`participants.cs.{${session.user.id}}`); // Assumindo uma coluna de array caso tenha sido criado assim, 
-                // se não existir `participants`, o MVP vai listar tudo do user que corresponda a um filtro, mas faremos simples:
+                .eq('type', 'support')
+                .eq('user_id', session.user.id);
+            
+            let supportChannel: any = null;
+            if (!supportErr && existingSupportChats && existingSupportChats.length > 0) {
+                supportChannel = { ...existingSupportChats[0], isProject: false, name: 'Susanoo HQ', isStaff: true };
+            } else {
+                // Se não existir, cria o chat de suporte na tabela chats
+                const { data: newSc, error: createErr } = await supabase.from('chats').insert([{
+                    name: `Suporte - ${session.user.email?.split('@')[0] || 'Cliente'}`,
+                    type: 'support',
+                    user_id: session.user.id
+                }]).select().single();
+                if (!createErr && newSc) supportChannel = { ...newSc, isProject: false, name: 'Susanoo HQ', isStaff: true };
+            }
 
             // Se veio pelo botão de contato do dev
             let addedDevChat = null;
             if (initDevId && initDevName) {
+                // Buscar DM existente entre cliente e dev (usando user_id do cliente)
                 const { data: exist } = await supabase.from('chats')
                     .select('*')
                     .eq('type', 'dm')
-                    .contains('participants', [session.user.id, initDevId]);
+                    .eq('user_id', session.user.id);
                 
-                if (exist && exist.length > 0) {
-                    addedDevChat = { ...exist[0], isProject: false };
+                const existingDm = exist?.find(c => c.name === `Chat com ${initDevName}`);
+                if (existingDm) {
+                    addedDevChat = { ...existingDm, isProject: false };
                 } else {
                     const { data: newDc } = await supabase.from('chats').insert([{
                         name: `Chat com ${initDevName}`,
                         type: 'dm',
-                        participants: [session.user.id, initDevId]
+                        user_id: session.user.id
                     }]).select().single();
                     if (newDc) addedDevChat = { ...newDc, isProject: false };
                 }
             }
 
-            // Apenas carregando de volta como DMs
+            // Carregando todos os canais do cliente
             let loadedChats: any[] = [];
             if (supportChannel) loadedChats.push(supportChannel);
 
-            // Carregando todos onde sou participante
-            const { data: myChats } = await supabase.from('chats').select('*').eq('type', 'dm').contains('participants', [session.user.id]);
+            // Carregando DMs do cliente
+            const { data: myChats } = await supabase.from('chats').select('*').eq('type', 'dm').eq('user_id', session.user.id);
             if (myChats) {
                 myChats.forEach(c => {
                     if (!loadedChats.find(lc => lc.id === c.id)) loadedChats.push({...c, isProject: false});

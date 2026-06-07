@@ -19,7 +19,8 @@ import {
     Eye,
     EyeOff,
     Link as LinkIcon,
-    Search
+    Search,
+    FileText
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -33,6 +34,10 @@ export default function AdminDeploy() {
     const [filteredProfiles, setFilteredProfiles] = useState<any[]>([]);
     const [profileSearch, setProfileSearch] = useState("");
     const [selectedProfile, setSelectedProfile] = useState<any>(null);
+    
+    // Novas variáveis de estado para Busca e Filtros
+    const [projectSearch, setProjectSearch] = useState("");
+    const [deployFilter, setDeployFilter] = useState<"all" | "active" | "disabled">("all");
     
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [newProject, setNewProject] = useState({ name: '', email: '', domain: '' });
@@ -68,7 +73,18 @@ export default function AdminDeploy() {
 
     const updateProjectField = async (id: string, field: string, value: any) => {
         const { error } = await supabase.from('projects').update({ [field]: value }).eq('id', id);
-        if (!error) loadProjects();
+        if (error) {
+            console.error("Error updating project field:", error);
+            if (error.code === '42703') {
+                // Se a coluna ainda não existe no DB, atualiza apenas no estado para o MVP funcionar localmente
+                setProjects(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
+                alert("Aviso: A coluna '" + field + "' não existe no banco de dados. Para salvá-la permanentemente, execute o script SQL de migração no Supabase. O valor foi atualizado temporariamente na interface.");
+            } else {
+                alert("Erro ao atualizar: " + error.message);
+            }
+        } else {
+            loadProjects();
+        }
     };
 
     const loadProjectFiles = async (projectId: string) => {
@@ -173,6 +189,19 @@ export default function AdminDeploy() {
         if (!error) loadProjectFiles(configProjectId);
     };
 
+    const filteredProjects = projects.filter(proj => {
+        const matchesSearch = proj.name?.toLowerCase().includes(projectSearch.toLowerCase());
+        const hasVercel = proj.deploy_url && proj.deploy_url !== 'susanoo-waiting.host' && proj.deploy_url.trim() !== '';
+        
+        if (deployFilter === "active") {
+            return matchesSearch && hasVercel;
+        }
+        if (deployFilter === "disabled") {
+            return matchesSearch && !hasVercel;
+        }
+        return matchesSearch;
+    });
+
     return (
         <div className="flex-1 overflow-y-auto p-8 bg-[#050505] text-white h-full flex flex-col font-sans custom-scrollbar">
             
@@ -188,8 +217,43 @@ export default function AdminDeploy() {
                 </button>
             </div>
 
+            {/* Barra de Busca e Filtros de Status */}
+            <div className="flex flex-col lg:flex-row gap-6 items-center justify-between mb-10 bg-[#0c0c0d] border border-white/5 p-6 rounded-[30px] shadow-xl">
+                <div className="relative w-full lg:max-w-md">
+                    <Search className="w-5 h-5 absolute left-5 top-1/2 -translate-y-1/2 text-white/20" />
+                    <input 
+                       type="text" 
+                       value={projectSearch}
+                       onChange={(e) => setProjectSearch(e.target.value)}
+                       placeholder="Pesquisar operações..."
+                       className="w-full bg-[#050505] border border-white/5 rounded-2xl py-4 pl-14 pr-6 text-sm font-bold text-white focus:border-accent outline-none transition-all placeholder:text-white/20"
+                    />
+                </div>
+                
+                <div className="flex bg-[#050505] p-1 border border-white/5 rounded-2xl w-full lg:w-auto">
+                    <button 
+                        onClick={() => setDeployFilter("all")}
+                        className={`flex-1 lg:flex-none px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer ${deployFilter === "all" ? 'bg-accent text-white shadow-lg' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+                    >
+                        Todos ({projects.length})
+                    </button>
+                    <button 
+                        onClick={() => setDeployFilter("active")}
+                        className={`flex-1 lg:flex-none px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer ${deployFilter === "active" ? 'bg-accent text-white shadow-lg' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+                    >
+                        Ativos ({projects.filter(p => p.deploy_url && p.deploy_url !== 'susanoo-waiting.host' && p.deploy_url.trim() !== '').length})
+                    </button>
+                    <button 
+                        onClick={() => setDeployFilter("disabled")}
+                        className={`flex-1 lg:flex-none px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer ${deployFilter === "disabled" ? 'bg-accent text-white shadow-lg' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+                    >
+                        Sem Vercel ({projects.filter(p => !p.deploy_url || p.deploy_url === 'susanoo-waiting.host' || p.deploy_url.trim() === '').length})
+                    </button>
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-                {projects.map((proj) => (
+                {filteredProjects.map((proj) => (
                     <motion.div layout key={proj.id} className="bg-[#0c0c0d] border border-white/5 rounded-[40px] p-8 flex flex-col relative group overflow-hidden shadow-2xl">
                         
                         <div className="flex items-start justify-between mb-8">
@@ -284,7 +348,7 @@ export default function AdminDeploy() {
                                         </div>
 
                                         {/* Domain Edit Field */}
-                                        <div className="bg-[#050505] p-8 rounded-[32px] border border-white/5 mb-12 flex flex-col gap-4">
+                                        <div className="bg-[#050505] p-8 rounded-[32px] border border-white/5 mb-6 flex flex-col gap-4">
                                             <div className="flex items-center justify-between">
                                                 <h4 className="text-[10px] font-black text-[#222] uppercase tracking-[0.4em] flex items-center gap-3"><LinkIcon className="w-5 h-5"/> Domínio Customizado</h4>
                                                 <span className="text-[10px] font-black text-[#333] uppercase">Pressione Enter para Salvar</span>
@@ -297,6 +361,29 @@ export default function AdminDeploy() {
                                                 onKeyDown={(e) => {
                                                     if (e.key === 'Enter') {
                                                         updateProjectField(configProjectId, 'deploy_url', (e.target as HTMLInputElement).value);
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+
+                                        {/* Description Edit Field */}
+                                        <div className="bg-[#050505] p-8 rounded-[32px] border border-white/5 mb-12 flex flex-col gap-4">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-[10px] font-black text-[#222] uppercase tracking-[0.4em] flex items-center gap-3"><FileText className="w-5 h-5"/> Descrição do Projeto (Galeria/E-commerce)</h4>
+                                                <span className="text-[10px] font-black text-[#333] uppercase">Salva automaticamente ao desfocar ou Ctrl+Enter</span>
+                                            </div>
+                                            <textarea 
+                                                defaultValue={projects.find(p => p.id === configProjectId).description || ''}
+                                                placeholder="Descreva as características exclusivas e funcionalidades premium do projeto para exibição na Galeria/E-commerce..."
+                                                rows={4}
+                                                className="w-full bg-[#0c0c0d] p-6 rounded-2xl text-base font-bold text-white border border-white/5 focus:border-accent outline-none resize-none font-sans"
+                                                onBlur={(e) => {
+                                                    updateProjectField(configProjectId, 'description', e.target.value);
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' && e.ctrlKey) {
+                                                        updateProjectField(configProjectId, 'description', (e.target as HTMLTextAreaElement).value);
+                                                        (e.target as HTMLTextAreaElement).blur();
                                                     }
                                                 }}
                                             />

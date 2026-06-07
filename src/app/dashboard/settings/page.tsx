@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { User, Shield, Bell, CheckCircle2, ChevronRight, ExternalLink } from "lucide-react";
+import { User, Shield, Bell, CheckCircle2, Briefcase, Code2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 
@@ -9,7 +9,14 @@ export default function SettingsPage() {
     const [user, setUser] = useState<any>(null);
     const [activeTab, setActiveTab] = useState("profile");
     const [saved, setSaved] = useState(false);
+    const [toast, setToast] = useState<string | null>(null);
+    const [accountType, setAccountType] = useState<"Comércio" | "Desenvolvedor">("Comércio");
     const router = useRouter();
+
+    const showToast = (msg: string) => {
+        setToast(msg);
+        setTimeout(() => setToast(null), 3000);
+    };
 
     useEffect(() => {
         const load = async () => {
@@ -18,7 +25,17 @@ export default function SettingsPage() {
             setUser(session.user);
         };
         load();
+        
+        const saved = localStorage.getItem("susanoo_profile_type") as "Comércio" | "Desenvolvedor";
+        if (saved) setAccountType(saved);
     }, []);
+
+    const handleAccountTypeChange = (type: "Comércio" | "Desenvolvedor") => {
+        setAccountType(type);
+        localStorage.setItem("susanoo_profile_type", type);
+        window.dispatchEvent(new Event("profileTypeChanged"));
+        showToast(`Tipo de conta alterado para ${type}!`);
+    };
 
     const handleSave = async () => {
         setSaved(true);
@@ -26,7 +43,7 @@ export default function SettingsPage() {
     };
 
     const tabs = [
-        { id: "profile", label: "Dados da Empresa", icon: <User className="w-5 h-5"/> },
+        { id: "profile", label: "Dados da Conta", icon: <User className="w-5 h-5"/> },
         { id: "security", label: "Segurança", icon: <Shield className="w-5 h-5"/> },
         { id: "notifications", label: "Notificações", icon: <Bell className="w-5 h-5"/> },
     ];
@@ -100,6 +117,43 @@ export default function SettingsPage() {
                                                 <input type="text" disabled value={user.id.substring(0,20) + '...'} className="w-full bg-background border border-surface-border rounded-xl p-4 text-foreground/60 font-medium text-[14px]" />
                                             </div>
                                         </div>
+
+                                        {/* Tipo de Conta */}
+                                        <div className="mt-2">
+                                            <label className="text-xs font-bold uppercase tracking-widest opacity-40 mb-4 block text-foreground">Tipo de Conta</label>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <button
+                                                    onClick={() => handleAccountTypeChange("Comércio")}
+                                                    className={`flex flex-col items-center gap-3 p-6 rounded-2xl border-2 transition-all cursor-pointer ${
+                                                        accountType === "Comércio"
+                                                        ? 'border-accent bg-accent/10 text-accent shadow-lg shadow-accent/10'
+                                                        : 'border-surface-border text-foreground/40 hover:text-foreground hover:border-foreground/20'
+                                                    }`}
+                                                >
+                                                    <Briefcase className="w-8 h-8" />
+                                                    <div>
+                                                        <p className="font-black text-sm uppercase tracking-widest">Comércio</p>
+                                                        <p className="text-xs font-medium opacity-60 mt-1">Acompanhe projetos e
+seu site.</p>
+                                                    </div>
+                                                </button>
+                                                <button
+                                                    onClick={() => handleAccountTypeChange("Desenvolvedor")}
+                                                    className={`flex flex-col items-center gap-3 p-6 rounded-2xl border-2 transition-all cursor-pointer ${
+                                                        accountType === "Desenvolvedor"
+                                                        ? 'border-accent bg-accent/10 text-accent shadow-lg shadow-accent/10'
+                                                        : 'border-surface-border text-foreground/40 hover:text-foreground hover:border-foreground/20'
+                                                    }`}
+                                                >
+                                                    <Code2 className="w-8 h-8" />
+                                                    <div>
+                                                        <p className="font-black text-sm uppercase tracking-widest">Desenvolvedor</p>
+                                                        <p className="text-xs font-medium opacity-60 mt-1">Adicione sites
+ao portfólio.</p>
+                                                    </div>
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </>
                             )}
@@ -113,7 +167,7 @@ export default function SettingsPage() {
                                                 <h4 className="font-bold text-foreground">Verificação em Duas Etapas</h4>
                                                 <p className="text-sm text-foreground/50 mt-1">Maior segurança no login.</p>
                                             </div>
-                                            <button onClick={() => alert("Módulo 2FA em processo de ativação...")} className="px-4 py-2 hover:bg-surface border border-surface-border text-foreground rounded-lg text-sm font-bold cursor-pointer">Configurar</button>
+                                            <button onClick={() => showToast("Módulo 2FA em processo de ativação...")} className="px-4 py-2 hover:bg-surface border border-surface-border text-foreground rounded-lg text-sm font-bold cursor-pointer">Configurar</button>
                                         </div>
                                         <div className="p-5 bg-background rounded-2xl border border-surface-border flex items-center justify-between">
                                             <div>
@@ -172,7 +226,23 @@ export default function SettingsPage() {
                     </motion.div>
                 </div>
             </div>
+
+            {/* Toast */}
+            <AnimatePresence>
+                {toast && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 50, scale: 0.9 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                        className="fixed bottom-6 right-6 z-[9999] bg-surface border border-surface-border shadow-2xl px-6 py-4 rounded-2xl flex items-center gap-3 max-w-sm"
+                    >
+                        <div className="w-8 h-8 bg-accent/20 text-accent rounded-full flex items-center justify-center shrink-0">
+                            <CheckCircle2 className="w-4 h-4" />
+                        </div>
+                        <p className="text-sm font-bold text-foreground">{toast}</p>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }
-
