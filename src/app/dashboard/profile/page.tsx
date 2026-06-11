@@ -11,18 +11,16 @@ export default function ProfilePage() {
     const [toastMessage, setToastMessage] = useState<string | null>(null);
 
     useEffect(() => {
-        const savedType = localStorage.getItem("susanoo_profile_type");
-        if (savedType === "Desenvolvedor" || savedType === "Comércio") {
-            setProfileType(savedType);
-        }
+        const checkType = () => {
+            const savedType = localStorage.getItem("susanoo_profile_type");
+            if (savedType === "Desenvolvedor" || savedType === "Comércio") {
+                setProfileType(savedType);
+            }
+        };
+        checkType();
+        window.addEventListener("profileTypeChanged", checkType);
+        return () => window.removeEventListener("profileTypeChanged", checkType);
     }, []);
-
-    const handleProfileTypeChange = (type: "Comércio" | "Desenvolvedor") => {
-        setProfileType(type);
-        localStorage.setItem("susanoo_profile_type", type);
-        window.dispatchEvent(new Event("profileTypeChanged"));
-        showToast(`Conta alterada para ${type}`);
-    };
     
     const showToast = (msg: string) => {
         setToastMessage(msg);
@@ -217,11 +215,10 @@ export default function ProfilePage() {
                                     <h3 className="text-xl font-bold mb-6 flex items-center justify-between">
                                         Informações Básicas
                                         
-                                        {/* Type Toggle */}
-                                        <div className="flex bg-background border border-surface-border rounded-lg p-1">
-                                            <button onClick={() => handleProfileTypeChange("Comércio")} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer active:scale-95 ${profileType === "Comércio" ? 'bg-surface shadow-sm text-foreground' : 'text-foreground/40 hover:text-foreground'}`}>Comércio</button>
-                                            <button onClick={() => handleProfileTypeChange("Desenvolvedor")} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer active:scale-95 ${profileType === "Desenvolvedor" ? 'bg-surface shadow-sm text-foreground' : 'text-foreground/40 hover:text-foreground'}`}>Desenvolvedor</button>
-                                        </div>
+                                        {/* Type Toggle Information */}
+                                        <span className="text-[11px] font-medium text-foreground/40 bg-background px-3 py-1.5 rounded-lg border border-surface-border">
+                                            Você pode mudar o estilo de conta nas <a href="/dashboard/settings" className="text-accent hover:underline font-bold">configurações</a>.
+                                        </span>
                                     </h3>
                                     
                                     <div className="space-y-5">
@@ -335,7 +332,7 @@ export default function ProfilePage() {
                                                     <img src={proj.cover_url} className="absolute inset-0 w-full h-full object-cover grayscale-[0.5] group-hover:grayscale-0 transition-all duration-700" alt={proj.name}/>
                                                 ) : (
                                                     <div className="absolute inset-0 flex items-center justify-center text-5xl font-black text-foreground/5 opacity-20 uppercase tracking-tighter italic">
-                                                        {proj.name.substring(0,3)}
+                                                        {(proj.name || "PRJ").substring(0,3)}
                                                     </div>
                                                 )}
                                                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-80 group-hover:opacity-60 transition-opacity z-10" />

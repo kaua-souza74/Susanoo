@@ -61,7 +61,7 @@ export default function DiscoverHome() {
    }, [mainMode]);
 
    const filtered = projects.filter(proj => {
-      const matchSearch = proj.name.toLowerCase().includes(search.toLowerCase());
+      const matchSearch = (proj.name || "").toLowerCase().includes(search.toLowerCase());
       
       // Mock logic for filtering based on categories since we don't have exact db fields for this yet
       // In a real scenario, you'd check proj.author_type === 'Susanoo' and proj.product_type === 'Template' etc.
@@ -168,7 +168,7 @@ export default function DiscoverHome() {
                                     <img src={proj.cover_url} className="absolute inset-0 w-full h-full object-cover grayscale-[0.5] group-hover:grayscale-0 transition-all duration-700" alt={proj.name}/>
                                 ) : (
                                     <div className="absolute inset-0 flex items-center justify-center text-5xl font-black text-foreground/5 opacity-20 uppercase tracking-tighter italic">
-                                       {proj.name.substring(0,3)}
+                                       {(proj.name || "PRJ").substring(0,3)}
                                     </div>
                                 )}
                                 
@@ -290,7 +290,7 @@ export default function DiscoverHome() {
                                                    />
                                                ) : (
                                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#070708] text-white/5 uppercase italic font-black text-6xl tracking-tighter select-none">
-                                                       {activeProduct.name.substring(0, 3)}
+                                                       {(activeProduct.name || "PRJ").substring(0, 3)}
                                                    </div>
                                                )}
                                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 pointer-events-none" />
@@ -312,7 +312,7 @@ export default function DiscoverHome() {
                                                {activeProduct.cover_url ? (
                                                    <img src={activeProduct.cover_url} className="w-full h-full object-cover" />
                                                ) : (
-                                                   <div className="w-full h-full flex items-center justify-center font-bold text-[10px] text-white/10 uppercase">{activeProduct.name.substring(0,3)}</div>
+                                                   <div className="w-full h-full flex items-center justify-center font-bold text-[10px] text-white/10 uppercase">{(activeProduct.name || "PRJ").substring(0,3)}</div>
                                                )}
                                            </button>
                                            {[1, 2, 3].map((num) => (

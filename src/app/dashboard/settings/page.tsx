@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { User, Shield, Bell, CheckCircle2, Briefcase, Code2 } from "lucide-react";
+import { User, Shield, Bell, CheckCircle2, Briefcase, Code2, ExternalLink } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 
@@ -99,7 +99,7 @@ export default function SettingsPage() {
                                     <div className="flex flex-col gap-6">
                                         <div className="p-5 bg-background border border-surface-border rounded-2xl flex items-center gap-4">
                                             <div className="w-14 h-14 bg-gradient-to-tr from-accent/50 to-accent text-white rounded-full flex items-center justify-center text-xl font-black">
-                                                {user.email?.substring(0,2).toUpperCase()}
+                                                {(user.email || "US").substring(0,2).toUpperCase()}
                                             </div>
                                             <div>
                                                 <h3 className="font-bold text-lg text-foreground">Acesso Susanoo ID</h3>
@@ -110,7 +110,7 @@ export default function SettingsPage() {
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             <div>
                                                 <label className="text-xs font-bold uppercase tracking-widest opacity-40 mb-2 block text-foreground">E-mail Principal</label>
-                                                <input type="text" disabled value={user.email} className="w-full bg-background border border-surface-border rounded-xl p-4 text-foreground/60 font-medium text-[14px]" />
+                                                <input type="text" disabled value={user.email || ""} className="w-full bg-background border border-surface-border rounded-xl p-4 text-foreground/60 font-medium text-[14px]" />
                                             </div>
                                             <div>
                                                 <label className="text-xs font-bold uppercase tracking-widest opacity-40 mb-2 block text-foreground">ID do Usuário</label>
