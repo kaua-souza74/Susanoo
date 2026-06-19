@@ -5,10 +5,12 @@ import { Search, MapPin, Star, ShieldCheck, Mail, ChevronRight, User } from "luc
 import { motion, AnimatePresence } from "framer-motion";
 
 const MOCK_DEVS = [
-    { id: 1, name: "Kaua Souza", bio: "Especialista em React, Next.js e E-commerce.", location: "Campinas, SP", rating: 5.0, verified: true, avatar: "KA", skills: ["React", "Next.js", "Tailwind"] },
-    { id: 2, name: "Lucas Dev", bio: "Desenvolvedor Backend e especialista em Automações.", location: "São Paulo, SP", rating: 4.8, verified: true, avatar: "LU", skills: ["Node.js", "Python", "APIs"] },
-    { id: 3, name: "Mariana UI/UX", bio: "Designer focada em conversão para pequenos negócios.", location: "Rio de Janeiro, RJ", rating: 4.9, verified: false, avatar: "MA", skills: ["Figma", "UI/UX", "Webflow"] },
-    { id: 4, name: "Agência Digital X", bio: "Acelerando seu comércio com sites institucionais impecáveis.", location: "Belo Horizonte, MG", rating: 4.7, verified: true, avatar: "AD", skills: ["Wordpress", "SEO", "Marketing"] }
+    { id: 1, name: "Kaua Souza", bio: "Especialista em React, Next.js e E-commerce.", location: "Campinas, SP", rating: 5.0, verified: true, avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80", skills: ["React", "Next.js", "Tailwind"] },
+    { id: 2, name: "Lucas Dev", bio: "Desenvolvedor Backend e especialista em Automações.", location: "São Paulo, SP", rating: 4.8, verified: true, avatar: "https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=150&q=80", skills: ["Node.js", "Python", "APIs"] },
+    { id: 3, name: "Mariana UI/UX", bio: "Designer focada em conversão para pequenos negócios.", location: "Rio de Janeiro, RJ", rating: 4.9, verified: false, avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80", skills: ["Figma", "UI/UX", "Webflow"] },
+    { id: 4, name: "Agência Digital X", bio: "Acelerando seu comércio com sites institucionais impecáveis.", location: "Belo Horizonte, MG", rating: 4.7, verified: true, avatar: "https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=150&q=80", skills: ["Wordpress", "SEO", "Marketing"] },
+    { id: 5, name: "Felipe Mobile", bio: "Especialista em aplicativos iOS e Android com Flutter.", location: "Curitiba, PR", rating: 4.9, verified: true, avatar: "https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=150&q=80", skills: ["Flutter", "Dart", "Firebase"] },
+    { id: 6, name: "Juliana Fullstack", bio: "Soluções completas, do banco de dados ao front-end.", location: "Florianópolis, SC", rating: 5.0, verified: true, avatar: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=150&q=80", skills: ["Vue.js", "Laravel", "MySQL"] }
 ];
 
 export default function DevelopersPage() {
@@ -60,8 +62,12 @@ export default function DevelopersPage() {
                                 onClick={() => router.push(`/dashboard/developers/${dev.id}`)}
                                 className="bg-surface border border-surface-border rounded-3xl p-6 hover:border-accent/40 transition-colors group cursor-pointer flex flex-col sm:flex-row gap-6 shadow-sm hover:shadow-lg hover:shadow-accent/5"
                             >
-                                <div className="w-20 h-20 rounded-2xl bg-background border border-surface-border flex items-center justify-center shrink-0">
-                                    <span className="text-2xl font-black text-foreground/20 italic">{dev.avatar}</span>
+                                <div className="w-20 h-20 rounded-2xl bg-background border border-surface-border flex items-center justify-center shrink-0 overflow-hidden">
+                                    {dev.avatar.startsWith("http") ? (
+                                        <img src={dev.avatar} alt={dev.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <span className="text-2xl font-black text-foreground/20 italic">{dev.avatar}</span>
+                                    )}
                                 </div>
                                 <div className="flex-1">
                                     <div className="flex items-start justify-between mb-2">

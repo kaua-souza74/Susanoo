@@ -5,15 +5,62 @@ import { MapPin, Star, ShieldCheck, Mail, ArrowLeft, Globe, Code2, AtSign, Brief
 import { motion, AnimatePresence } from "framer-motion";
 
 const MOCK_DEVS = [
-    { id: 1, name: "Kaua Souza", bio: "Especialista em React, Next.js e E-commerce.", location: "Campinas, SP", rating: 5.0, verified: true, avatar: "KA", skills: ["React", "Next.js", "Tailwind", "TypeScript", "Node.js"], banner: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1500&q=80" },
-    { id: 2, name: "Lucas Dev", bio: "Desenvolvedor Backend e especialista em Automações.", location: "São Paulo, SP", rating: 4.8, verified: true, avatar: "LU", skills: ["Node.js", "Python", "APIs"], banner: "https://images.unsplash.com/photo-1510915228340-29c85a43dcfe?auto=format&fit=crop&w=1500&q=80" },
-    { id: 3, name: "Mariana UI/UX", bio: "Designer focada em conversão para pequenos negócios.", location: "Rio de Janeiro, RJ", rating: 4.9, verified: false, avatar: "MA", skills: ["Figma", "UI/UX", "Webflow"], banner: "https://images.unsplash.com/photo-1561070791-2526d30994b5?auto=format&fit=crop&w=1500&q=80" },
-    { id: 4, name: "Agência Digital X", bio: "Acelerando seu comércio com sites institucionais impecáveis.", location: "Belo Horizonte, MG", rating: 4.7, verified: true, avatar: "AD", skills: ["Wordpress", "SEO", "Marketing"], banner: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1500&q=80" }
-];
-
-const MOCK_PROJECTS = [
-    { id: 1, name: "SaaS Dashboard Premium", category: "React / Next.js", cover_url: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80" },
-    { id: 2, name: "E-commerce App", category: "TailwindCSS", cover_url: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=600&q=80" },
+    { 
+        id: 1, name: "Kaua Souza", bio: "Especialista em React, Next.js e E-commerce.", location: "Campinas, SP", rating: 5.0, verified: true, 
+        avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80", 
+        skills: ["React", "Next.js", "Tailwind", "TypeScript", "Node.js"], 
+        banner: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1500&q=80",
+        projects: [
+            { id: 1, name: "SaaS Dashboard Premium", category: "React / Next.js", cover_url: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80" },
+            { id: 2, name: "E-commerce App", category: "TailwindCSS", cover_url: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=600&q=80" }
+        ]
+    },
+    { 
+        id: 2, name: "Lucas Dev", bio: "Desenvolvedor Backend e especialista em Automações.", location: "São Paulo, SP", rating: 4.8, verified: true, 
+        avatar: "https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=150&q=80", 
+        skills: ["Node.js", "Python", "APIs"], 
+        banner: "https://images.unsplash.com/photo-1510915228340-29c85a43dcfe?auto=format&fit=crop&w=1500&q=80",
+        projects: [
+            { id: 1, name: "API de Integração Contábil", category: "Node.js", cover_url: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80" }
+        ]
+    },
+    { 
+        id: 3, name: "Mariana UI/UX", bio: "Designer focada em conversão para pequenos negócios.", location: "Rio de Janeiro, RJ", rating: 4.9, verified: false, 
+        avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80", 
+        skills: ["Figma", "UI/UX", "Webflow"], 
+        banner: "https://images.unsplash.com/photo-1561070791-2526d30994b5?auto=format&fit=crop&w=1500&q=80",
+        projects: [
+            { id: 1, name: "Redesign App de Delivery", category: "UI/UX", cover_url: "https://images.unsplash.com/photo-1561070791-2526d30994b5?auto=format&fit=crop&w=600&q=80" },
+            { id: 2, name: "Landing Page Conversiva", category: "Webflow", cover_url: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=600&q=80" }
+        ]
+    },
+    { 
+        id: 4, name: "Agência Digital X", bio: "Acelerando seu comércio com sites institucionais impecáveis.", location: "Belo Horizonte, MG", rating: 4.7, verified: true, 
+        avatar: "https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=150&q=80", 
+        skills: ["Wordpress", "SEO", "Marketing"], 
+        banner: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1500&q=80",
+        projects: [
+            { id: 1, name: "Site Institucional Advogados", category: "Wordpress", cover_url: "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=600&q=80" }
+        ]
+    },
+    { 
+        id: 5, name: "Felipe Mobile", bio: "Especialista em aplicativos iOS e Android com Flutter.", location: "Curitiba, PR", rating: 4.9, verified: true, 
+        avatar: "https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=150&q=80", 
+        skills: ["Flutter", "Dart", "Firebase"], 
+        banner: "https://images.unsplash.com/photo-1551650975-87deedd944c3?auto=format&fit=crop&w=1500&q=80",
+        projects: [
+             { id: 1, name: "App Fitness", category: "Flutter", cover_url: "https://images.unsplash.com/photo-1526506114642-9ea400c282ce?auto=format&fit=crop&w=600&q=80" }
+        ]
+    },
+    { 
+        id: 6, name: "Juliana Fullstack", bio: "Soluções completas, do banco de dados ao front-end.", location: "Florianópolis, SC", rating: 5.0, verified: true, 
+        avatar: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=150&q=80", 
+        skills: ["Vue.js", "Laravel", "MySQL"], 
+        banner: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1500&q=80",
+        projects: [
+            { id: 1, name: "Sistema de Gestão Escolar", category: "Vue / Laravel", cover_url: "https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=600&q=80" }
+        ]
+    }
 ];
 
 export default function DeveloperProfilePage({ params }: { params: Promise<{ id: string }> }) {
@@ -45,7 +92,11 @@ export default function DeveloperProfilePage({ params }: { params: Promise<{ id:
                 <div className="relative z-10 flex flex-col sm:flex-row items-center gap-6 w-full max-w-5xl mx-auto translate-y-20">
                     <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", damping: 20 }}>
                         <div className="w-32 h-32 md:w-40 md:h-40 rounded-full bg-background border-4 border-background overflow-hidden relative shadow-2xl flex items-center justify-center">
-                            <span className="text-5xl font-black text-foreground/20 italic uppercase tracking-tighter">{dev.avatar}</span>
+                            {dev.avatar.startsWith("http") ? (
+                                <img src={dev.avatar} alt={dev.name} className="w-full h-full object-cover" />
+                            ) : (
+                                <span className="text-5xl font-black text-foreground/20 italic uppercase tracking-tighter">{dev.avatar}</span>
+                            )}
                         </div>
                     </motion.div>
                     
@@ -103,7 +154,7 @@ export default function DeveloperProfilePage({ params }: { params: Promise<{ id:
                     <motion.div initial={{opacity: 0, y: 20}} animate={{opacity: 1, y: 0}} transition={{ delay: 0.6 }} className="mt-8">
                         <h3 className="text-xl font-bold mb-6">Projetos Destacados</h3>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                            {MOCK_PROJECTS.map((proj) => (
+                            {(dev.projects || []).map((proj) => (
                                 <div key={proj.id} className="group relative rounded-3xl overflow-hidden bg-surface border border-surface-border shadow-lg cursor-pointer">
                                     <div className="aspect-video w-full overflow-hidden">
                                         <img src={proj.cover_url} alt={proj.name} className="w-full h-full object-cover grayscale-[0.3] group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700" />
@@ -140,21 +191,21 @@ export default function DeveloperProfilePage({ params }: { params: Promise<{ id:
                         <h3 className="text-lg font-bold mb-6">Links Oficiais</h3>
                         <div className="space-y-4">
                             <div className="flex items-center gap-4 bg-background border border-surface-border p-4 rounded-2xl cursor-pointer hover:border-accent/40 transition-colors group">
-                                <div className="p-3 rounded-xl bg-surface group-hover:bg-accent/10 transition-colors">
+                                <div className="p-3 rounded-xl bg-surface group-hover:bg-accent/10 transition-colors shrink-0">
                                     <Globe className="w-5 h-5 text-foreground/40 group-hover:text-accent transition-colors" />
                                 </div>
-                                <div>
+                                <div className="min-w-0 flex-1">
                                     <p className="text-[10px] font-black text-foreground/40 uppercase tracking-widest">Site Pessoal</p>
-                                    <p className="text-sm font-bold truncate group-hover:text-accent transition-colors">portfolio.dev.br</p>
+                                    <p className="text-sm font-bold truncate group-hover:text-accent transition-colors">portfolio.{dev.name.toLowerCase().split(' ')[0]}.br</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-4 bg-background border border-surface-border p-4 rounded-2xl cursor-pointer hover:border-accent/40 transition-colors group">
-                                <div className="p-3 rounded-xl bg-surface group-hover:bg-accent/10 transition-colors">
+                                <div className="p-3 rounded-xl bg-surface group-hover:bg-accent/10 transition-colors shrink-0">
                                     <Code2 className="w-5 h-5 text-foreground/40 group-hover:text-accent transition-colors" />
                                 </div>
-                                <div>
+                                <div className="min-w-0 flex-1">
                                     <p className="text-[10px] font-black text-foreground/40 uppercase tracking-widest">Github</p>
-                                    <p className="text-sm font-bold truncate group-hover:text-accent transition-colors">github.com/{dev.avatar}</p>
+                                    <p className="text-sm font-bold truncate group-hover:text-accent transition-colors">github.com/{dev.name.toLowerCase().replace(/\s+/g, "")}</p>
                                 </div>
                             </div>
                         </div>
