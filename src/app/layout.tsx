@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { SiteNavbar } from "@/components/SiteNavbar";
+import { CartProvider } from "@/components/CartContext";
+import { CartSidebar } from "@/components/CartSidebar";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -21,9 +24,13 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className={inter.variable} suppressHydrationWarning>
       <body className="antialiased min-h-screen flex flex-col bg-background text-foreground" suppressHydrationWarning>
-        <ThemeProvider>
-          {children}
-        </ThemeProvider>
+        <CartProvider>
+          <ThemeProvider>
+            <SiteNavbar />
+            <CartSidebar />
+            {children}
+          </ThemeProvider>
+        </CartProvider>
       </body>
     </html>
   );

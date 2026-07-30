@@ -22,18 +22,7 @@ export default function TutorialPage() {
   
   return (
     <div className="min-h-screen bg-background text-foreground selection:bg-accent selection:text-white transition-colors duration-500">
-      {/* Navbar Minimalista Compacta */}
-      <nav className="fixed top-0 w-full z-50 p-4 md:p-6">
-        <div className="max-w-7xl mx-auto flex items-center justify-between bg-surface/40 backdrop-blur-2xl border border-surface-border p-3 px-6 rounded-3xl shadow-2xl">
-          <Link href="/">
-            <Logo size="md" />
-          </Link>
-          <div className="flex items-center gap-6">
-            <Link href="/" className="text-[13px] font-bold opacity-60 hover:opacity-100 transition-opacity">Voltar para Home</Link>
-            <ThemeToggle />
-          </div>
-        </div>
-      </nav>
+      {/* Navbar moved to layout.tsx */}
 
       <main className="pt-44 pb-24 px-6 max-w-7xl mx-auto">
         <motion.div
@@ -41,46 +30,46 @@ export default function TutorialPage() {
            animate={{ opacity: 1, y: 0 }}
            className="text-center mb-24"
         >
-          <h1 className="text-5xl md:text-7xl font-black mb-6 tracking-tight">O Fluxo da <span className="text-accent underline decoration-8 decoration-accent/20 underline-offset-8">Vantagem</span>.</h1>
-          <p className="text-xl font-medium text-foreground/50 max-w-3xl mx-auto">Descubra como a Susanoo transforma sua visão em um ecossistema digital de alta performance em tempo real.</p>
+          <h1 className="text-5xl md:text-7xl font-black mb-6 tracking-tight">Do primeiro contato ao <span className="text-accent underline decoration-8 decoration-accent/20 underline-offset-8">seu site no ar</span>.</h1>
+          <p className="text-xl font-medium text-foreground/50 max-w-3xl mx-auto uppercase tracking-widest font-bold">Etapas</p>
         </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
           <StepCard 
             number="01"
             icon={<Monitor className="w-10 h-10 text-accent" />}
-            title="Discovery & AI"
-            description="Você entra no Discover, escolhe a base do seu projeto ou usa nossa IA para gerar o briefing perfeito. Definimos a alma do seu site."
+            title="Conte sua ideia"
+            description="Explique seu negócio, seus objetivos e o tipo de site que deseja. Se preferir, nossa IA pode ajudar a organizar o briefing."
           />
           <StepCard 
             number="02"
-            icon={<MessageSquare className="w-10 h-10 text-emerald-500" />}
-            title="Chat em Tempo Real"
-            description="Comunique-se instantaneamente com nossa equipe de elite. Envie anexos, receba updates e ajuste cada detalhe conforme ele acontece."
+            icon={<MessageSquare className="w-10 h-10 text-accent" />}
+            title="Receba sua proposta"
+            description="Nossa equipe analisa seu projeto, define a melhor solução e apresenta orçamento, prazo e escopo de forma transparente."
           />
           <StepCard 
             number="03"
-            icon={<Layout className="w-10 h-10 text-blue-500" />}
-            title="Gestão Kanban"
-            description="Acompanhe o cardápio, as fotos e o código sendo produzidos. Mova tarefas, de feedbacks e veja o avanço visual em cada coluna."
+            icon={<Layout className="w-10 h-10 text-accent" />}
+            title="Acompanhe o desenvolvimento"
+            description="Converse com a equipe, envie feedbacks e acompanhe o progresso do projeto em tempo real por uma área exclusiva."
           />
           <StepCard 
             number="04"
-            icon={<Zap className="w-10 h-10 text-yellow-500" />}
-            title="Cronograma Ativo"
-            description="Veja onde seu projeto está na linha do tempo. De briefing ao deployment, cada etapa é visível e transparente."
+            icon={<Zap className="w-10 h-10 text-accent" />}
+            title="Aprovação e ajustes"
+            description="Revise cada detalhe antes da publicação. Realizamos os ajustes necessários para que tudo fique exatamente como você imaginou."
           />
           <StepCard 
             number="05"
-            icon={<Shield className="w-10 h-10 text-purple-500" />}
-            title="Segurança SaaS"
-            description="Seus dados e sua marca estão protegidos sob autenticação de dois fatores e criptografia de ponta no banco Supabase."
+            icon={<Shield className="w-10 h-10 text-accent" />}
+            title="Publicação"
+            description="Seu site é colocado no ar com segurança, desempenho e preparado para funcionar em computadores e celulares."
           />
           <StepCard 
             number="06"
-            icon={<Rocket className="w-10 h-10 text-orange-500" />}
-            title="Deploy de Elite"
-            description="Ao final, seu site é publicado na infraestrutura global da Vercel. Performance máxima, SEO agressivo e prontidão total."
+            icon={<Rocket className="w-10 h-10 text-accent" />}
+            title="Cresça com a Susanoo"
+            description="Após a entrega, você continua contando com suporte, atualizações e, futuramente, poderá contratar novos serviços diretamente pela plataforma."
           />
         </div>
 
@@ -91,15 +80,32 @@ export default function TutorialPage() {
           className="mt-32 p-12 md:p-24 bg-foreground text-background rounded-[4rem] text-center relative overflow-hidden"
         >
           <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
-          <h2 className="text-4xl md:text-6xl font-black mb-10 relative z-10 leading-tight">Pronto para dominar <br /> seu mercado digital?</h2>
+          <h2 className="text-4xl md:text-6xl font-black mb-10 relative z-10 leading-tight">Vamos construir algo <br /> incrível juntos?</h2>
           <button 
             onClick={() => router.push('/register')}
             className="group bg-accent text-white font-black text-xl px-12 py-6 rounded-[2.5rem] hover:scale-105 active:scale-95 transition-all shadow-3xl shadow-accent/40 relative z-10 flex items-center gap-4 mx-auto"
           >
-            Começar Meu Projeto <ArrowRight className="w-6 h-6 group-hover:translate-x-2 transition-transform" />
+            Quero um site <ArrowRight className="w-6 h-6 group-hover:translate-x-2 transition-transform" />
           </button>
         </motion.div>
       </main>
+
+      {/* Footer */}
+      <footer className="py-24 px-6 border-t border-surface-border bg-background mt-24">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row justify-between items-start gap-12 mb-20">
+             <div className="flex flex-col gap-6">
+                <Logo size="lg" />
+                <p className="text-foreground/40 font-bold max-w-sm italic">Exclusividade técnica e visual para marcas que não aceitam o comum.</p>
+             </div>
+          </div>
+          <div className="pt-12 border-t border-surface-border flex flex-col sm:row justify-between items-center gap-6 text-center">
+            <div className="text-foreground/20 text-[10px] font-black uppercase tracking-[0.6em]">
+              © {new Date().getFullYear()} Susanoo Operações Digitais.
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

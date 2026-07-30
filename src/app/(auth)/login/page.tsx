@@ -54,7 +54,7 @@ export default function LoginPage() {
   return (
     <motion.div initial={{opacity: 0, y: 15}} animate={{opacity: 1, y: 0}} transition={{ duration: 0.6, ease: "easeOut" }}>
       <h2 className="text-4xl font-bold tracking-tight mb-3">Bem-vindo de volta</h2>
-      <p className="text-[#a0a0a0] mb-10 text-lg">Insira suas credenciais para acessar seu espaço.</p>
+      <p className="text-[#a0a0a0] mb-10 text-lg">Entre na sua conta para continuar de onde parou.</p>
 
       {notification && (
         <div className={`mb-6 p-4 rounded-xl ${notification.type === 'error' ? 'bg-red-500/10 text-red-500' : 'bg-green-500/10 text-green-500'}`}>
@@ -64,12 +64,12 @@ export default function LoginPage() {
 
       <form onSubmit={handleLogin} className="flex flex-col gap-6">
         <div>
-          <label className="block text-sm font-semibold mb-2 opacity-80">E-mail Corporativo</label>
+          <label className="block text-sm font-semibold mb-2 opacity-80">E-mail</label>
           <input 
             type="email" 
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full p-4.5 rounded-xl bg-[#1a1b1e] border border-[#2c2d30] focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-[#555] font-medium"
+            className="w-full p-4.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-foreground/30 font-medium text-foreground"
             placeholder="contato@empresa.com.br"
             required
           />
@@ -78,14 +78,14 @@ export default function LoginPage() {
           <div className="flex justify-between items-center mb-2">
             <label className="block text-sm font-semibold opacity-80">Senha</label>
             <Link href="/forgot-password" className="text-xs font-semibold text-accent hover:underline">
-              Esqueceu a senha?
+              Esqueceu sua senha?
             </Link>
           </div>
           <input 
             type="password" 
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full p-4.5 rounded-xl bg-[#1a1b1e] border border-[#2c2d30] focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-[#555] font-medium"
+            className="w-full p-4.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-foreground/30 font-medium text-foreground"
             placeholder="••••••••"
             required
           />
@@ -101,14 +101,14 @@ export default function LoginPage() {
       </form>
 
       <div className="relative my-8">
-        <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-[#2c2d30]"></span></div>
-        <div className="relative flex justify-center text-xs uppercase"><span className="bg-[#0a0a0b] px-4 text-[#555] font-bold tracking-widest">Ou continue com</span></div>
+        <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-surface-border"></span></div>
+        <div className="relative flex justify-center text-xs uppercase"><span className="bg-background px-4 text-foreground/40 font-bold tracking-widest">Ou continue com</span></div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <button 
           onClick={() => supabase.auth.signInWithOAuth({ provider: 'google' })}
-          className="flex items-center justify-center gap-3 bg-[#111213] border border-[#2c2d30] py-3.5 rounded-xl hover:bg-[#1a1b1e] transition-all font-bold text-sm"
+          className="flex items-center justify-center gap-3 bg-surface border border-surface-border py-3.5 rounded-xl hover:bg-surface-border/50 transition-all font-bold text-sm text-foreground"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path fill="#EA4335" d="M12.48 10.92v3.28h7.84c-.24 1.84-.91 3.36-2.11 4.6-1.56 1.56-3.8 3.12-7.84 3.12-6.52 0-11.52-5.48-11.52-12s5-12 11.52-12c3.56 0 6.2 1.4 8.16 3.04l2.32-2.32C18.44 1.84 15.6 0 12 0 5.48 0 0 5.48 0 12s5.48 12 12 12c3.56 0 6.56-1.16 8.76-3.4 2.24-2.24 3.48-5.36 3.48-7.92 0-.56-.04-1.12-.12-1.64h-11.64z"/>
@@ -117,9 +117,9 @@ export default function LoginPage() {
         </button>
         <button 
           onClick={() => supabase.auth.signInWithOAuth({ provider: 'github' })}
-          className="flex items-center justify-center gap-3 bg-[#111213] border border-[#2c2d30] py-3.5 rounded-xl hover:bg-[#1a1b1e] transition-all font-bold text-sm"
+          className="flex items-center justify-center gap-3 bg-surface border border-surface-border py-3.5 rounded-xl hover:bg-surface-border/50 transition-all font-bold text-sm text-foreground"
         >
-          <svg className="w-5 h-5 fill-white" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 fill-foreground" viewBox="0 0 24 24">
             <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.627-5.373-12-12-12z"/>
           </svg>
           GitHub
@@ -127,7 +127,7 @@ export default function LoginPage() {
       </div>
 
       <p className="mt-10 text-center flex flex-col gap-2 items-center">
-        <span className="text-[#a0a0a0]">Não possui acesso ao seu projeto? <Link href="/register" className="text-white font-semibold hover:underline">Fale com a agência</Link></span>
+        <span className="text-foreground/50">Ainda não faz parte da Susanoo? <Link href="/register" className="text-foreground font-semibold hover:underline">Criar uma conta</Link></span>
       </p>
     </motion.div>
   );

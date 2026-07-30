@@ -2,41 +2,67 @@
 import { useEffect, useState } from "react";
 import { 
   Search, 
-  ChevronDown, 
   ExternalLink, 
-  ShieldCheck, 
-  User, 
   Star, 
   ShoppingCart, 
-  CreditCard, 
   X, 
   Check, 
-  Laptop, 
-  Truck, 
-  Award, 
-  Sparkles, 
-  Heart 
+  Heart,
+  ShoppingBag,
+  Zap,
+  Shield,
+  ThumbsUp,
+  ArrowLeft,
+  User,
+  Briefcase,
+  TrendingUp,
+  DollarSign,
+  MessageCircle,
+  FileText,
+  Sparkles,
+  ArrowRight
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
+import { useCart } from "@/components/CartContext";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 type MainMode = "Susanoo" | "Geral";
 
 export default function DiscoverHome() {
+   const router = useRouter();
+   const [userType, setUserType] = useState<"Comércio" | "Desenvolvedor">("Comércio");
    const [mainMode, setMainMode] = useState<MainMode>("Susanoo");
-   const [subFilter, setSubFilter] = useState("Templates");
    const [search, setSearch] = useState("");
    const [projects, setProjects] = useState<any[]>([]);
    const [loading, setLoading] = useState(true);
-
-   // Estados do E-commerce estilo Mercado Livre
    const [activeProduct, setActiveProduct] = useState<any | null>(null);
-   const [cart, setCart] = useState<string[]>([]);
-   const [checkoutStatus, setCheckoutStatus] = useState<"idle" | "loading" | "success">("idle");
-   const [selectedMockIndex, setSelectedMockIndex] = useState<number>(0);
-   const [favorited, setFavorited] = useState<boolean>(false);
+   const [favorited, setFavorited] = useState(false);
+   const [liked, setLiked] = useState(false);
+   const [activeTab, setActiveTab] = useState<"detalhes" | "especificacoes" | "comentarios">("detalhes");
+
+   // Checklist & Onboarding states
+   const [storeProfileCompleted, setStoreProfileCompleted] = useState(false);
+   const [hasProjects, setHasProjects] = useState(false);
+   const [hasChat, setHasChat] = useState(false);
+   const [hasReview, setHasReview] = useState(false);
+   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+
+   const { addToCart, items, setIsCartOpen } = useCart();
 
    useEffect(() => {
+     // Check role
+     const role = localStorage.getItem("susanoo_profile_type") as "Comércio" | "Desenvolvedor";
+     if (role) setUserType(role);
+
+     // Check checklist status
+     setStoreProfileCompleted(localStorage.getItem("susanoo_store_profile_completed") === "true");
+     setHasProjects(localStorage.getItem("susanoo_bought_project") === "true");
+     setHasChat(localStorage.getItem("susanoo_first_chat") === "true");
+     setHasReview(localStorage.getItem("susanoo_first_review") === "true");
+     setOnboardingDismissed(localStorage.getItem("susanoo_client_onboarding_dismissed") === "true");
+
      const fetchProjects = async () => {
          const { data } = await supabase
             .from('projects')
@@ -48,426 +74,534 @@ export default function DiscoverHome() {
          setLoading(false);
      };
      fetchProjects();
+
+     // Listen to layout completion updates
+     const handleProfileComplete = () => {
+       setStoreProfileCompleted(localStorage.getItem("susanoo_store_profile_completed") === "true");
+     };
+     window.addEventListener("profileCompletedChanged", handleProfileComplete);
+     return () => window.removeEventListener("profileCompletedChanged", handleProfileComplete);
    }, []);
 
-   const susanooCategories = ["Templates", "Sites Prontos"];
-   const geralCategories = ["Todos", "Templates de Devs", "Sites de Devs"];
+   const openProduct = (proj: any) => {
+     setActiveProduct(proj);
+     setFavorited(false);
+     setLiked(false);
+     setActiveTab("detalhes");
+   };
 
-   const currentCategories = mainMode === "Susanoo" ? susanooCategories : geralCategories;
+   const handleAddToCart = (proj: any, e?: React.MouseEvent) => {
+     e?.stopPropagation();
+     addToCart({ id: proj.id, name: proj.name, price: proj.price || 49.90, cover_url: proj.cover_url });
+   };
 
-   useEffect(() => {
-      if (mainMode === "Susanoo") setSubFilter("Templates");
-      else setSubFilter("Todos");
-   }, [mainMode]);
+   const isInCart = (id: string) => items.some(i => i.id === id);
+
+   const dismissOnboarding = () => {
+     localStorage.setItem("susanoo_client_onboarding_dismissed", "true");
+     setOnboardingDismissed(true);
+   };
 
    const filtered = projects.filter(proj => {
       const matchSearch = (proj.name || "").toLowerCase().includes(search.toLowerCase());
-      
-      // Mock logic for filtering based on categories since we don't have exact db fields for this yet
-      // In a real scenario, you'd check proj.author_type === 'Susanoo' and proj.product_type === 'Template' etc.
-      const cat = proj.category || 'Templates';
-      
-      let matchCat = true;
-      if (subFilter !== "Todos") {
-         matchCat = cat.includes(subFilter) || subFilter === cat;
-         // fallback mock for the example
-         if (!proj.category) matchCat = true; 
-      }
-
-      return matchSearch && matchCat;
+      return matchSearch;
    });
 
-   const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
-   const itemVariants = { 
-       hidden: { opacity: 0, y: 20 }, 
-       show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 80, damping: 15 } }, 
-       exit: { opacity: 0, scale: 0.95, transition: { duration: 0.2 } } 
-   };
-
-   return (
+   // RENDER DEVELOPER DASHBOARD
+   if (userType === "Desenvolvedor") {
+     return (
        <div className="flex-1 overflow-y-auto w-full bg-background text-foreground transition-colors duration-300">
-           <div className="flex items-center justify-between p-4 px-8 border-b border-surface-border bg-background/80 backdrop-blur-md sticky top-0 z-50 transition-colors duration-300">
-               <div className="flex items-center gap-6">
-                 <span className="font-bold text-[17px] tracking-tight text-foreground flex items-center gap-2">Marketplace </span>
-                 <div className="hidden md:flex items-center gap-2 cursor-pointer text-foreground/50 hover:text-foreground transition-colors">
-                    <span className="font-medium text-sm">Projetos & Templates</span>
-                    <ChevronDown className="w-4 h-4"/>
-                 </div>
-               </div>
+         <div className="flex items-center justify-between p-4 px-6 border-b border-surface-border bg-background/80 backdrop-blur-md sticky top-0 z-50">
+           <h1 className="font-black text-lg text-foreground">Painel do Desenvolvedor</h1>
+           <span className="text-xs font-black uppercase tracking-[0.2em] text-accent bg-accent/10 border border-accent/20 px-3 py-1.5 rounded-full">
+             Modo Profissional
+           </span>
+         </div>
+
+         <div className="w-full max-w-6xl mx-auto py-10 px-6 space-y-8">
+           {/* Boas-vindas */}
+           <div>
+             <h2 className="text-3xl font-black tracking-tight mb-2">Bem-vindo de volta!</h2>
+             <p className="text-foreground/50 text-sm font-medium">Acompanhe seu desempenho financeiro, projetos e reputação na plataforma.</p>
            </div>
 
-           <div className="w-full max-w-7xl mx-auto py-12 px-6 flex flex-col items-center overflow-x-hidden">
-               <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: "easeOut" }} className="w-full flex flex-col items-center text-center">
-                   <h1 className="text-4xl md:text-5xl font-black mb-5 flex justify-center items-center gap-4 tracking-tighter text-foreground">
-                       Marketplace <span className="bg-accent/10 flex items-center gap-1 text-accent border border-accent/20 text-[10px] font-bold px-2.5 py-1 rounded shadow-lg uppercase tracking-[0.3em] hidden sm:flex italic"><ShieldCheck className="w-3 h-3"/> Susanoo Verify</span>
-                   </h1>
-                   <p className="text-foreground/40 mb-10 max-w-xl text-[16px] font-bold leading-relaxed italic">
-                       Encontre o site perfeito para o seu comércio ou descubra assets incríveis na nossa galeria.
-                   </p>
-               </motion.div>
+           {/* Grid Métricas */}
+           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+             <div className="bg-surface border border-surface-border rounded-2xl p-6 shadow-sm">
+               <div className="flex justify-between items-center mb-4">
+                 <span className="text-xs font-black text-foreground/45 uppercase tracking-wider">Faturamento Total</span>
+                 <DollarSign className="w-5 h-5 text-emerald-500" />
+               </div>
+               <p className="text-2xl font-black text-foreground">R$ 8.450,00</p>
+               <span className="text-[10px] text-emerald-500 font-bold mt-1 block">✓ 100% liberado</span>
+             </div>
 
-               {/* Top Level Toggle */}
-               <motion.div initial={{opacity:0}} animate={{opacity:1}} className="flex p-1 bg-surface border border-surface-border rounded-full mb-8">
-                   <button 
-                       onClick={() => setMainMode("Susanoo")}
-                       className={`px-8 py-3 rounded-full text-xs font-black uppercase tracking-widest transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${mainMode === "Susanoo" ? 'bg-accent text-white shadow-lg' : 'text-foreground/40 hover:text-foreground hover:bg-surface-border'}`}
-                   >
-                       Por Susanoo
-                   </button>
-                   <button 
-                       onClick={() => setMainMode("Geral")}
-                       className={`px-8 py-3 rounded-full text-xs font-black uppercase tracking-widest transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${mainMode === "Geral" ? 'bg-white text-black shadow-lg' : 'text-foreground/40 hover:text-foreground hover:bg-surface-border'}`}
-                   >
-                       Comunidade (Geral)
-                   </button>
-               </motion.div>
+             <div className="bg-surface border border-surface-border rounded-2xl p-6 shadow-sm">
+               <div className="flex justify-between items-center mb-4">
+                 <span className="text-xs font-black text-foreground/45 uppercase tracking-wider">Projetos Ativos</span>
+                 <Briefcase className="w-5 h-5 text-accent" />
+               </div>
+               <p className="text-2xl font-black text-foreground">3 ativos</p>
+               <span className="text-[10px] text-foreground/40 font-medium mt-1 block">Garantia Susanoo ativa</span>
+             </div>
 
-               <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4, delay: 0.1 }} className="w-full max-w-2xl relative mb-8">
-                   <Search className="w-5 h-5 absolute left-5 top-1/2 -translate-y-1/2 text-foreground/20" />
+             <div className="bg-surface border border-surface-border rounded-2xl p-6 shadow-sm">
+               <div className="flex justify-between items-center mb-4">
+                 <span className="text-xs font-black text-foreground/45 uppercase tracking-wider">Clientes</span>
+                 <User className="w-5 h-5 text-accent" />
+               </div>
+               <p className="text-2xl font-black text-foreground">5 atendidos</p>
+               <span className="text-[10px] text-foreground/40 font-medium mt-1 block">Novos contatos via chat</span>
+             </div>
+
+             <div className="bg-surface border border-surface-border rounded-2xl p-6 shadow-sm">
+               <div className="flex justify-between items-center mb-4">
+                 <span className="text-xs font-black text-foreground/45 uppercase tracking-wider">Avaliação Média</span>
+                 <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
+               </div>
+               <p className="text-2xl font-black text-foreground">5.0 / 5.0</p>
+               <span className="text-[10px] text-amber-500 font-bold mt-1 block">★ ★ ★ ★ ★ (12 avaliações)</span>
+             </div>
+           </div>
+
+           {/* Lista de Projetos Recentes */}
+           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+             <div className="lg:col-span-2 bg-surface border border-surface-border rounded-2xl p-6">
+               <h3 className="text-lg font-black mb-4">Projetos e Clientes Ativos</h3>
+               <div className="space-y-4">
+                 {[
+                   { name: "E-Commerce de Calçados", client: "Loja Passos Inc.", status: "Em progresso", progress: 65 },
+                   { name: "Landing Page Premium", client: "Doutor Silva Odonto", status: "Aguardando ajuste", progress: 90 },
+                   { name: "Portal Institucional", client: "Consultoria X", status: "Concluído", progress: 100 }
+                 ].map((p, idx) => (
+                   <div key={idx} className="bg-background border border-surface-border rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                     <div>
+                       <h4 className="font-bold text-sm text-foreground">{p.name}</h4>
+                       <p className="text-xs text-foreground/50">Cliente: {p.client}</p>
+                     </div>
+                     <div className="flex items-center gap-4">
+                       <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded ${p.progress === 100 ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-accent/10 text-accent border border-accent/20'}`}>
+                         {p.status}
+                       </span>
+                       <span className="text-xs font-black">{p.progress}%</span>
+                     </div>
+                   </div>
+                 ))}
+               </div>
+             </div>
+
+             <div className="bg-surface border border-surface-border rounded-2xl p-6 flex flex-col justify-between">
+               <div>
+                 <h3 className="text-lg font-black mb-2">Comunicação Direta</h3>
+                 <p className="text-xs text-foreground/50 mb-6">Mantenha contato regular com os seus clientes no chat para evitar atrasos e alinhamentos incorretos.</p>
+               </div>
+               <button 
+                 onClick={() => router.push("/dashboard/chat")}
+                 className="w-full py-3.5 bg-accent hover:bg-accent/90 text-white font-black rounded-xl text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg"
+               >
+                 <MessageCircle className="w-4 h-4" /> Ir para Chat com Clientes
+               </button>
+             </div>
+           </div>
+         </div>
+       </div>
+     );
+   }
+
+   // RENDER CLIENT DASHBOARD (MARKETPLACE)
+   return (
+       <div className="flex-1 overflow-y-auto w-full bg-background text-foreground transition-colors duration-300">
+           {/* Header simples */}
+           <div className="flex items-center justify-between p-4 px-6 border-b border-surface-border bg-background/80 backdrop-blur-md sticky top-0 z-50">
+               <h1 className="font-black text-lg text-foreground">Marketplace</h1>
+               <button
+                 onClick={() => setIsCartOpen(true)}
+                 className="relative flex items-center gap-2 bg-surface border border-surface-border px-4 py-2 rounded-xl text-sm font-bold hover:border-accent/40 transition-all"
+               >
+                 <ShoppingCart className="w-4 h-4 text-accent" />
+                 <span>Carrinho</span>
+                 {items.length > 0 && (
+                   <span className="bg-accent text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">{items.length}</span>
+                 )}
+               </button>
+           </div>
+
+           <div className="w-full max-w-[1600px] mx-auto py-10 px-6 space-y-8">
+               {/* 1. Onboarding Natural de Primeiro Acesso (Passo 1, 2, 3) */}
+               {!onboardingDismissed && (
+                 <motion.div 
+                   initial={{ opacity: 0, y: -10 }}
+                   animate={{ opacity: 1, y: 0 }}
+                   exit={{ opacity: 0, y: -10 }}
+                   className="bg-accent/5 border border-accent/20 rounded-3xl p-6 relative overflow-hidden"
+                 >
+                   <button 
+                     onClick={dismissOnboarding} 
+                     className="absolute top-4 right-4 text-foreground/40 hover:text-foreground"
+                   >
+                     <X className="w-4 h-4" />
+                   </button>
+                   
+                   <div className="max-w-3xl">
+                     <span className="text-[10px] font-black uppercase tracking-[0.2em] text-accent mb-2 block">Primeiro Acesso</span>
+                     <h2 className="text-2xl font-black text-foreground mb-2">Bem-vindo à Susanoo! Vamos preparar sua conta.</h2>
+                     <p className="text-sm text-foreground/60 mb-6 font-medium">Siga estes 3 passos básicos para ter o melhor aproveitamento da nossa plataforma.</p>
+                     
+                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                       <Link href="/dashboard/profile" className="bg-surface border border-surface-border hover:border-accent/30 p-4 rounded-2xl flex items-start gap-3 transition-colors">
+                         <span className="text-lg font-black text-accent bg-accent/10 w-8 h-8 rounded-xl flex items-center justify-center shrink-0">1</span>
+                         <div>
+                           <h4 className="font-bold text-sm text-foreground">Complete seu perfil</h4>
+                           <p className="text-xs text-foreground/50 mt-1">Preencha sua Razão Social, CNPJ e CEP na aba de perfil.</p>
+                         </div>
+                       </Link>
+                       <Link href="/dashboard/developers" className="bg-surface border border-surface-border hover:border-accent/30 p-4 rounded-2xl flex items-start gap-3 transition-colors">
+                         <span className="text-lg font-black text-accent bg-accent/10 w-8 h-8 rounded-xl flex items-center justify-center shrink-0">2</span>
+                         <div>
+                           <h4 className="font-bold text-sm text-foreground">Encontre um profissional</h4>
+                           <p className="text-xs text-foreground/50 mt-1">Compare perfis e encontre o profissional ideal para o seu projeto.</p>
+                         </div>
+                       </Link>
+                       <Link href="#templates-grid" className="bg-surface border border-surface-border hover:border-accent/30 p-4 rounded-2xl flex items-start gap-3 transition-colors">
+                         <span className="text-lg font-black text-accent bg-accent/10 w-8 h-8 rounded-xl flex items-center justify-center shrink-0">3</span>
+                         <div>
+                           <h4 className="font-bold text-sm text-foreground">Comece seu projeto</h4>
+                           <p className="text-xs text-foreground/50 mt-1">Explore os templates e contrate o desenvolvimento completo.</p>
+                         </div>
+                       </Link>
+                     </div>
+                   </div>
+                 </motion.div>
+               )}
+
+               {/* 2. Checklist Progressiva para incentivar o cliente */}
+               <div className="bg-surface border border-surface-border rounded-3xl p-6 shadow-sm">
+                 <h3 className="text-base font-black uppercase tracking-wider text-foreground/70 mb-4">Seu Progresso de Configuração</h3>
+                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                   {[
+                     { label: "Perfil Preenchido", checked: storeProfileCompleted, link: "/dashboard/profile" },
+                     { label: "Primeiro projeto", checked: hasProjects, link: "/dashboard" },
+                     { label: "Primeiro chat", checked: hasChat, link: "/dashboard/chat" },
+                     { label: "Primeira avaliação", checked: hasReview, link: "/dashboard" }
+                   ].map((item, idx) => (
+                     <div 
+                       key={idx} 
+                       onClick={() => router.push(item.link)}
+                       className={`border rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all ${item.checked ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-600' : 'bg-background border-surface-border hover:border-foreground/20 text-foreground/60'}`}
+                     >
+                       <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${item.checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-surface-border'}`}>
+                         {item.checked && <Check className="w-3.5 h-3.5" />}
+                       </div>
+                       <span className="text-xs font-bold">{item.label}</span>
+                     </div>
+                   ))}
+                 </div>
+               </div>
+
+               {/* 3. Onboarding de Acompanhamento (Só aparece após ter projetos) */}
+               {hasProjects && (
+                 <div className="bg-gradient-to-r from-accent/10 to-transparent border border-accent/20 rounded-3xl p-6">
+                   <h3 className="text-lg font-black mb-2 flex items-center gap-2">
+                     <Sparkles className="w-5 h-5 text-accent" /> Projeto Ativo Detectado!
+                   </h3>
+                   <p className="text-sm text-foreground/60 mb-4 max-w-2xl">Use nossas ferramentas de acompanhamento para ver o andamento do seu site e se comunicar com o seu desenvolvedor.</p>
+                   <div className="flex flex-wrap gap-3">
+                     <button onClick={() => router.push("/dashboard/projects")} className="px-4 py-2 bg-foreground text-background font-bold text-xs rounded-xl uppercase tracking-wider hover:opacity-90">
+                       Acompanhar seu projeto
+                     </button>
+                     <button onClick={() => router.push("/dashboard/chat")} className="px-4 py-2 bg-surface border border-surface-border font-bold text-xs rounded-xl uppercase tracking-wider text-foreground hover:border-accent/40">
+                       Converse no Chat
+                     </button>
+                     <button onClick={() => router.push("/dashboard/timeline")} className="px-4 py-2 bg-surface border border-surface-border font-bold text-xs rounded-xl uppercase tracking-wider text-foreground hover:border-accent/40">
+                       Veja o Cronograma
+                     </button>
+                   </div>
+                 </div>
+               )}
+
+               {/* Barra de pesquisa */}
+               <div id="templates-grid" className="relative">
+                   <Search className="w-5 h-5 absolute left-5 top-1/2 -translate-y-1/2 text-foreground/30" />
                    <input 
                       type="text" 
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Pesquisar sites, restaurantes, lojas..."
-                      className="w-full bg-surface/50 border border-surface-border shadow-2xl rounded-[32px] py-5 pl-14 pr-6 text-[15px] font-bold text-foreground focus:border-accent/50 focus:outline-none transition-all placeholder:text-foreground/20"
+                      placeholder="Buscar sites e templates..."
+                      className="w-full bg-surface border border-surface-border rounded-2xl py-4 pl-14 pr-6 text-[15px] font-medium text-foreground focus:border-accent/50 focus:outline-none transition-all placeholder:text-foreground/30"
                    />
-               </motion.div>
+               </div>
 
-               {/* Sub Filters */}
-               <motion.div initial={{opacity: 0}} animate={{opacity:1}} transition={{delay:0.2}} className="flex flex-wrap gap-3 justify-center mb-16">
-                   {currentCategories.map((cat) => (
-                       <button 
-                           key={cat} 
-                           onClick={() => setSubFilter(cat)}
-                           className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer hover:scale-[1.05] active:scale-[0.95] ${subFilter === cat ? (mainMode === 'Susanoo' ? 'bg-accent/20 text-accent border border-accent/40' : 'bg-foreground/10 text-foreground border border-foreground/20') : 'bg-surface text-foreground/40 hover:text-foreground hover:bg-surface/80 border border-surface-border'}`}
-                       >
-                           {cat}
-                       </button>
+               {/* Abas Por Susanoo / Comunidade */}
+               <div className="flex gap-2">
+                   {["Susanoo", "Geral"].map(mode => (
+                     <button
+                       key={mode}
+                       onClick={() => setMainMode(mode as MainMode)}
+                       className={`px-5 py-2 rounded-xl text-sm font-bold transition-all ${mainMode === mode ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-surface border border-surface-border text-foreground/60 hover:text-foreground'}`}
+                     >
+                       {mode === "Susanoo" ? "Por Susanoo" : "Comunidade"}
+                     </button>
                    ))}
-               </motion.div>
+               </div>
 
-               {/* Showcase Templates - Real Data from Projects */}
-               <motion.div variants={containerVariants} initial="hidden" animate="show" className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+               {/* Grade de produtos (4 a 5 por linha no desktop) */}
+               {loading ? (
+                 <div className="flex items-center justify-center py-20">
+                   <div className="w-8 h-8 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
+                 </div>
+               ) : (
+               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
                    <AnimatePresence mode="popLayout">
-                   {filtered.length > 0 ? filtered.map(proj => (
+                   {filtered.length > 0 ? filtered.map((proj, i) => {
+                        const isTemplate = proj.category?.toLowerCase().includes("template") || !proj.category;
+                        return (
                         <motion.div 
-                            variants={itemVariants} 
-                            layout 
-                            key={proj.id} 
-                            onClick={() => {
-                                setActiveProduct(proj);
-                                setFavorited(false);
-                                setSelectedMockIndex(0);
-                                setCheckoutStatus("idle");
-                            }}
-                            className="group flex flex-col cursor-pointer"
+                            key={proj.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ delay: i * 0.04 }}
+                            className="group bg-surface border border-surface-border rounded-2xl overflow-hidden hover:border-accent/30 hover:shadow-xl transition-all duration-300 flex flex-col"
                         >
-                            <div className="aspect-[4/3] w-full rounded-[24px] bg-[#050505] mb-4 overflow-hidden relative shadow-3xl transition-all duration-500 group-hover:-translate-y-2 border border-surface-border group-hover:border-accent/30 cursor-pointer">
-                                
+                            {/* Imagem com botão de hover (apenas Ver Site) */}
+                            <div
+                              className="aspect-[16/10] w-full bg-background relative overflow-hidden cursor-pointer"
+                              onClick={() => openProduct(proj)}
+                            >
                                 {proj.cover_url ? (
-                                    <img src={proj.cover_url} className="absolute inset-0 w-full h-full object-cover grayscale-[0.5] group-hover:grayscale-0 transition-all duration-700" alt={proj.name}/>
+                                    <img src={proj.cover_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={proj.name} />
                                 ) : (
-                                    <div className="absolute inset-0 flex items-center justify-center text-5xl font-black text-foreground/5 opacity-20 uppercase tracking-tighter italic">
+                                    <div className="absolute inset-0 flex items-center justify-center text-4xl font-black text-foreground/10 uppercase tracking-tighter italic">
                                        {(proj.name || "PRJ").substring(0,3)}
                                     </div>
                                 )}
-                                
-                                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-80 group-hover:opacity-60 transition-opacity z-10" />
-                                
-                                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 z-20 gap-4 scale-90 group-hover:scale-100">
-                                   <button 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (proj.deploy_url) window.open(proj.deploy_url.startsWith('http') ? proj.deploy_url : `https://${proj.deploy_url}`, '_blank')
-                                      }}
-                                      className="w-12 h-12 bg-white rounded-full flex items-center justify-center text-black hover:scale-110 active:scale-90 transition-transform shadow-2xl"
-                                   >
-                                      <ExternalLink className="w-5 h-5" />
-                                   </button>
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center p-4">
+                                   <span className="bg-white text-black px-5 py-2.5 rounded-xl font-bold text-sm shadow-lg transform translate-y-2 group-hover:translate-y-0 transition-all duration-300">
+                                     Ver Site
+                                   </span>
                                 </div>
-
-                                {mainMode === "Susanoo" && (
-                                   <div className="absolute top-3 left-3 bg-accent/90 backdrop-blur-md px-3 py-1 rounded-full flex items-center gap-1 z-20 shadow-lg">
-                                       <ShieldCheck className="w-3 h-3 text-white" />
-                                       <span className="text-[9px] font-black uppercase tracking-widest text-white">Verified</span>
-                                   </div>
-                                )}
                             </div>
-                            <div className="px-2">
-                                <div className="flex items-center justify-between mb-1">
-                                    <h4 className="text-xl font-bold text-white tracking-tight">{proj.name}</h4>
-                                    <span className="text-secondary text-[12px] font-bold">R$ 49/m</span>
-                                </div>
-                                <p className="text-xs font-medium text-foreground/40 flex items-center gap-1.5 mt-1">
-                                    <User className="w-3 h-3"/> 
-                                    {mainMode === "Susanoo" ? "Susanoo Production" : "Dev Independente"}
-                                </p>
+                            
+                            {/* Info do card */}
+                            <div className="p-4 flex flex-col flex-1 justify-between">
+                               <div>
+                                   <div className="flex items-center gap-1.5 mb-2">
+                                       <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${isTemplate ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'}`}>
+                                         {isTemplate ? 'Template' : 'Site Pronto'}
+                                       </span>
+                                   </div>
+                                   <h4 className="font-bold text-sm md:text-base text-foreground truncate cursor-pointer" onClick={() => openProduct(proj)}>{proj.name}</h4>
+                                   <p className="text-xs text-foreground/50 mt-0.5">{mainMode === "Susanoo" ? "Por Susanoo" : "Dev Independente"}</p>
+                               </div>
+                               
+                               <div className="mt-4">
+                                   <div className="flex items-center justify-between mb-3">
+                                       <span className="text-accent font-black text-sm">R$ {(proj.price || 49.90).toFixed(2)}</span>
+                                       <div className="flex items-center gap-1">
+                                           <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                                           <span className="text-xs text-foreground/40 font-bold">5.0</span>
+                                       </div>
+                                   </div>
+                                   <button
+                                     onClick={(e) => handleAddToCart(proj, e)}
+                                     className={`w-full py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all ${isInCart(proj.id) ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/30' : 'bg-accent text-white hover:bg-accent/90'}`}
+                                   >
+                                     {isInCart(proj.id) ? "✓ No Carrinho" : "Adicionar"}
+                                   </button>
+                               </div>
                             </div>
                         </motion.div>
-                   )) : (
+                   )}) : (
                         <motion.div initial={{opacity:0}} animate={{opacity:1}} className="col-span-full py-20 text-center">
-                            <div className="inline-flex p-5 rounded-full bg-surface mb-4">
-                                <Search className="w-8 h-8 text-foreground/10" />
+                            <div className="inline-flex p-5 rounded-full bg-surface border border-surface-border mb-4">
+                                <Search className="w-8 h-8 text-foreground/20" />
                             </div>
-                            <h3 className="text-lg font-bold text-foreground/30 italic">Nenhum projeto encontrado nesta categoria.</h3>
+                            <h3 className="text-base font-bold text-foreground/40">Nenhum resultado encontrado.</h3>
+                            <p className="text-sm text-foreground/30 mt-1">Tente um termo diferente na busca.</p>
                         </motion.div>
                    )}
                    </AnimatePresence>
-               </motion.div>
+               </div>
+               )}
            </div>
 
-           {/* Modal de Detalhes do Produto - Estilo Mercado Livre / Cyberpunk Premium */}
+           {/* Modal / Página Dedicada do Produto */}
            <AnimatePresence>
                {activeProduct && (
                    <motion.div 
                        initial={{ opacity: 0 }} 
                        animate={{ opacity: 1 }} 
                        exit={{ opacity: 0 }} 
-                       className="fixed inset-0 bg-black/90 backdrop-blur-md z-[999] flex items-center justify-center p-4 md:p-10 overflow-y-auto"
+                       className="fixed inset-0 bg-background/95 z-[999] flex items-center justify-center p-0 md:p-6 overflow-hidden"
                        onClick={(e) => e.target === e.currentTarget && setActiveProduct(null)}
                    >
                        <motion.div 
-                           initial={{ scale: 0.9, y: 30, opacity: 0 }}
-                           animate={{ scale: 1, y: 0, opacity: 1 }}
-                           exit={{ scale: 0.9, y: 30, opacity: 0 }}
-                           transition={{ type: "spring", damping: 25, stiffness: 250 }}
-                           className="bg-[#0b0b0c] border border-white/5 w-full max-w-6xl rounded-[40px] shadow-3xl overflow-hidden relative grid grid-cols-1 lg:grid-cols-12 max-h-[90vh] lg:max-h-[85vh] overflow-y-auto custom-scrollbar font-sans"
+                           initial={{ y: "100%", opacity: 0 }}
+                           animate={{ y: 0, opacity: 1 }}
+                           exit={{ y: "100%", opacity: 0 }}
+                           transition={{ type: "spring", damping: 30, stiffness: 200 }}
+                           className="bg-background border-t md:border border-surface-border w-full max-w-[92vw] xl:max-w-7xl h-full md:h-[88vh] rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden flex flex-col relative"
                        >
-                           {/* Botão de Fechar */}
-                           <button 
-                               onClick={() => setActiveProduct(null)} 
-                               className="absolute top-4 right-4 md:top-6 md:right-6 z-[100] p-3 bg-black/80 backdrop-blur-md border border-white/10 rounded-full hover:scale-110 active:scale-95 transition-all text-white/50 hover:text-white shadow-2xl"
-                           >
-                               <X className="w-6 h-6" />
-                           </button>
-
-                           {checkoutStatus === "success" ? (
-                               <motion.div 
-                                   initial={{ opacity: 0, scale: 0.95 }}
-                                   animate={{ opacity: 1, scale: 1 }}
-                                   className="col-span-full py-20 px-8 flex flex-col items-center justify-center text-center bg-black/40"
+                           {/* Header da Página Dedicada */}
+                           <div className="flex items-center justify-between p-4 px-6 border-b border-surface-border bg-surface/50 backdrop-blur-md shrink-0">
+                               <button 
+                                   onClick={() => setActiveProduct(null)} 
+                                   className="flex items-center gap-2 text-foreground/60 hover:text-foreground font-bold text-sm transition-all"
                                >
-                                   <div className="w-24 h-24 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-8 relative">
-                                       <motion.div 
-                                           initial={{ scale: 0 }}
-                                           animate={{ scale: 1 }}
-                                           transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-                                       >
-                                           <Check className="w-12 h-12 text-emerald-500" />
-                                       </motion.div>
-                                       <div className="absolute inset-0 rounded-full border border-emerald-500/30 animate-ping opacity-70" />
+                                   <ArrowLeft className="w-4 h-4" /> Voltar ao Marketplace
+                               </button>
+                               <div className="flex items-center gap-2">
+                                  <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full ${activeProduct.category?.toLowerCase().includes("template") || !activeProduct.category ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'}`}>
+                                    {activeProduct.category?.toLowerCase().includes("template") || !activeProduct.category ? 'Template' : 'Site Pronto'}
+                                  </span>
+                               </div>
+                           </div>
+
+                           {/* Conteúdo de 2 Colunas */}
+                           <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden h-full">
+                               {/* Esquerda: Conteúdo Visual e Abas (Rolável) */}
+                               <div className="lg:col-span-8 bg-surface/30 flex flex-col h-full overflow-y-auto custom-scrollbar border-b lg:border-b-0 lg:border-r border-surface-border">
+                                   <div className="p-6">
+                                       <div className="aspect-[16/9] w-full rounded-2xl overflow-hidden bg-background border border-surface-border relative shadow-inner">
+                                           {activeProduct.cover_url ? (
+                                               <img src={activeProduct.cover_url} className="w-full h-full object-cover" alt={activeProduct.name} />
+                                           ) : (
+                                               <div className="absolute inset-0 flex items-center justify-center text-7xl font-black text-foreground/5 uppercase italic tracking-tighter">
+                                                   {(activeProduct.name || "PRJ").substring(0,3)}
+                                               </div>
+                                           )}
+                                       </div>
                                    </div>
-                                   <h2 className="text-4xl md:text-5xl font-black italic tracking-tighter uppercase mb-4 text-white">Operação Aprovada! ⚡</h2>
-                                   <p className="text-white/60 font-bold max-w-lg mb-10 text-sm md:text-base leading-relaxed">
-                                       Seu código-fonte e as credenciais de acesso exclusivas foram geradas e enviadas para o seu e-mail cadastrado.
-                                   </p>
-                                   <button 
-                                       onClick={() => {
-                                           setCheckoutStatus("idle");
-                                           setActiveProduct(null);
-                                       }}
-                                       className="px-10 py-5 bg-white text-black font-black text-xs uppercase tracking-widest rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-2xl hover:bg-emerald-400 hover:text-black"
-                                   >
-                                       Finalizar & Acessar Canal
-                                   </button>
-                               </motion.div>
-                           ) : (
-                               <>
-                                   {/* Coluna Esquerda: Fotos, Especificações e Detalhes */}
-                                   <div className="lg:col-span-7 p-6 md:p-10 flex flex-col gap-8 custom-scrollbar">
-                                       <div className="relative">
-                                           {/* Imagem Principal */}
-                                           <div className="aspect-[16/10] w-full rounded-3xl overflow-hidden bg-black/50 border border-white/5 relative group shadow-2xl">
-                                               {activeProduct.cover_url ? (
-                                                   <img 
-                                                       src={selectedMockIndex === 0 ? activeProduct.cover_url : `https://images.unsplash.com/photo-${[
-                                                           '1531403009284-440f080d1e12', // mockup 1
-                                                           '1507238691740-187a5b1d37b8', // mockup 2
-                                                           '1551288049-bebda4e38f71'  // mockup 3
-                                                       ][selectedMockIndex - 1]}?auto=format&fit=crop&w=1000&q=80`} 
-                                                       className="w-full h-full object-cover transition-all duration-700" 
-                                                       alt={activeProduct.name}
-                                                   />
-                                               ) : (
-                                                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#070708] text-white/5 uppercase italic font-black text-6xl tracking-tighter select-none">
-                                                       {(activeProduct.name || "PRJ").substring(0, 3)}
-                                                   </div>
-                                               )}
-                                               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 pointer-events-none" />
+
+                                   {/* Abas */}
+                                   <div className="flex border-b border-surface-border px-6 sticky top-0 bg-background/80 backdrop-blur-md z-10">
+                                       {[
+                                         { key: "detalhes", label: "Descrição" },
+                                         { key: "especificacoes", label: "Especificações" },
+                                         { key: "comentarios", label: "Avaliações" },
+                                       ].map(tab => (
+                                         <button
+                                           key={tab.key}
+                                           onClick={() => setActiveTab(tab.key as any)}
+                                           className={`px-4 py-4 text-sm font-black uppercase tracking-wider transition-all border-b-2 -mb-px ${activeTab === tab.key ? 'border-accent text-accent' : 'border-transparent text-foreground/50 hover:text-foreground'}`}
+                                         >
+                                           {tab.label}
+                                         </button>
+                                       ))}
+                                   </div>
+
+                                   <div className="p-6 flex-1">
+                                       {activeTab === "detalhes" && (
+                                           <div className="prose max-w-none">
+                                               <p className="text-foreground/75 text-base leading-relaxed whitespace-pre-line">
+                                                   {activeProduct.description || "Este template/website premium foi desenvolvido pela equipe de engenharia da Susanoo. Totalmente responsivo, otimizado para SEO do Google e com excelente performance. Perfeito para comércios locais, landing pages profissionais ou portfólios que exigem o máximo de qualidade estética e técnica."}
+                                               </p>
                                            </div>
-
-                                           {/* Badge Susanoo Verify */}
-                                           <div className="absolute top-4 left-4 bg-accent/90 backdrop-blur-md border border-accent/20 px-4 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
-                                               <ShieldCheck className="w-3.5 h-3.5 text-white" />
-                                               <span className="text-[9px] font-black uppercase tracking-widest text-white">Susanoo Verify</span>
-                                           </div>
-                                       </div>
-
-                                       {/* Carrossel de Fotos Adicionais estilo ML */}
-                                       <div className="flex gap-4">
-                                           <button 
-                                               onClick={() => setSelectedMockIndex(0)}
-                                               className={`w-20 md:w-28 aspect-video rounded-xl overflow-hidden border bg-[#050505] transition-all cursor-pointer hover:opacity-90 ${selectedMockIndex === 0 ? 'border-accent ring-2 ring-accent/20 shadow-lg scale-95' : 'border-white/5 opacity-55'}`}
-                                           >
-                                               {activeProduct.cover_url ? (
-                                                   <img src={activeProduct.cover_url} className="w-full h-full object-cover" />
-                                               ) : (
-                                                   <div className="w-full h-full flex items-center justify-center font-bold text-[10px] text-white/10 uppercase">{(activeProduct.name || "PRJ").substring(0,3)}</div>
-                                               )}
-                                           </button>
-                                           {[1, 2, 3].map((num) => (
-                                               <button 
-                                                   key={num}
-                                                   onClick={() => setSelectedMockIndex(num)}
-                                                   className={`w-20 md:w-28 aspect-video rounded-xl overflow-hidden border bg-[#050505] transition-all cursor-pointer hover:opacity-90 ${selectedMockIndex === num ? 'border-accent ring-2 ring-accent/20 shadow-lg scale-95' : 'border-white/5 opacity-55'}`}
-                                               >
-                                                   <img 
-                                                       src={`https://images.unsplash.com/photo-${[
-                                                           '1531403009284-440f080d1e12',
-                                                           '1507238691740-187a5b1d37b8',
-                                                           '1551288049-bebda4e38f71'
-                                                       ][num - 1]}?auto=format&fit=crop&w=150&q=50`} 
-                                                       className="w-full h-full object-cover" 
-                                                   />
-                                               </button>
-                                           ))}
-                                       </div>
-
-                                       {/* Seção de Descrição Completa */}
-                                       <div className="flex flex-col gap-4 border-t border-white/5 pt-8">
-                                           <h3 className="text-xs font-black uppercase text-white/20 tracking-[0.4em]">Descrição do Produto</h3>
-                                           <p className="text-white/70 font-medium text-sm md:text-base leading-relaxed whitespace-pre-wrap italic">
-                                               {activeProduct.description || 
-                                                "Este é um template/website ultra-premium projetado pela equipe técnica da Susanoo. Inclui código-fonte otimizado em Next.js e TailwindCSS, layout totalmente responsivo para dispositivos móveis, design moderno com micro-animações, SEO amigável para buscadores, e integrações simplificadas para impulsionar a sua operação digital ao máximo."}
-                                           </p>
-                                       </div>
-
-                                       {/* Especificações Técnicas e Features */}
-                                       <div className="flex flex-col gap-4 border-t border-white/5 pt-8">
-                                           <h3 className="text-xs font-black uppercase text-white/20 tracking-[0.4em]">Especificações Técnicas</h3>
-                                           <div className="grid grid-cols-2 gap-4">
+                                       )}
+                                       {activeTab === "especificacoes" && (
+                                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                {[
-                                                   { label: "Performance", val: "100/100 Lighthouse" },
-                                                   { label: "Framework", val: "Next.js 16 (App Router)" },
-                                                   { label: "Estilo CSS", val: "TailwindCSS v4 / Vanilla" },
-                                                   { label: "Banco de Dados", val: "Supabase Integrado" },
-                                                   { label: "Animações", val: "Framer Motion 12" },
-                                                   { label: "Suporte", val: "24/7 Equipe dedicada" }
-                                               ].map((spec, i) => (
-                                                   <div key={i} className="bg-white/5 border border-white/5 rounded-2xl p-4 flex flex-col justify-center">
-                                                       <span className="text-[10px] font-black uppercase text-white/30 mb-0.5">{spec.label}</span>
-                                                       <span className="text-xs font-bold text-white">{spec.val}</span>
+                                                   { label: "Performance Lighthouse", val: "98/100 ou superior" },
+                                                   { label: "Tecnologia Principal", val: "Next.js 16 & React 19" },
+                                                   { label: "Bibliotecas CSS", val: "TailwindCSS v4" },
+                                                   { label: "Integração Backend", val: "Supabase & Supabase Auth" },
+                                                   { label: "Responsividade", val: "Mobile, Tablet e Desktop" },
+                                                   { label: "Suporte Técnico", val: "Dúvidas e deploys por 7 dias" },
+                                               ].map((s, i) => (
+                                                   <div key={i} className="bg-surface border border-surface-border rounded-2xl p-4 flex flex-col justify-center">
+                                                       <p className="text-xs font-black text-foreground/40 uppercase tracking-wider mb-1">{s.label}</p>
+                                                       <p className="text-sm font-bold text-foreground">{s.val}</p>
                                                    </div>
                                                ))}
                                            </div>
-                                       </div>
-                                   </div>
-
-                                   {/* Coluna Direita: Preço, Compra e Checkout */}
-                                   <div className="lg:col-span-5 p-6 md:p-10 bg-[#0c0c0e] lg:border-l border-white/5 flex flex-col justify-between custom-scrollbar">
-                                       <div className="flex flex-col gap-6">
-                                           {/* Header do produto */}
-                                           <div className="flex flex-col gap-2">
-                                               <div className="flex items-center justify-between">
-                                                   <span className="text-[9px] font-black uppercase tracking-widest text-[#555]">Novo · 147 vendidos</span>
-                                               </div>
-                                               <div className="flex items-start justify-between gap-4">
-                                                   <h2 className="text-3xl md:text-4xl font-black italic tracking-tighter uppercase text-white leading-none">
-                                                       {activeProduct.name}
-                                                   </h2>
-                                                   <button 
-                                                       onClick={() => setFavorited(!favorited)}
-                                                       className={`p-3 rounded-full border transition-all hover:scale-110 active:scale-95 shadow-lg ${favorited ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-white/5 border-white/10 text-white/40 hover:text-white hover:bg-white/10'}`}
-                                                   >
-                                                       <Heart className={`w-6 h-6 ${favorited ? 'fill-red-500 text-red-500' : ''}`} />
-                                                   </button>
-                                               </div>
-                                               {/* Reviews */}
-                                               <div className="flex items-center gap-1.5 mt-2">
-                                                   <div className="flex text-amber-400">
-                                                       {[1, 2, 3, 4, 5].map((s) => (
-                                                           <Star key={s} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                                                       ))}
-                                                   </div>
-                                                   <span className="text-[10px] font-black text-white/40 uppercase">5.0 (42 Avaliações)</span>
-                                               </div>
-                                           </div>
-
-                                           {/* Preço e Forma de pagamento */}
-                                           <div className="flex flex-col border-y border-white/5 py-6">
-                                               <div className="flex items-baseline gap-1">
-                                                   <span className="text-xs font-black text-white/30 uppercase mr-1">R$</span>
-                                                   <span className="text-5xl font-black tracking-tighter italic text-white leading-none">49</span>
-                                                   <span className="text-lg font-black text-white/50">,90</span>
-                                                   <span className="text-[10px] font-black text-accent border border-accent/20 bg-accent/5 px-2 py-0.5 rounded ml-3 uppercase">90% OFF</span>
-                                               </div>
-                                               <span className="text-[10px] font-black text-emerald-500 uppercase tracking-wider mt-3 flex items-center gap-1">
-                                                   <CreditCard className="w-3.5 h-3.5" /> Em até 12x sem juros de R$ 4,15
-                                               </span>
-                                           </div>
-
-                                           {/* Trust features */}
+                                       )}
+                                       {activeTab === "comentarios" && (
                                            <div className="flex flex-col gap-4">
-                                               <div className="flex gap-4 items-start text-xs">
-                                                   <Truck className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                                                   <div>
-                                                       <p className="font-black text-emerald-500 uppercase">Entrega Digital Instantânea</p>
-                                                       <p className="text-white/40 font-medium">Acesso imediato ao código-fonte pelo seu e-mail e painel.</p>
+                                               {[
+                                                 { nome: "Ana Lima", nota: 5, data: "há 2 semanas", texto: "Site extremamente leve e bonito. Meus clientes adoraram a rapidez do carregamento." },
+                                                 { nome: "Carlos Mendes", nota: 5, data: "há 1 mês", texto: "Facilitou muito o andamento do meu negócio. O suporte inicial me ajudou a publicar sem complicações." },
+                                               ].map((c, i) => (
+                                                 <div key={i} className="bg-surface border border-surface-border rounded-2xl p-5">
+                                                   <div className="flex items-center justify-between mb-3">
+                                                     <div>
+                                                       <span className="font-bold text-sm text-foreground block">{c.nome}</span>
+                                                       <span className="text-[10px] text-foreground/40">{c.data}</span>
+                                                     </div>
+                                                     <div className="flex gap-0.5">{[...Array(c.nota)].map((_, s) => <Star key={s} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />)}</div>
                                                    </div>
+                                                   <p className="text-sm text-foreground/75 leading-relaxed">{c.texto}</p>
+                                                 </div>
+                                               ))}
+                                               <div className="flex items-center justify-center gap-4 pt-4 border-t border-surface-border">
+                                                 <button onClick={() => setLiked(!liked)} className={`flex items-center gap-2 text-sm font-black uppercase tracking-wider transition-colors ${liked ? 'text-accent' : 'text-foreground/40 hover:text-foreground'}`}>
+                                                   <ThumbsUp className={`w-4 h-4 ${liked ? 'fill-accent' : ''}`} /> {liked ? 'Útil (43)' : 'Marcar como útil (42)'}
+                                                 </button>
                                                </div>
-                                               <div className="flex gap-4 items-start text-xs">
-                                                   <Award className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                                                   <div>
-                                                       <p className="font-black text-emerald-500 uppercase">Garantia Susanoo de 7 dias</p>
-                                                       <p className="text-white/40 font-medium">Receba 100% de reembolso se o produto não corresponder ao anúncio.</p>
-                                                   </div>
-                                               </div>
+                                           </div>
+                                       )}
+                                   </div>
+                               </div>
+
+                               {/* Direita: Compra e Ações (Fixo/Rolável) */}
+                               <div className="lg:col-span-4 p-8 bg-background flex flex-col justify-between h-full overflow-y-auto custom-scrollbar">
+                                   <div className="flex flex-col gap-6">
+                                       <div>
+                                           <div className="flex items-start justify-between gap-4 mb-2">
+                                               <h2 className="text-3xl font-black tracking-tight text-foreground leading-tight">{activeProduct.name}</h2>
+                                               <button 
+                                                   onClick={() => setFavorited(!favorited)}
+                                                   className={`p-2.5 rounded-full border transition-all shrink-0 ${favorited ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-surface border-surface-border text-foreground/40 hover:text-red-400'}`}
+                                               >
+                                                   <Heart className={`w-5 h-5 ${favorited ? 'fill-red-500' : ''}`} />
+                                               </button>
+                                           </div>
+                                           <div className="flex items-center gap-2">
+                                               <div className="flex gap-0.5">{[1,2,3,4,5].map(s => <Star key={s} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />)}</div>
+                                               <span className="text-xs text-foreground/50 font-bold">5.0 (42 avaliações)</span>
                                            </div>
                                        </div>
 
-                                       {/* Botões de Ação estilo Mercado Livre */}
-                                       <div className="flex flex-col gap-3 mt-8 border-t border-white/5 pt-8">
-                                           <button 
-                                               onClick={async () => {
-                                                   setCheckoutStatus("loading");
-                                                   await new Promise(r => setTimeout(r, 1500));
-                                                   setCheckoutStatus("success");
-                                               }}
-                                               disabled={checkoutStatus === "loading"}
-                                               className="w-full py-5 bg-[#3483fa] hover:bg-[#2969c9] text-white font-black text-xs uppercase tracking-widest rounded-2xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
-                                           >
-                                               {checkoutStatus === "loading" ? (
-                                                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                               ) : (
-                                                   <>Comprar Agora</>
-                                               )}
-                                           </button>
+                                       <div className="bg-surface border border-surface-border rounded-2xl p-5">
+                                           <p className="text-[10px] text-foreground/40 font-black uppercase tracking-widest mb-1.5">Preço Único</p>
+                                           <p className="text-4xl font-black text-foreground">R$ {(activeProduct.price || 49.90).toFixed(2).replace('.', ',')}</p>
+                                           <p className="text-xs text-emerald-500 font-bold mt-1.5 flex items-center gap-1.5">
+                                               <Zap className="w-3.5 h-3.5 fill-current" /> Acesso imediato no e-mail
+                                           </p>
+                                       </div>
 
-                                           <button 
-                                               onClick={() => {
-                                                   const inCart = cart.includes(activeProduct.id);
-                                                   if (inCart) {
-                                                       setCart(prev => prev.filter(id => id !== activeProduct.id));
-                                                   } else {
-                                                       setCart(prev => [...prev, activeProduct.id]);
-                                                   }
-                                               }}
-                                               className={`w-full py-5 font-black text-xs uppercase tracking-widest rounded-2xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 border ${
-                                                   cart.includes(activeProduct.id) 
-                                                       ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
-                                                       : 'bg-white/5 border-white/5 hover:bg-white/10 text-white'
-                                               }`}
-                                           >
-                                               {cart.includes(activeProduct.id) ? (
-                                                   <>No Carrinho <Check className="w-4 h-4 text-emerald-400" /></>
-                                               ) : (
-                                                   <>Adicionar ao Carrinho <ShoppingCart className="w-4 h-4" /></>
-                                               )}
-                                           </button>
+                                       <div className="flex flex-col gap-3.5 bg-surface/50 border border-surface-border rounded-2xl p-4 text-sm text-foreground/75">
+                                         <div className="flex items-center gap-3">
+                                           <Zap className="w-4 h-4 text-accent shrink-0" />
+                                           <span>Código-fonte completo</span>
+                                         </div>
+                                         <div className="flex items-center gap-3">
+                                           <Shield className="w-4 h-4 text-accent shrink-0" />
+                                           <span>Compra 100% Garantida por 7 dias</span>
+                                         </div>
                                        </div>
                                    </div>
-                               </>
-                           )}
+
+                                   <div className="flex flex-col gap-3 mt-8 lg:mt-0 pt-6 border-t border-surface-border">
+                                       <button 
+                                           onClick={() => { handleAddToCart(activeProduct); setActiveProduct(null); }}
+                                           className="w-full py-4.5 bg-accent text-white font-black rounded-xl hover:bg-accent/90 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-accent/20 flex items-center justify-center gap-2 text-sm uppercase tracking-wider"
+                                       >
+                                           <ShoppingBag className="w-5 h-5" /> Adquirir Agora
+                                       </button>
+                                       <button 
+                                           onClick={(e) => handleAddToCart(activeProduct, e)}
+                                           className={`w-full py-4.5 font-black rounded-xl transition-all flex items-center justify-center gap-2 border text-sm uppercase tracking-wider ${isInCart(activeProduct.id) ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600' : 'bg-surface border-surface-border text-foreground hover:border-accent/40 hover:bg-surface-border/50'}`}
+                                       >
+                                           {isInCart(activeProduct.id) ? <><Check className="w-4 h-4" /> No Carrinho</> : <><ShoppingCart className="w-4 h-4" /> Adicionar ao Carrinho</>}
+                                       </button>
+                                       {activeProduct.deploy_url && (
+                                         <a href={activeProduct.deploy_url.startsWith('http') ? activeProduct.deploy_url : `https://${activeProduct.deploy_url}`} target="_blank" rel="noreferrer" className="w-full py-3.5 font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 text-foreground/50 hover:text-foreground">
+                                           <ExternalLink className="w-4 h-4" /> Ver demonstração do site
+                                         </a>
+                                       )}
+                                   </div>
+                               </div>
+                           </div>
                        </motion.div>
                    </motion.div>
                )}
