@@ -1,23 +1,19 @@
 "use client";
 import { 
   ArrowRight, 
-  Layers, 
   MessageSquare, 
-  Target, 
-  Workflow, 
   Zap, 
   Shield, 
   Rocket,
-  Globe,
   Monitor,
-  ExternalLink
+  BadgeCheck,
+  Quote,
+  Star
 } from "lucide-react";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { Logo } from "@/components/logo";
 import { useRouter } from "next/navigation";
 import { useRef } from "react";
-import Link from "next/link";
 import { ShaderAnimation } from "@/components/ui/shader-animation";
 
 export default function Home() {
@@ -51,7 +47,7 @@ export default function Home() {
             transition={{ duration: 0.8, delay: 0.2 }}
             className="text-4xl sm:text-6xl md:text-8xl lg:text-[10rem] font-black tracking-tighter leading-none mb-6 md:mb-8 uppercase italic"
           >
-            SUSANOO<span className="text-accent underline decoration-white/10 decoration-8 underline-offset-[10px] md:underline-offset-[20px]">.</span>
+            SUSANOO
           </motion.h1>
 
           <motion.p 
@@ -87,6 +83,25 @@ export default function Home() {
         </motion.div>
 
         <motion.div style={{ y: useTransform(scrollYProgress, [0, 1], [0, -400]) }} className="absolute top-[20%] -left-32 w-[600px] h-[600px] bg-accent/10 rounded-full blur-[140px] pointer-events-none" />
+      </section>
+
+      <section className="relative z-10 border-t border-surface-border bg-surface/40 px-4 py-16 md:px-6 md:py-24">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-10 flex flex-col gap-4 text-center md:mb-14 md:flex-row md:items-end md:justify-between md:text-left">
+            <div><p className="mb-3 text-xs font-black uppercase tracking-[0.24em] text-accent">Quem escolhe a Susanoo</p><h2 className="text-3xl font-black uppercase italic tracking-tighter md:text-5xl">Confiança que aparece no resultado.</h2></div>
+            <div className="flex justify-center gap-1 text-accent md:justify-end"><Star className="h-5 w-5 fill-current" /><Star className="h-5 w-5 fill-current" /><Star className="h-5 w-5 fill-current" /><Star className="h-5 w-5 fill-current" /><Star className="h-5 w-5 fill-current" /></div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            {[
+              ["\"O processo foi muito mais claro do que eu esperava. Hoje meu site finalmente representa a qualidade do meu negócio.\"", "Marina A.", "Empreendedora"],
+              ["\"A Susanoo transformou uma ideia solta em uma presença digital profissional, rápida e muito bonita.\"", "Rafael M.", "Fundador de marca"],
+              ["\"Ter acompanhamento em cada etapa fez toda a diferença. Foi simples, seguro e o resultado superou as expectativas.\"", "Camila R.", "Gestora comercial"],
+            ].map(([quote, name, role]) => <article key={name} className="rounded-[2rem] border border-surface-border bg-background p-7 shadow-sm md:p-8"><Quote className="mb-6 h-8 w-8 text-accent/50" /><p className="min-h-28 text-base font-bold leading-relaxed text-foreground/75">{quote}</p><div className="mt-7 border-t border-surface-border pt-5"><p className="font-black">{name}</p><p className="mt-1 text-xs font-bold uppercase tracking-wider text-foreground/40">{role}</p></div></article>)}
+          </div>
+          <div className="mt-8 grid grid-cols-1 divide-y divide-surface-border rounded-[1.75rem] border border-surface-border bg-background md:grid-cols-3 md:divide-x md:divide-y-0">
+            {[["Atendimento", "Humano e próximo"], ["Projetos", "Pensados para crescer"], ["Experiência", "Do briefing ao lançamento"]].map(([label, value]) => <div key={label} className="flex items-center justify-center gap-3 px-6 py-5 text-center"><BadgeCheck className="h-5 w-5 shrink-0 text-accent" /><span><span className="block text-xs font-black uppercase tracking-wider text-foreground/40">{label}</span><span className="text-sm font-black">{value}</span></span></div>)}
+          </div>
+        </div>
       </section>
 
       {/* Features Section */}
