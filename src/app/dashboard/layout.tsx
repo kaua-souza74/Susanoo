@@ -8,6 +8,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { SusanooAIWidget } from "@/components/SusanooAIWidget";
 import { useCart } from "@/components/CartContext";
 import { CartSidebar } from "@/components/CartSidebar";
+import { getAuthenticatedAccountType } from "@/lib/account";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -30,9 +31,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
      setMounted(true);
      
-     const checkType = () => {
-         const type = localStorage.getItem("susanoo_profile_type") as "Comércio" | "Desenvolvedor";
-         if (type) setUserType(type);
+     const checkType = async () => {
+         const type = await getAuthenticatedAccountType();
+         setUserType(type);
          checkProfileCompletion();
      };
      

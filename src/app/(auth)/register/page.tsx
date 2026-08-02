@@ -1,13 +1,14 @@
 "use client";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle2, AlertCircle, Eye, EyeOff, Globe, Code2 } from "lucide-react";
+import { CheckCircle2, AlertCircle, Eye, EyeOff } from "lucide-react";
 
 export default function RegisterPage() {
-  const [role, setRole] = useState<"client" | "developer">("client");
+  const searchParams = useSearchParams();
+  const role: "client" | "developer" = searchParams.get("role") === "developer" ? "developer" : "client";
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -27,16 +28,6 @@ export default function RegisterPage() {
   const [experience, setExperience] = useState("");
 
   const router = useRouter();
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const r = params.get("role");
-      if (r === "developer") {
-        setRole("developer");
-      }
-    }
-  }, []);
 
   // Password strength checker
   const passwordStrength = useMemo(() => {
@@ -71,7 +62,7 @@ export default function RegisterPage() {
         window.dispatchEvent(new Event("profileTypeChanged"));
 
         if (role === "developer") {
-          localStorage.setItem("susanoo_dev_profile", JSON.stringify({
+          localStorage.setItem(`susanoo:${data.user?.id ?? "anonymous"}:dev-profile`, JSON.stringify({
             name,
             email,
             github,
@@ -81,7 +72,7 @@ export default function RegisterPage() {
             experience
           }));
         } else {
-          localStorage.setItem("susanoo_client_profile", JSON.stringify({
+          localStorage.setItem(`susanoo:${data.user?.id ?? "anonymous"}:client-profile`, JSON.stringify({
             name,
             email,
             storeName,
@@ -183,25 +174,25 @@ export default function RegisterPage() {
         {role === "developer" && (
           <>
             <div>
-              <label className="block text-sm font-semibold mb-2 opacity-80">Link do GitHub</label>
+              <label className="block text-sm font-semibold mb-2 opacity-80">Link do GitHub <span className="text-foreground/45 font-medium">(opcional)</span></label>
               <input 
                 type="url" 
                 value={github}
                 onChange={(e) => setGithub(e.target.value)}
                 className="w-full p-4.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-foreground/30 font-medium text-foreground"
                 placeholder="https://github.com/usuario"
-                required disabled={notification?.type === 'success'}
+                disabled={notification?.type === 'success'}
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-2 opacity-80">Link do LinkedIn</label>
+              <label className="block text-sm font-semibold mb-2 opacity-80">Link do LinkedIn <span className="text-foreground/45 font-medium">(opcional)</span></label>
               <input 
                 type="url" 
                 value={linkedin}
                 onChange={(e) => setLinkedin(e.target.value)}
                 className="w-full p-4.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-foreground/30 font-medium text-foreground"
                 placeholder="https://linkedin.com/in/usuario"
-                required disabled={notification?.type === 'success'}
+                disabled={notification?.type === 'success'}
               />
             </div>
             <div>

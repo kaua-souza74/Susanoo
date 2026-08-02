@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { User, Shield, Bell, CheckCircle2, Briefcase, Code2, ExternalLink } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
+import { getAuthenticatedAccountType } from "@/lib/account";
 
 export default function SettingsPage() {
     const [user, setUser] = useState<any>(null);
@@ -26,16 +27,8 @@ export default function SettingsPage() {
         };
         load();
         
-        const saved = localStorage.getItem("susanoo_profile_type") as "Comércio" | "Desenvolvedor";
-        if (saved) setAccountType(saved);
+        getAuthenticatedAccountType().then(setAccountType);
     }, []);
-
-    const handleAccountTypeChange = (type: "Comércio" | "Desenvolvedor") => {
-        setAccountType(type);
-        localStorage.setItem("susanoo_profile_type", type);
-        window.dispatchEvent(new Event("profileTypeChanged"));
-        showToast(`Tipo de conta alterado para ${type}!`);
-    };
 
     const handleSave = async () => {
         setSaved(true);
@@ -121,37 +114,9 @@ export default function SettingsPage() {
                                         {/* Tipo de Conta */}
                                         <div className="mt-2">
                                             <label className="text-xs font-bold uppercase tracking-widest opacity-40 mb-4 block text-foreground">Tipo de Conta</label>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <button
-                                                    onClick={() => handleAccountTypeChange("Comércio")}
-                                                    className={`flex flex-col items-center gap-3 p-6 rounded-2xl border-2 transition-all cursor-pointer ${
-                                                        accountType === "Comércio"
-                                                        ? 'border-accent bg-accent/10 text-accent shadow-lg shadow-accent/10'
-                                                        : 'border-surface-border text-foreground/40 hover:text-foreground hover:border-foreground/20'
-                                                    }`}
-                                                >
-                                                    <Briefcase className="w-8 h-8" />
-                                                    <div>
-                                                        <p className="font-black text-sm uppercase tracking-widest">Comércio</p>
-                                                        <p className="text-xs font-medium opacity-60 mt-1">Acompanhe projetos e
-seu site.</p>
-                                                    </div>
-                                                </button>
-                                                <button
-                                                    onClick={() => handleAccountTypeChange("Desenvolvedor")}
-                                                    className={`flex flex-col items-center gap-3 p-6 rounded-2xl border-2 transition-all cursor-pointer ${
-                                                        accountType === "Desenvolvedor"
-                                                        ? 'border-accent bg-accent/10 text-accent shadow-lg shadow-accent/10'
-                                                        : 'border-surface-border text-foreground/40 hover:text-foreground hover:border-foreground/20'
-                                                    }`}
-                                                >
-                                                    <Code2 className="w-8 h-8" />
-                                                    <div>
-                                                        <p className="font-black text-sm uppercase tracking-widest">Desenvolvedor</p>
-                                                        <p className="text-xs font-medium opacity-60 mt-1">Adicione sites
-ao portfólio.</p>
-                                                    </div>
-                                                </button>
+                                            <div className="flex items-center gap-4 rounded-2xl border border-accent/25 bg-accent/5 p-6 text-accent">
+                                                {accountType === "Desenvolvedor" ? <Code2 className="h-8 w-8" /> : <Briefcase className="h-8 w-8" />}
+                                                <div><p className="font-black uppercase tracking-widest">{accountType}</p><p className="mt-1 text-xs font-medium text-foreground/55">Definido no cadastro e protegido para manter sua experiência na plataforma.</p></div>
                                             </div>
                                         </div>
                                     </div>

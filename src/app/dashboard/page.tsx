@@ -27,6 +27,7 @@ import { supabase } from "@/lib/supabase";
 import { useCart } from "@/components/CartContext";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getAuthenticatedAccountType, getAccountStorageKey } from "@/lib/account";
 
 type MainMode = "Susanoo" | "Geral";
 
@@ -45,6 +46,7 @@ export default function DiscoverHome() {
    // Checklist & Onboarding states
    const [storeProfileCompleted, setStoreProfileCompleted] = useState(false);
    const [hasProjects, setHasProjects] = useState(false);
+   const [hasExploredDevelopers, setHasExploredDevelopers] = useState(false);
    const [hasChat, setHasChat] = useState(false);
    const [hasReview, setHasReview] = useState(false);
    const [onboardingDismissed, setOnboardingDismissed] = useState(false);
@@ -52,16 +54,19 @@ export default function DiscoverHome() {
    const { addToCart, items, setIsCartOpen } = useCart();
 
    useEffect(() => {
-     // Check role
-     const role = localStorage.getItem("susanoo_profile_type") as "Comércio" | "Desenvolvedor";
-     if (role) setUserType(role);
-
-     // Check checklist status
-     setStoreProfileCompleted(localStorage.getItem("susanoo_store_profile_completed") === "true");
-     setHasProjects(localStorage.getItem("susanoo_bought_project") === "true");
-     setHasChat(localStorage.getItem("susanoo_first_chat") === "true");
-     setHasReview(localStorage.getItem("susanoo_first_review") === "true");
-     setOnboardingDismissed(localStorage.getItem("susanoo_client_onboarding_dismissed") === "true");
+     const loadAccount = async () => {
+       setUserType(await getAuthenticatedAccountType());
+       const [profileKey, projectKey, developersKey, chatKey, reviewKey, onboardingKey] = await Promise.all([
+         getAccountStorageKey("store-profile-completed"), getAccountStorageKey("first-project"), getAccountStorageKey("explored-developers"), getAccountStorageKey("first-chat"), getAccountStorageKey("first-review"), getAccountStorageKey("onboarding-dismissed")
+       ]);
+       setStoreProfileCompleted(localStorage.getItem(profileKey) === "true" || localStorage.getItem("susanoo_store_profile_completed") === "true");
+       setHasProjects(localStorage.getItem(projectKey) === "true");
+       setHasExploredDevelopers(localStorage.getItem(developersKey) === "true");
+       setHasChat(localStorage.getItem(chatKey) === "true");
+       setHasReview(localStorage.getItem(reviewKey) === "true");
+       setOnboardingDismissed(localStorage.getItem(onboardingKey) === "true");
+     };
+     loadAccount();
 
      const fetchProjects = async () => {
          const { data } = await supabase
@@ -77,7 +82,7 @@ export default function DiscoverHome() {
 
      // Listen to layout completion updates
      const handleProfileComplete = () => {
-       setStoreProfileCompleted(localStorage.getItem("susanoo_store_profile_completed") === "true");
+       getAccountStorageKey("store-profile-completed").then(key => setStoreProfileCompleted(localStorage.getItem(key) === "true" || localStorage.getItem("susanoo_store_profile_completed") === "true"));
      };
      window.addEventListener("profileCompletedChanged", handleProfileComplete);
      return () => window.removeEventListener("profileCompletedChanged", handleProfileComplete);
@@ -93,13 +98,20 @@ export default function DiscoverHome() {
    const handleAddToCart = (proj: any, e?: React.MouseEvent) => {
      e?.stopPropagation();
      addToCart({ id: proj.id, name: proj.name, price: proj.price || 49.90, cover_url: proj.cover_url });
+     getAccountStorageKey("first-project").then(key => localStorage.setItem(key, "true"));
+     setHasProjects(true);
    };
 
    const isInCart = (id: string) => items.some(i => i.id === id);
 
-   const dismissOnboarding = () => {
-     localStorage.setItem("susanoo_client_onboarding_dismissed", "true");
+   const dismissOnboarding = async () => {
+     localStorage.setItem(await getAccountStorageKey("onboarding-dismissed"), "true");
      setOnboardingDismissed(true);
+   };
+
+   const markDevelopersExplored = async () => {
+     localStorage.setItem(await getAccountStorageKey("explored-developers"), "true");
+     setHasExploredDevelopers(true);
    };
 
    const filtered = projects.filter(proj => {
@@ -255,7 +267,7 @@ export default function DiscoverHome() {
                            <p className="text-xs text-foreground/50 mt-1">Preencha sua Razão Social, CNPJ e CEP na aba de perfil.</p>
                          </div>
                        </Link>
-                       <Link href="/dashboard/developers" className="bg-surface border border-surface-border hover:border-accent/30 p-4 rounded-2xl flex items-start gap-3 transition-colors">
+                       <Link onClick={markDevelopersExplored} href="/dashboard/developers" className="bg-surface border border-surface-border hover:border-accent/30 p-4 rounded-2xl flex items-start gap-3 transition-colors">
                          <span className="text-lg font-black text-accent bg-accent/10 w-8 h-8 rounded-xl flex items-center justify-center shrink-0">2</span>
                          <div>
                            <h4 className="font-bold text-sm text-foreground">Encontre um profissional</h4>
@@ -278,11 +290,11 @@ export default function DiscoverHome() {
                <div className="bg-surface border border-surface-border rounded-3xl p-6 shadow-sm">
                  <h3 className="text-base font-black uppercase tracking-wider text-foreground/70 mb-4">Seu Progresso de Configuração</h3>
                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                   {[
+                     {[
                      { label: "Perfil Preenchido", checked: storeProfileCompleted, link: "/dashboard/profile" },
-                     { label: "Primeiro projeto", checked: hasProjects, link: "/dashboard" },
-                     { label: "Primeiro chat", checked: hasChat, link: "/dashboard/chat" },
-                     { label: "Primeira avaliação", checked: hasReview, link: "/dashboard" }
+                     { label: "Profissionais explorados", checked: hasExploredDevelopers, link: "/dashboard/developers" },
+                     { label: "Solução adicionada", checked: hasProjects, link: "#templates-grid" },
+                     { label: "Primeiro chat", checked: hasChat, link: "/dashboard/chat" }
                    ].map((item, idx) => (
                      <div 
                        key={idx} 

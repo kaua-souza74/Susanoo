@@ -16,8 +16,8 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
           <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
         </div>
 
-        <Link href="/" className="relative z-10 flex items-center cursor-pointer absolute top-12 left-12">
-          <Logo />
+        <Link href="/" aria-label="Voltar para a página inicial" className="group absolute left-12 top-12 z-30 flex cursor-pointer items-center rounded-xl outline-none transition-transform hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-accent">
+          <Logo className="pointer-events-none transition-opacity group-hover:opacity-80" />
         </Link>
 
         <div className="relative z-10 flex flex-col items-center justify-center h-full text-center px-8">
@@ -32,6 +32,9 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
 
       {/* Right Panel - Form Area */}
       <div className="flex-[0.8] flex flex-col justify-center items-center py-12 px-4 sm:px-8 bg-background relative z-20 shadow-2xl transition-colors duration-300">
+        <Link href="/" aria-label="Voltar para a página inicial" className="absolute left-6 top-6 z-30 flex cursor-pointer items-center rounded-lg outline-none transition-transform hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-accent lg:hidden">
+          <Logo size="sm" className="pointer-events-none" />
+        </Link>
         <div className="absolute top-6 right-6">
           <ThemeToggle />
         </div>

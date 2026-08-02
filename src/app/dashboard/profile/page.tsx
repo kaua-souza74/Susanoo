@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { Camera, Save, MapPin, Globe, Code2, AtSign, Star, ShieldCheck, Mail, Phone, Plus, X, Heart, ExternalLink, Building, Lock } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
+import { getAccountStorageKey, getAuthenticatedAccountType } from "@/lib/account";
 
 export default function ProfilePage() {
     const [loading, setLoading] = useState(false);
@@ -51,11 +52,12 @@ export default function ProfilePage() {
 
     // Load initial profile data
     useEffect(() => {
-        const type = localStorage.getItem("susanoo_profile_type") as "Comércio" | "Desenvolvedor";
-        if (type) setProfileType(type);
+        const loadProfile = async () => {
+        const type = await getAuthenticatedAccountType();
+        setProfileType(type);
 
         if (type === "Desenvolvedor") {
-            const devData = localStorage.getItem("susanoo_dev_profile");
+            const devData = localStorage.getItem(await getAccountStorageKey("dev-profile"));
             if (devData) {
                 try {
                     const parsed = JSON.parse(devData);
@@ -74,7 +76,7 @@ export default function ProfilePage() {
                 } catch (e) {}
             }
         } else {
-            const clientData = localStorage.getItem("susanoo_client_profile");
+            const clientData = localStorage.getItem(await getAccountStorageKey("client-profile"));
             if (clientData) {
                 try {
                     const parsed = JSON.parse(clientData);
@@ -102,6 +104,8 @@ export default function ProfilePage() {
             { id: 1, name: "SaaS Dashboard Next.js", cover_url: "", deploy_url: "https://example.com" },
             { id: 2, name: "Landing Page Premium", cover_url: "", deploy_url: "https://example.com" },
         ]);
+        };
+        loadProfile();
     }, []);
 
     // ViaCEP fetch API when CEP is entered
@@ -188,7 +192,7 @@ export default function ProfilePage() {
             await new Promise(r => setTimeout(r, 800));
 
             if (profileType === "Desenvolvedor") {
-                localStorage.setItem("susanoo_dev_profile", JSON.stringify({
+                localStorage.setItem(await getAccountStorageKey("dev-profile"), JSON.stringify({
                     name: formData.name,
                     email: formData.email,
                     github: formData.github,
@@ -203,7 +207,7 @@ export default function ProfilePage() {
                 // Check completeness
                 const isComplete = !!(formData.name && formData.storeName && formData.cep && formData.address && formData.city);
                 
-                localStorage.setItem("susanoo_client_profile", JSON.stringify({
+                localStorage.setItem(await getAccountStorageKey("client-profile"), JSON.stringify({
                     name: formData.name,
                     email: formData.email,
                     storeName: formData.storeName,
@@ -220,6 +224,7 @@ export default function ProfilePage() {
                 }));
 
                 localStorage.setItem("susanoo_store_profile_completed", isComplete ? "true" : "false");
+                localStorage.setItem(await getAccountStorageKey("store-profile-completed"), isComplete ? "true" : "false");
                 window.dispatchEvent(new Event("profileCompletedChanged"));
             }
 

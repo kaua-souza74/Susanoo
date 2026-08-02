@@ -66,7 +66,7 @@ export default function Home() {
             className="flex flex-col sm:flex-row items-center justify-center gap-4 md:gap-8 relative z-50 px-4"
           >
             <button 
-              onClick={() => router.push('/register')}
+              onClick={() => router.push('/register?role=client')}
               className="w-full sm:w-auto group bg-accent text-white font-black text-base md:text-xl px-8 py-5 md:px-14 md:py-8 rounded-2xl md:rounded-[3rem] hover:scale-105 md:hover:scale-110 md:hover:-rotate-2 active:scale-95 transition-all shadow-[0_20px_40px_-15px_rgba(168,85,247,0.5)] flex flex-col items-center justify-center gap-1 md:gap-2 relative z-[60]"
             >
               <span className="flex items-center gap-2">Quero um site <ArrowRight className="w-5 h-5 md:w-7 md:h-7 group-hover:translate-x-2 transition-transform" /></span>
