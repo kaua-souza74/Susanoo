@@ -21,14 +21,14 @@ const steps = [
 ] as const;
 
 export default function SouDesenvolvedorPage() {
-  return <main className="min-h-screen overflow-hidden bg-background pt-6 text-foreground md:pt-10">
+  return <main id="top" className="min-h-screen overflow-hidden bg-background pt-6 text-foreground md:pt-10">
     <section className="relative mx-auto max-w-7xl px-4 pb-20 pt-24 md:px-6 md:pb-32 md:pt-32">
       <div className="pointer-events-none absolute -right-40 top-0 h-[34rem] w-[34rem] rounded-full bg-accent/15 blur-[130px]" />
       <div className="pointer-events-none absolute -left-48 bottom-0 h-96 w-96 rounded-full bg-accent/10 blur-[120px]" />
       <div className="relative overflow-hidden rounded-[2rem] border border-surface-border bg-surface/50 px-6 py-12 shadow-2xl backdrop-blur-xl md:rounded-[3.5rem] md:px-16 md:py-20">
         <div className="absolute right-0 top-0 h-48 w-48 rounded-bl-[6rem] border-b border-l border-accent/20 bg-accent/5" />
         <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="relative max-w-4xl">
-          <div className="mb-8 flex items-center gap-3 text-xs font-black uppercase tracking-[0.22em] text-accent"><span className="flex h-9 w-9 items-center justify-center rounded-xl border border-accent/25 bg-accent/10"><Code2 className="h-4 w-4" /></span>Rede Susanoo</div>
+          <div className="mb-8 flex items-center gap-3 text-xs font-black uppercase tracking-[0.22em] text-accent"><span className="flex h-9 w-9 items-center justify-center rounded-xl border border-accent/25 bg-accent/10"><Code2 className="h-4 w-4" /></span>Para Desenvolvedores</div>
           <h1 className="max-w-4xl text-5xl font-black uppercase italic leading-[0.9] tracking-tighter md:text-7xl lg:text-8xl">Seu próximo grande <span className="text-accent">projeto</span> começa aqui.</h1>
           <p className="mt-8 max-w-2xl text-base font-bold leading-relaxed text-foreground/55 md:text-xl">Uma plataforma para profissionais que querem construir produtos digitais relevantes, ganhar visibilidade e trabalhar com mais confiança.</p>
           <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center"><Link href="/register?role=developer" className="group inline-flex items-center justify-center gap-3 rounded-full bg-accent px-8 py-5 text-base font-black text-white shadow-xl shadow-accent/30 transition-all hover:scale-105 active:scale-95">Quero fazer parte <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1.5" /></Link><div className="flex items-center gap-3 text-sm font-bold text-foreground/50"><div className="flex -space-x-2"><span className="h-8 w-8 rounded-full border-2 border-surface bg-accent" /><span className="h-8 w-8 rounded-full border-2 border-surface bg-foreground" /><span className="h-8 w-8 rounded-full border-2 border-surface bg-accent/50" /></div>Uma rede feita para quem entrega excelência.</div></div>

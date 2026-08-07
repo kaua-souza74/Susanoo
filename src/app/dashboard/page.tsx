@@ -42,6 +42,7 @@ export default function DiscoverHome() {
    const [favorited, setFavorited] = useState(false);
    const [liked, setLiked] = useState(false);
    const [activeTab, setActiveTab] = useState<"detalhes" | "especificacoes" | "comentarios">("detalhes");
+   const [likedProjectIds, setLikedProjectIds] = useState<string[]>([]);
 
    // Checklist & Onboarding states
    const [storeProfileCompleted, setStoreProfileCompleted] = useState(false);
@@ -80,6 +81,9 @@ export default function DiscoverHome() {
      };
      fetchProjects();
 
+     const storedLikes = JSON.parse(localStorage.getItem('susanoo_liked_projects') || '[]');
+     setLikedProjectIds(storedLikes.map((p: any) => p.id));
+
      // Listen to layout completion updates
      const handleProfileComplete = () => {
        getAccountStorageKey("store-profile-completed").then(key => setStoreProfileCompleted(localStorage.getItem(key) === "true" || localStorage.getItem("susanoo_store_profile_completed") === "true"));
@@ -109,9 +113,27 @@ export default function DiscoverHome() {
      setOnboardingDismissed(true);
    };
 
+   const toggleFavorite = (project: any) => {
+     const stored = JSON.parse(localStorage.getItem('susanoo_liked_projects') || '[]');
+     const exists = stored.find((p: any) => p.id === project.id);
+     let newStored;
+     if (exists) {
+         newStored = stored.filter((p: any) => p.id !== project.id);
+     } else {
+         newStored = [...stored, { id: project.id, name: project.name, cover_url: project.cover_url, deploy_url: project.deploy_url }];
+     }
+     localStorage.setItem('susanoo_liked_projects', JSON.stringify(newStored));
+     setLikedProjectIds(newStored.map((p: any) => p.id));
+   };
+
    const markDevelopersExplored = async () => {
      localStorage.setItem(await getAccountStorageKey("explored-developers"), "true");
      setHasExploredDevelopers(true);
+   };
+
+   const markProjectsExplored = async () => {
+     localStorage.setItem(await getAccountStorageKey("first-project"), "true");
+     setHasProjects(true);
    };
 
    const filtered = projects.filter(proj => {
@@ -228,19 +250,18 @@ export default function DiscoverHome() {
                <h1 className="font-black text-lg text-foreground">Marketplace</h1>
                <button
                  onClick={() => setIsCartOpen(true)}
-                 className="relative flex items-center gap-2 bg-surface border border-surface-border px-4 py-2 rounded-xl text-sm font-bold hover:border-accent/40 transition-all"
+                 className="relative flex items-center justify-center bg-accent text-white w-12 h-12 rounded-full hover:scale-105 transition-all cursor-pointer shadow-lg shadow-accent/20"
                >
-                 <ShoppingCart className="w-4 h-4 text-accent" />
-                 <span>Carrinho</span>
+                 <ShoppingCart className="w-5 h-5" />
                  {items.length > 0 && (
-                   <span className="bg-accent text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">{items.length}</span>
+                   <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-background">{items.length}</span>
                  )}
                </button>
            </div>
 
            <div className="w-full max-w-[1600px] mx-auto py-10 px-6 space-y-8">
                {/* 1. Onboarding Natural de Primeiro Acesso (Passo 1, 2, 3) */}
-               {!onboardingDismissed && (
+               {(!onboardingDismissed && !(storeProfileCompleted && hasExploredDevelopers && hasProjects)) && (
                  <motion.div 
                    initial={{ opacity: 0, y: -10 }}
                    animate={{ opacity: 1, y: 0 }}
@@ -260,24 +281,30 @@ export default function DiscoverHome() {
                      <p className="text-sm text-foreground/60 mb-6 font-medium">Siga estes 3 passos básicos para ter o melhor aproveitamento da nossa plataforma.</p>
                      
                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                       <Link href="/dashboard/profile" className="bg-surface border border-surface-border hover:border-accent/30 p-4 rounded-2xl flex items-start gap-3 transition-colors">
-                         <span className="text-lg font-black text-accent bg-accent/10 w-8 h-8 rounded-xl flex items-center justify-center shrink-0">1</span>
+                       <Link href="/dashboard/profile" className={`bg-surface border hover:border-accent/30 p-4 rounded-2xl flex items-start gap-3 transition-colors ${storeProfileCompleted ? 'border-emerald-500/30' : 'border-surface-border'}`}>
+                         <span className={`text-lg font-black w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${storeProfileCompleted ? 'text-white bg-emerald-500' : 'text-accent bg-accent/10'}`}>
+                           {storeProfileCompleted ? <Check className="w-5 h-5" /> : "1"}
+                         </span>
                          <div>
-                           <h4 className="font-bold text-sm text-foreground">Complete seu perfil</h4>
+                           <h4 className="font-bold text-sm text-foreground">{storeProfileCompleted ? "Perfil Completo" : "Complete seu perfil"}</h4>
                            <p className="text-xs text-foreground/50 mt-1">Preencha sua Razão Social, CNPJ e CEP na aba de perfil.</p>
                          </div>
                        </Link>
-                       <Link onClick={markDevelopersExplored} href="/dashboard/developers" className="bg-surface border border-surface-border hover:border-accent/30 p-4 rounded-2xl flex items-start gap-3 transition-colors">
-                         <span className="text-lg font-black text-accent bg-accent/10 w-8 h-8 rounded-xl flex items-center justify-center shrink-0">2</span>
+                       <Link onClick={markDevelopersExplored} href="/dashboard/developers" className={`bg-surface border hover:border-accent/30 p-4 rounded-2xl flex items-start gap-3 transition-colors ${hasExploredDevelopers ? 'border-emerald-500/30' : 'border-surface-border'}`}>
+                         <span className={`text-lg font-black w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${hasExploredDevelopers ? 'text-white bg-emerald-500' : 'text-accent bg-accent/10'}`}>
+                           {hasExploredDevelopers ? <Check className="w-5 h-5" /> : "2"}
+                         </span>
                          <div>
-                           <h4 className="font-bold text-sm text-foreground">Encontre um profissional</h4>
+                           <h4 className="font-bold text-sm text-foreground">{hasExploredDevelopers ? "Profissionais Explorados" : "Encontre um profissional"}</h4>
                            <p className="text-xs text-foreground/50 mt-1">Compare perfis e encontre o profissional ideal para o seu projeto.</p>
                          </div>
                        </Link>
-                       <Link href="#templates-grid" className="bg-surface border border-surface-border hover:border-accent/30 p-4 rounded-2xl flex items-start gap-3 transition-colors">
-                         <span className="text-lg font-black text-accent bg-accent/10 w-8 h-8 rounded-xl flex items-center justify-center shrink-0">3</span>
+                       <Link onClick={markProjectsExplored} href="#templates-grid" className={`bg-surface border hover:border-accent/30 p-4 rounded-2xl flex items-start gap-3 transition-colors ${hasProjects ? 'border-emerald-500/30' : 'border-surface-border'}`}>
+                         <span className={`text-lg font-black w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${hasProjects ? 'text-white bg-emerald-500' : 'text-accent bg-accent/10'}`}>
+                           {hasProjects ? <Check className="w-5 h-5" /> : "3"}
+                         </span>
                          <div>
-                           <h4 className="font-bold text-sm text-foreground">Comece seu projeto</h4>
+                           <h4 className="font-bold text-sm text-foreground">{hasProjects ? "Projeto Iniciado" : "Comece seu projeto"}</h4>
                            <p className="text-xs text-foreground/50 mt-1">Explore os templates e contrate o desenvolvimento completo.</p>
                          </div>
                        </Link>
@@ -289,12 +316,11 @@ export default function DiscoverHome() {
                {/* 2. Checklist Progressiva para incentivar o cliente */}
                <div className="bg-surface border border-surface-border rounded-3xl p-6 shadow-sm">
                  <h3 className="text-base font-black uppercase tracking-wider text-foreground/70 mb-4">Seu Progresso de Configuração</h3>
-                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                      {[
                      { label: "Perfil Preenchido", checked: storeProfileCompleted, link: "/dashboard/profile" },
                      { label: "Profissionais explorados", checked: hasExploredDevelopers, link: "/dashboard/developers" },
-                     { label: "Solução adicionada", checked: hasProjects, link: "#templates-grid" },
-                     { label: "Primeiro chat", checked: hasChat, link: "/dashboard/chat" }
+                     { label: "Explorar sites e templates", checked: hasProjects, link: "#templates-grid" }
                    ].map((item, idx) => (
                      <div 
                        key={idx} 
@@ -409,14 +435,22 @@ export default function DiscoverHome() {
                                <div className="mt-4">
                                    <div className="flex items-center justify-between mb-3">
                                        <span className="text-accent font-black text-sm">R$ {(proj.price || 49.90).toFixed(2)}</span>
-                                       <div className="flex items-center gap-1">
-                                           <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                                           <span className="text-xs text-foreground/40 font-bold">5.0</span>
+                                       <div className="flex gap-2 z-10">
+                                           <button 
+                                                onClick={(e) => { e.stopPropagation(); toggleFavorite(proj); }}
+                                                className="px-2 py-1 rounded-full text-[10px] font-black flex items-center gap-1 hover:text-red-500 transition-colors"
+                                           >
+                                               <Heart className={`w-3.5 h-3.5 ${likedProjectIds.includes(proj.id) ? 'fill-red-500 text-red-500' : 'text-foreground/40'}`} />
+                                           </button>
+                                           <div className="flex items-center gap-1">
+                                               <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                                               <span className="text-xs text-foreground/40 font-bold">5.0</span>
+                                           </div>
                                        </div>
                                    </div>
                                    <button
                                      onClick={(e) => handleAddToCart(proj, e)}
-                                     className={`w-full py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all ${isInCart(proj.id) ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/30' : 'bg-accent text-white hover:bg-accent/90'}`}
+                                     className={`w-full py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${isInCart(proj.id) ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/30' : 'bg-accent text-white hover:bg-accent/90'}`}
                                    >
                                      {isInCart(proj.id) ? "✓ No Carrinho" : "Adicionar"}
                                    </button>
@@ -561,10 +595,10 @@ export default function DiscoverHome() {
                                            <div className="flex items-start justify-between gap-4 mb-2">
                                                <h2 className="text-3xl font-black tracking-tight text-foreground leading-tight">{activeProduct.name}</h2>
                                                <button 
-                                                   onClick={() => setFavorited(!favorited)}
-                                                   className={`p-2.5 rounded-full border transition-all shrink-0 ${favorited ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-surface border-surface-border text-foreground/40 hover:text-red-400'}`}
+                                                   onClick={() => toggleFavorite(activeProduct)}
+                                                   className={`p-2.5 rounded-full border transition-all shrink-0 cursor-pointer ${likedProjectIds.includes(activeProduct.id) ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-surface border-surface-border text-foreground/40 hover:text-red-400'}`}
                                                >
-                                                   <Heart className={`w-5 h-5 ${favorited ? 'fill-red-500' : ''}`} />
+                                                   <Heart className={`w-5 h-5 ${likedProjectIds.includes(activeProduct.id) ? 'fill-red-500' : ''}`} />
                                                </button>
                                            </div>
                                            <div className="flex items-center gap-2">
@@ -602,7 +636,7 @@ export default function DiscoverHome() {
                                        </button>
                                        <button 
                                            onClick={(e) => handleAddToCart(activeProduct, e)}
-                                           className={`w-full py-4.5 font-black rounded-xl transition-all flex items-center justify-center gap-2 border text-sm uppercase tracking-wider ${isInCart(activeProduct.id) ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600' : 'bg-surface border-surface-border text-foreground hover:border-accent/40 hover:bg-surface-border/50'}`}
+                                           className={`w-full py-4.5 font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 border text-sm uppercase tracking-wider ${isInCart(activeProduct.id) ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600' : 'bg-surface border-surface-border text-foreground hover:border-accent/40 hover:bg-surface-border/50'}`}
                                        >
                                            {isInCart(activeProduct.id) ? <><Check className="w-4 h-4" /> No Carrinho</> : <><ShoppingCart className="w-4 h-4" /> Adicionar ao Carrinho</>}
                                        </button>

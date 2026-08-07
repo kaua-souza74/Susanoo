@@ -103,7 +103,7 @@ export function AddSiteForm({ isAdmin = false }: { isAdmin?: boolean }) {
             // Get user session
             const { data: { session } } = await supabase.auth.getSession();
             
-            const newProject = {
+            const newProject: any = {
                 name: formData.name,
                 description: formData.description,
                 price: parseFloat(formData.price) || 0,
@@ -111,9 +111,10 @@ export function AddSiteForm({ isAdmin = false }: { isAdmin?: boolean }) {
                 specifications: specsObj,
                 photos: uploadedUrls,
                 category: formData.category,
-                client_id: session?.user?.id, // the creator
-                status: isAdmin ? 'published' : 'pending_review', // if admin -> auto publish, dev -> review
+                status: isAdmin ? 'published' : 'pending_review',
+                show_in_gallery: true,
             };
+            if (session?.user?.id) newProject.client_id = session.user.id;
 
             const { error } = await supabase.from('projects').insert([newProject]);
             if (error) throw error;
@@ -125,9 +126,9 @@ export function AddSiteForm({ isAdmin = false }: { isAdmin?: boolean }) {
             setPhotos([]);
             setPhotoUrls([]);
             setSpecs([{ key: "", value: "" }]);
-        } catch (error) {
-            console.error(error);
-            showToast("Erro ao cadastrar o site.");
+        } catch (error: any) {
+            console.error("Full error:", error);
+            showToast(error?.message || error?.details || "Erro ao cadastrar o site.");
         } finally {
             setLoading(false);
         }

@@ -94,9 +94,9 @@ export default function LoginPage() {
         <button 
           type="submit" 
           disabled={loading}
-          className="w-full bg-accent text-accent-foreground py-4.5 rounded-xl font-bold hover:bg-accent/90 transition-all shadow-[0_4px_25px_rgba(168,85,247,0.3)] mt-4 disabled:opacity-50 text-lg"
+          className="w-full bg-accent text-accent-foreground py-4.5 rounded-xl font-bold hover:bg-accent/90 transition-all shadow-[0_4px_25px_rgba(168,85,247,0.3)] mt-4 disabled:opacity-50 text-lg cursor-pointer"
         >
-          {loading ? "Autenticando..." : "Entrar no Painel"}
+          {loading ? "Entrando na sua conta..." : "Entrar no Painel"}
         </button>
       </form>
 

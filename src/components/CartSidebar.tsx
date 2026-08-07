@@ -4,12 +4,14 @@ import { useCart } from "./CartContext";
 import { X, ShoppingCart, Trash2, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
+import { useRouter } from "next/navigation";
+
 export function CartSidebar() {
+  const router = useRouter();
   const { items, removeFromCart, isCartOpen, setIsCartOpen, clearCart } = useCart();
   const [discountCode, setDiscountCode] = useState("");
   const [appliedDiscount, setAppliedDiscount] = useState(0);
   const [discountMsg, setDiscountMsg] = useState("");
-  const [checkoutStatus, setCheckoutStatus] = useState<"idle" | "loading" | "success">("idle");
 
   const total = items.reduce((acc, item) => acc + item.price, 0);
   const finalTotal = total * (1 - appliedDiscount);
@@ -31,18 +33,9 @@ export function CartSidebar() {
     }
   };
 
-  const handleCheckout = async () => {
-    setCheckoutStatus("loading");
-    await new Promise((r) => setTimeout(r, 1500));
-    setCheckoutStatus("success");
-    setTimeout(() => {
-      clearCart();
-      setCheckoutStatus("idle");
-      setIsCartOpen(false);
-      setAppliedDiscount(0);
-      setDiscountCode("");
-      setDiscountMsg("");
-    }, 4000);
+  const handleCheckout = () => {
+    setIsCartOpen(false);
+    router.push("/dashboard/checkout");
   };
 
   return (
@@ -77,17 +70,7 @@ export function CartSidebar() {
               </button>
             </div>
 
-            {checkoutStatus === "success" ? (
-              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-                <div className="w-20 h-20 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-6">
-                  <Check className="w-10 h-10 text-emerald-500" />
-                </div>
-                <h3 className="text-2xl font-black mb-2">Compra Aprovada!</h3>
-                <p className="text-foreground/60 font-medium text-sm leading-relaxed">
-                  Os projetos foram adicionados ao seu painel e os arquivos enviados por e-mail.
-                </p>
-              </div>
-            ) : items.length === 0 ? (
+            {items.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-foreground/40">
                 <ShoppingCart className="w-14 h-14 mb-4 opacity-30" />
                 <p className="font-bold">Seu carrinho está vazio.</p>
@@ -167,14 +150,9 @@ export function CartSidebar() {
                   {/* Botão */}
                   <button
                     onClick={handleCheckout}
-                    disabled={checkoutStatus === "loading"}
-                    className="w-full py-4 bg-accent text-white font-black rounded-xl uppercase tracking-widest shadow-lg shadow-accent/20 hover:bg-accent/90 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="w-full py-4 bg-accent text-white font-black rounded-xl uppercase tracking-widest shadow-lg shadow-accent/20 hover:bg-accent/90 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    {checkoutStatus === "loading" ? (
-                      <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                    ) : (
-                      "Finalizar Compra"
-                    )}
+                    Ir para Checkout
                   </button>
                 </div>
               </div>

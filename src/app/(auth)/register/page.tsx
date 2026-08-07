@@ -246,22 +246,38 @@ export default function RegisterPage() {
                {showPassword ? <EyeOff className="w-5 h-5"/> : <Eye className="w-5 h-5"/>}
              </button>
           </div>
-          <div className={`flex items-center gap-3 mt-3 transition-opacity duration-300 ${password.length > 0 ? 'opacity-100' : 'opacity-0 select-none'}`}>
-             <div className="flex-1 h-1.5 bg-surface border border-surface-border rounded-full overflow-hidden">
-                <div className={`h-full ${passwordStrength.color} transition-all duration-300 ease-out`} style={{width: `${passwordStrength.value}%`}}></div>
+          <div className={`flex flex-col gap-3 mt-3 transition-opacity duration-300 ${password.length > 0 ? 'opacity-100' : 'opacity-0 select-none'}`}>
+             <div className="flex items-center gap-3">
+               <div className="flex-1 h-1.5 bg-surface border border-surface-border rounded-full overflow-hidden">
+                  <div className={`h-full ${passwordStrength.color} transition-all duration-300 ease-out`} style={{width: `${passwordStrength.value}%`}}></div>
+               </div>
+               <span className={`text-[11px] uppercase font-bold tracking-wider ${passwordStrength.value === 100 ? 'text-emerald-500' : (passwordStrength.value > 33 ? 'text-yellow-500' : 'text-red-500')}`}>
+                   {passwordStrength.label || 'Vazio'}
+               </span>
              </div>
-             <span className={`text-[11px] uppercase font-bold tracking-wider ${passwordStrength.value === 100 ? 'text-emerald-500' : (passwordStrength.value > 33 ? 'text-yellow-500' : 'text-red-500')}`}>
-                 {passwordStrength.label || 'Vazio'}
-             </span>
+             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1">
+               <div className={`flex items-center gap-1.5 text-xs font-bold transition-colors ${password.length >= 8 ? 'text-emerald-500' : 'text-foreground/40'}`}>
+                 {password.length >= 8 ? <CheckCircle2 className="w-3.5 h-3.5" /> : <div className="w-3.5 h-3.5 rounded-full border-2 border-current opacity-30" />}
+                 Mínimo de 8 caracteres
+               </div>
+               <div className={`flex items-center gap-1.5 text-xs font-bold transition-colors ${/[A-Z]/.test(password) ? 'text-emerald-500' : 'text-foreground/40'}`}>
+                 {/[A-Z]/.test(password) ? <CheckCircle2 className="w-3.5 h-3.5" /> : <div className="w-3.5 h-3.5 rounded-full border-2 border-current opacity-30" />}
+                 Letra maiúscula
+               </div>
+               <div className={`flex items-center gap-1.5 text-xs font-bold transition-colors ${/[!@#$%^&*(),.?":{}|<>]/.test(password) ? 'text-emerald-500' : 'text-foreground/40'}`}>
+                 {/[!@#$%^&*(),.?":{}|<>]/.test(password) ? <CheckCircle2 className="w-3.5 h-3.5" /> : <div className="w-3.5 h-3.5 rounded-full border-2 border-current opacity-30" />}
+                 Símbolo especial
+               </div>
+             </div>
           </div>
         </div>
         
         <button 
           type="submit" 
           disabled={loading || notification?.type === 'success' || passwordStrength.value !== 100}
-          className={`w-full py-4.5 rounded-xl font-bold transition-all mt-4 text-lg shadow-xl ${notification?.type === 'success' ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 'bg-accent text-accent-foreground hover:opacity-90 shadow-accent/10'} disabled:opacity-50`}
+          className={`w-full py-4.5 rounded-xl font-bold transition-all mt-4 text-lg shadow-xl cursor-pointer ${notification?.type === 'success' ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 'bg-accent text-accent-foreground hover:opacity-90 shadow-accent/10'} disabled:opacity-50`}
         >
-          {loading ? "Estruturando banco..." : (notification?.type === 'success' ? "Redirecionando..." : "Criar Minha Conta")}
+          {loading ? "Criando sua conta..." : (notification?.type === 'success' ? "Redirecionando..." : "Criar Minha Conta")}
         </button>
       </form>
 

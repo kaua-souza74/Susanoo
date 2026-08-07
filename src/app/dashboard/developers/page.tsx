@@ -1,8 +1,9 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Search, MapPin, Star, ShieldCheck, Mail, GraduationCap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { supabase } from "@/lib/supabase";
 
 const MOCK_DEVS = [
     {
@@ -87,12 +88,39 @@ const MOCK_DEVS = [
 
 export default function DevelopersPage() {
     const [search, setSearch] = useState("");
+    const [developers, setDevelopers] = useState<any[]>(MOCK_DEVS);
+    const [loading, setLoading] = useState(true);
     const router = useRouter();
 
-    const filteredDevs = MOCK_DEVS.filter(dev => 
-        dev.name.toLowerCase().includes(search.toLowerCase()) || 
-        dev.skills.some(s => s.toLowerCase().includes(search.toLowerCase())) ||
-        dev.role.toLowerCase().includes(search.toLowerCase())
+    useEffect(() => {
+        const fetchDevs = async () => {
+            try {
+                // Tenta buscar desenvolvedores reais no banco de dados
+                const { data, error } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('role', 'developer');
+
+                if (!error && data && data.length > 0) {
+                    setDevelopers(data);
+                } else {
+                    // Fallback para mock data
+                    setDevelopers(MOCK_DEVS);
+                }
+            } catch (error) {
+                setDevelopers(MOCK_DEVS);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchDevs();
+    }, []);
+
+    const filteredDevs = developers.filter(dev => 
+        (dev.name || "").toLowerCase().includes(search.toLowerCase()) || 
+        (dev.skills || []).some((s: string) => s.toLowerCase().includes(search.toLowerCase())) ||
+        (dev.role || "Desenvolvedor").toLowerCase().includes(search.toLowerCase())
     );
 
     return (
@@ -135,23 +163,28 @@ export default function DevelopersPage() {
 
                 {/* Grade de Profissionais */}
                 <div className="flex flex-col gap-4">
-                    <AnimatePresence>
-                        {filteredDevs.length > 0 ? filteredDevs.map((dev, i) => (
-                            <motion.div 
-                                key={dev.id}
-                                initial={{ opacity: 0, y: 15 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0 }}
-                                transition={{ delay: i * 0.06 }}
-                                onClick={() => router.push(`/dashboard/developers/${dev.id}`)}
-                                className="bg-surface border border-surface-border rounded-2xl p-6 hover:border-foreground/20 transition-colors group cursor-pointer flex flex-col sm:flex-row gap-5 shadow-sm"
-                            >
+                    {loading ? (
+                        <div className="flex items-center justify-center py-20">
+                            <div className="w-8 h-8 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
+                        </div>
+                    ) : (
+                        <AnimatePresence>
+                            {filteredDevs.length > 0 ? filteredDevs.map((dev, i) => (
+                                <motion.div 
+                                    key={dev.id}
+                                    initial={{ opacity: 0, y: 15 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ delay: i * 0.06 }}
+                                    onClick={() => router.push(`/dashboard/developers/${dev.id}`)}
+                                    className="bg-surface border border-surface-border rounded-2xl p-6 hover:border-foreground/20 transition-colors group cursor-pointer flex flex-col sm:flex-row gap-5 shadow-sm"
+                                >
                                 {/* Avatar */}
                                 <div className="w-16 h-16 sm:w-14 sm:h-14 rounded-xl bg-background border border-surface-border flex items-center justify-center shrink-0 overflow-hidden">
-                                    {dev.avatar.startsWith("http") ? (
-                                        <img src={dev.avatar} alt={dev.name} className="w-full h-full object-cover" />
+                                    {dev.avatar_url || dev.avatar ? (
+                                        <img src={dev.avatar_url || dev.avatar} alt={dev.name} className="w-full h-full object-cover" />
                                     ) : (
-                                        <span className="text-xl font-black text-foreground/20 italic">{dev.avatar}</span>
+                                        <span className="text-xl font-black text-foreground/20 italic">{dev.name.substring(0, 2).toUpperCase()}</span>
                                     )}
                                 </div>
 
@@ -163,34 +196,34 @@ export default function DevelopersPage() {
                                                 {dev.name}
                                                 {dev.verified && <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />}
                                             </h3>
-                                            <p className="text-xs font-bold text-foreground/40 mt-0.5">{dev.role}</p>
+                                            <p className="text-xs font-bold text-foreground/40 mt-0.5">{dev.role || "Desenvolvedor"}</p>
                                         </div>
 
                                         <div className="flex items-center gap-1.5 bg-amber-500/5 border border-amber-500/10 px-2.5 py-1.5 rounded-xl shrink-0">
                                             <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-                                            <span className="text-xs font-black text-foreground">{dev.rating}</span>
-                                            <span className="text-[10px] text-foreground/40 font-medium">({dev.reviews})</span>
+                                            <span className="text-xs font-black text-foreground">{dev.rating || "5.0"}</span>
+                                            <span className="text-[10px] text-foreground/40 font-medium">({dev.reviews || 0})</span>
                                         </div>
                                     </div>
 
-                                    <p className="text-sm text-foreground/60 mb-3 leading-relaxed">{dev.bio}</p>
+                                    <p className="text-sm text-foreground/60 mb-3 leading-relaxed">{dev.bio || "Desenvolvedor na plataforma Susanoo."}</p>
 
                                     {/* Formação Acadêmica — sutil, não em destaque */}
                                     <p className="text-[11px] text-foreground/35 font-medium flex items-center gap-1.5 mb-3">
                                         <GraduationCap className="w-3.5 h-3.5 shrink-0" />
-                                        {dev.education}
+                                        {dev.education || "Formação não informada"}
                                     </p>
 
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                         <div className="flex flex-wrap gap-1.5">
-                                            {dev.skills.map(skill => (
+                                            {(dev.skills || []).map((skill: string) => (
                                                 <span key={skill} className="bg-foreground/5 text-foreground/55 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border border-surface-border">
                                                     {skill}
                                                 </span>
                                             ))}
                                         </div>
                                         <div className="flex items-center gap-2 text-[11px] text-foreground/40 font-medium shrink-0">
-                                            <MapPin className="w-3.5 h-3.5" /> {dev.location}
+                                            <MapPin className="w-3.5 h-3.5" /> {dev.location || "Remoto"}
                                         </div>
                                     </div>
                                 </div>
@@ -231,6 +264,7 @@ export default function DevelopersPage() {
                             </motion.div>
                         )}
                     </AnimatePresence>
+                    )}
                 </div>
             </div>
         </div>

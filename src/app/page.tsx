@@ -67,14 +67,14 @@ export default function Home() {
           >
             <button 
               onClick={() => router.push('/register?role=client')}
-              className="w-full sm:w-auto group bg-accent text-white font-black text-base md:text-xl px-8 py-5 md:px-14 md:py-8 rounded-2xl md:rounded-[3rem] hover:scale-105 md:hover:scale-110 md:hover:-rotate-2 active:scale-95 transition-all shadow-[0_20px_40px_-15px_rgba(168,85,247,0.5)] flex flex-col items-center justify-center gap-1 md:gap-2 relative z-[60]"
+              className="w-full sm:w-auto group bg-accent text-white font-black text-base md:text-xl px-8 py-5 md:px-14 md:py-8 rounded-2xl md:rounded-[3rem] hover:scale-105 md:hover:scale-110 md:hover:-rotate-2 active:scale-95 transition-all shadow-[0_20px_40px_-15px_rgba(168,85,247,0.5)] flex flex-col items-center justify-center gap-1 md:gap-2 relative z-[60] cursor-pointer"
             >
               <span className="flex items-center gap-2">Quero um site <ArrowRight className="w-5 h-5 md:w-7 md:h-7 group-hover:translate-x-2 transition-transform" /></span>
               <span className="text-xs md:text-sm font-medium opacity-80 font-normal normal-case">Para clientes.</span>
             </button>
             <button 
               onClick={() => router.push('/sou-desenvolvedor')}
-              className="w-full sm:w-auto group bg-surface/80 border-2 border-surface-border text-foreground font-black text-base md:text-xl px-8 py-5 md:px-14 md:py-8 rounded-2xl md:rounded-[3rem] hover:bg-white hover:text-black hover:scale-105 md:hover:scale-110 md:hover:rotate-2 transition-all flex flex-col items-center justify-center gap-1 md:gap-2 backdrop-blur-3xl shadow-2xl relative z-[60]"
+              className="w-full sm:w-auto group bg-surface/80 border-2 border-surface-border text-foreground font-black text-base md:text-xl px-8 py-5 md:px-14 md:py-8 rounded-2xl md:rounded-[3rem] hover:bg-white hover:text-black hover:scale-105 md:hover:scale-110 md:hover:rotate-2 transition-all flex flex-col items-center justify-center gap-1 md:gap-2 backdrop-blur-3xl shadow-2xl relative z-[60] cursor-pointer"
             >
               <span className="flex items-center gap-2"><Monitor className="w-5 h-5 md:w-6 md:h-6 text-accent group-hover:text-black transition-colors" /> Sou desenvolvedor</span>
               <span className="text-xs md:text-sm font-medium opacity-80 font-normal normal-case">Para quem quer vender projetos na plataforma.</span>

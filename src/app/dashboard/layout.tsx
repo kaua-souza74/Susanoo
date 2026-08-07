@@ -1,7 +1,7 @@
 "use client";
 import { ReactNode, useState, useEffect } from "react";
 import Link from "next/link";
-import { Zap, Grid, MessageSquareText, Calendar, Settings, LogOut, Bot, Sparkles, User, Plus, ShoppingCart } from "lucide-react";
+import { Zap, Grid, MessageSquareText, Calendar, Settings, LogOut, Sparkles, User, Plus, ShoppingCart, Bell, Check } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useRouter, usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -17,6 +17,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [userType, setUserType] = useState<"Comércio" | "Desenvolvedor">("Comércio");
   const [storeProfileCompleted, setStoreProfileCompleted] = useState(true);
   const { items, setIsCartOpen } = useCart();
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [hasExploredDevelopers, setHasExploredDevelopers] = useState(false);
+  const [hasProjects, setHasProjects] = useState(false);
 
   const checkProfileCompletion = () => {
     const type = localStorage.getItem("susanoo_profile_type");
@@ -38,6 +41,15 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
      };
      
      checkType();
+      
+      // Load onboarding state for notifications
+      const loadOnboarding = async () => {
+         const { data: { session } } = await supabase.auth.getSession();
+         const uid = session?.user?.id || 'guest';
+         setHasExploredDevelopers(localStorage.getItem(`${uid}_explored-developers`) === 'true');
+         setHasProjects(localStorage.getItem(`${uid}_first-project`) === 'true');
+      };
+      loadOnboarding();
      
      window.addEventListener("profileTypeChanged", checkType);
      window.addEventListener("profileCompletedChanged", checkProfileCompletion);
@@ -59,20 +71,63 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             {/* Header Área do Cliente */}
             <div className="p-4 border-b border-surface-border mb-4">
                <div className="flex items-center justify-between px-3 py-2">
-                  <div className="flex items-center gap-3 rounded-xl cursor-default transition-colors">
-                     <div className="w-8 h-8 rounded-lg bg-accent text-accent-foreground flex items-center justify-center font-bold text-sm shadow-inner shadow-black/50">
+                  <div className="flex items-center gap-3 rounded-xl cursor-pointer transition-colors group" onClick={() => router.push('/dashboard')}>
+                     <div className="w-8 h-8 rounded-lg bg-accent text-accent-foreground flex items-center justify-center font-bold text-sm shadow-inner shadow-black/50 group-hover:scale-105 transition-transform">
                        <Zap className="w-5 h-5 fill-current"/>
                      </div>
-                     <span className="font-bold text-[15px] tracking-wide text-foreground">Workspace</span>
+                     <span className="font-bold text-[15px] tracking-wide text-foreground group-hover:text-accent transition-colors">Susanoo</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => setIsCartOpen(true)} className="relative p-2 hover:bg-surface-border/50 rounded-full transition-colors">
-                      <ShoppingCart className="w-4 h-4 text-foreground/60" />
+                  <div className="flex items-center gap-1.5 relative">
+                    <button onClick={() => setShowNotifications(!showNotifications)} className="relative p-2 hover:bg-surface-border/50 rounded-full transition-colors cursor-pointer text-foreground/60 hover:text-foreground">
+                      <Bell className="w-4 h-4" />
+                      <span className="absolute top-0 right-0 bg-red-500 w-2 h-2 rounded-full border-2 border-background"></span>
+                    </button>
+                    <button onClick={() => setIsCartOpen(true)} className="relative p-2 hover:bg-surface-border/50 rounded-full transition-colors cursor-pointer text-foreground/60 hover:text-foreground">
+                      <ShoppingCart className="w-4 h-4" />
                       {items.length > 0 && (
                         <span className="absolute -top-0.5 -right-0.5 bg-accent text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">{items.length}</span>
                       )}
                     </button>
-                    <ThemeToggle />
+                    <div className="cursor-pointer flex items-center justify-center">
+                        <ThemeToggle />
+                    </div>
+
+                    {/* Notifications Dropdown */}
+                    {showNotifications && (
+                      <div className="absolute top-12 left-0 w-80 bg-surface border border-surface-border rounded-2xl shadow-2xl z-[9999] overflow-hidden">
+                        <div className="p-4 border-b border-surface-border">
+                          <h4 className="text-sm font-black text-foreground">Notificações</h4>
+                        </div>
+                        <div className="p-3 border-b border-surface-border/50">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-foreground/40 mb-2">Progresso</p>
+                          <div className="flex flex-col gap-2">
+                            {[
+                              { label: "Perfil Preenchido", checked: storeProfileCompleted, link: "/dashboard/profile" },
+                              { label: "Profissionais explorados", checked: hasExploredDevelopers, link: "/dashboard/developers" },
+                              { label: "Explorar sites e templates", checked: hasProjects, link: "#templates-grid" },
+                            ].map((item, idx) => (
+                              <div 
+                                key={idx} 
+                                onClick={() => { router.push(item.link); setShowNotifications(false); }}
+                                className={`flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer transition-all ${ item.checked ? 'bg-emerald-500/8 text-emerald-600' : 'hover:bg-surface-border/20 text-foreground/60'}`}
+                              >
+                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${ item.checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-surface-border'}`}>
+                                  {item.checked && <Check className="w-2.5 h-2.5" />}
+                                </div>
+                                <span className="text-xs font-bold">{item.label}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="p-3">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-foreground/40 mb-2">Mensagens</p>
+                          <div className="p-3 hover:bg-surface-border/10 cursor-pointer rounded-xl transition-colors">
+                            <p className="text-xs font-bold text-foreground mb-1">Bem-vindo à Susanoo! 🎉</p>
+                            <p className="text-[11px] text-foreground/60 leading-relaxed">Explore o marketplace e encontre o projeto ideal.</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                </div>
             </div>
@@ -82,7 +137,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                {userType === "Desenvolvedor" ? (
                  <>
                    <NavItem icon={<Sparkles className="w-5 h-5"/>} label="Painel Dev" active={mounted ? pathname === '/dashboard' : false} href="/dashboard" />
-                   <NavItem icon={<Grid className="w-5 h-5"/>} label="Meus Projetos" active={mounted ? pathname?.includes('/projects') : false} href="/dashboard/projects" />
+                   <NavItem icon={<Grid className="w-5 h-5"/>} label="Projetos Criados" active={mounted ? pathname?.includes('/projects') : false} href="/dashboard/projects" />
                    <NavItem icon={<Plus className="w-5 h-5"/>} label="Adicionar Site" active={mounted ? pathname?.includes('/add-site') : false} href="/dashboard/add-site" />
                    <NavItem icon={<MessageSquareText className="w-5 h-5"/>} label="Chat com Clientes" active={mounted ? pathname?.includes('/chat') : false} href="/dashboard/chat" />
                  </>

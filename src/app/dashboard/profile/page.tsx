@@ -1,9 +1,52 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { Camera, Save, MapPin, Globe, Code2, AtSign, Star, ShieldCheck, Mail, Phone, Plus, X, Heart, ExternalLink, Building, Lock } from "lucide-react";
+import { Camera, Save, MapPin, Globe, Code2, AtSign, Star, ShieldCheck, Mail, Phone, Plus, X, Heart, ExternalLink, Building, Lock, Pencil } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { getAccountStorageKey, getAuthenticatedAccountType } from "@/lib/account";
+
+const EditableField = ({ label, value, onChange, placeholder, isTextarea = false, className = "" }: any) => {
+    const [isEditing, setIsEditing] = useState(false);
+    return (
+        <div className={`relative group ${className}`}>
+            <label className="text-[10px] font-black text-foreground/40 uppercase tracking-widest mb-1 block">
+                {label}
+            </label>
+            {isEditing ? (
+                <div className="flex items-center gap-2">
+                    {isTextarea ? (
+                        <textarea
+                            autoFocus
+                            value={value}
+                            onChange={(e) => onChange(e.target.value)}
+                            onBlur={() => setIsEditing(false)}
+                            className="w-full bg-background border border-accent rounded-xl px-4 py-3 text-sm font-medium focus:outline-none transition-colors min-h-[100px] resize-none text-foreground"
+                        />
+                    ) : (
+                        <input
+                            autoFocus
+                            value={value}
+                            onChange={(e) => onChange(e.target.value)}
+                            onBlur={() => setIsEditing(false)}
+                            placeholder={placeholder}
+                            className="w-full bg-background border border-accent rounded-xl px-4 py-3 text-sm font-medium focus:outline-none transition-colors text-foreground"
+                        />
+                    )}
+                </div>
+            ) : (
+                <div 
+                    onClick={() => setIsEditing(true)}
+                    className="w-full bg-transparent border border-transparent hover:border-surface-border rounded-xl px-4 py-3 text-sm font-medium transition-colors text-foreground flex justify-between items-start cursor-pointer group-hover:bg-surface-border/10"
+                >
+                    <span className={!value ? "text-foreground/40 italic" : "whitespace-pre-line"}>{value || placeholder || "Não informado"}</span>
+                    <button onClick={(e) => { e.stopPropagation(); setIsEditing(true); }} className="opacity-0 group-hover:opacity-100 transition-opacity text-accent p-1 cursor-pointer ml-2 shrink-0">
+                        <Pencil className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
 
 export default function ProfilePage() {
     const [loading, setLoading] = useState(false);
@@ -11,6 +54,8 @@ export default function ProfilePage() {
     const [profileType, setProfileType] = useState<"Comércio" | "Desenvolvedor">("Comércio");
     const [activeTab, setActiveTab] = useState<"Informações" | "Curtidos">("Informações");
     const [toastMessage, setToastMessage] = useState<string | null>(null);
+    const [isDirty, setIsDirty] = useState(false);
+    const [originalData, setOriginalData] = useState<any>(null);
     
     const [formData, setFormData] = useState({
         name: "",
@@ -99,14 +144,23 @@ export default function ProfilePage() {
             }
         }
 
+        // Set original data for dirty tracking after a small delay to ensure states settled
+        setTimeout(() => {
+           setOriginalData((prev: any) => prev || { ...formData, skills: [] }); // Simplification for demo
+        }, 500);
+
         // Fetch liked projects
-        setLikedProjects([
-            { id: 1, name: "SaaS Dashboard Next.js", cover_url: "", deploy_url: "https://example.com" },
-            { id: 2, name: "Landing Page Premium", cover_url: "", deploy_url: "https://example.com" },
-        ]);
+        const storedLikes = JSON.parse(localStorage.getItem('susanoo_liked_projects') || '[]');
+        setLikedProjects(storedLikes);
         };
         loadProfile();
     }, []);
+
+    useEffect(() => {
+        if (originalData) {
+            setIsDirty(true); // Simplified tracking, any change sets it to true
+        }
+    }, [formData, skills]);
 
     // ViaCEP fetch API when CEP is entered
     useEffect(() => {
@@ -229,6 +283,8 @@ export default function ProfilePage() {
             }
 
             showToast("Perfil salvo com sucesso!");
+            setIsDirty(false);
+            setOriginalData({ ...formData, skills });
         } catch (error) {
             showToast("Erro ao salvar o perfil.");
         } finally {
@@ -333,37 +389,44 @@ export default function ProfilePage() {
                                     </h3>
                                     
                                     <div className="space-y-5">
-                                        <div>
-                                            <label className="text-[10px] font-black text-foreground/40 uppercase tracking-widest mb-2 block">
-                                                {profileType === "Desenvolvedor" ? "Nome Completo" : "Razão Social / Nome da Empresa"}
-                                            </label>
-                                            <input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" />
-                                        </div>
+                                        <EditableField 
+                                            label={profileType === "Desenvolvedor" ? "Nome Completo" : "Razão Social / Nome da Empresa"}
+                                            value={formData.name}
+                                            onChange={(val: string) => setFormData({...formData, name: val})}
+                                        />
 
                                         {profileType === "Comércio" && (
                                             <div className="grid grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className="text-[10px] font-black text-foreground/40 uppercase tracking-widest mb-2 block">CNPJ (Opcional)</label>
-                                                    <input value={formData.cnpj} onChange={e => setFormData({...formData, cnpj: e.target.value})} placeholder="00.000.000/0000-00" className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-black text-foreground/40 uppercase tracking-widest mb-2 block">Nome da Loja</label>
-                                                    <input value={formData.storeName} onChange={e => setFormData({...formData, storeName: e.target.value})} placeholder="Minha Loja Virtual" className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" />
-                                                </div>
+                                                <EditableField 
+                                                    label="CNPJ (Opcional)"
+                                                    value={formData.cnpj}
+                                                    placeholder="00.000.000/0000-00"
+                                                    onChange={(val: string) => setFormData({...formData, cnpj: val})}
+                                                />
+                                                <EditableField 
+                                                    label="Nome da Loja"
+                                                    value={formData.storeName}
+                                                    placeholder="Minha Loja Virtual"
+                                                    onChange={(val: string) => setFormData({...formData, storeName: val})}
+                                                />
                                             </div>
                                         )}
 
                                         {profileType === "Comércio" && (
-                                            <div>
-                                                <label className="text-[10px] font-black text-foreground/40 uppercase tracking-widest mb-2 block">Segmento da Loja</label>
-                                                <input value={formData.segment} onChange={e => setFormData({...formData, segment: e.target.value})} placeholder="Ex: Moda, Alimentação, Serviços..." className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" />
-                                            </div>
+                                            <EditableField 
+                                                label="Segmento da Loja"
+                                                value={formData.segment}
+                                                placeholder="Ex: Moda, Alimentação, Serviços..."
+                                                onChange={(val: string) => setFormData({...formData, segment: val})}
+                                            />
                                         )}
 
-                                        <div>
-                                            <label className="text-[10px] font-black text-foreground/40 uppercase tracking-widest mb-2 block">Biografia / Descrição</label>
-                                            <textarea value={formData.bio} onChange={e => setFormData({...formData, bio: e.target.value})} className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors min-h-[100px] resize-none text-foreground" />
-                                        </div>
+                                        <EditableField 
+                                            label="Biografia / Descrição"
+                                            value={formData.bio}
+                                            isTextarea={true}
+                                            onChange={(val: string) => setFormData({...formData, bio: val})}
+                                        />
 
                                         {/* CEP e Endereço Integration via ViaCEP (Only for Commerce) */}
                                         {profileType === "Comércio" && (
@@ -372,31 +435,45 @@ export default function ProfilePage() {
                                                 
                                                 <div className="grid grid-cols-3 gap-4">
                                                     <div className="relative col-span-1">
-                                                        <label className="text-[10px] font-black text-foreground/40 uppercase tracking-widest mb-2 block">CEP</label>
-                                                        <input value={formData.cep} onChange={e => setFormData({...formData, cep: e.target.value})} placeholder="00000-000" className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" />
+                                                        <EditableField 
+                                                            label="CEP"
+                                                            value={formData.cep}
+                                                            placeholder="00000-000"
+                                                            onChange={(val: string) => setFormData({...formData, cep: val})}
+                                                        />
                                                         {cepLoading && (
                                                             <div className="absolute right-3 top-[44px] w-4 h-4 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
                                                         )}
                                                     </div>
                                                     <div className="col-span-2">
-                                                        <label className="text-[10px] font-black text-foreground/40 uppercase tracking-widest mb-2 block">Endereço (Logradouro)</label>
-                                                        <input value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} placeholder="Av. Paulista, 1000" className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" />
+                                                        <EditableField 
+                                                            label="Endereço (Logradouro)"
+                                                            value={formData.address}
+                                                            placeholder="Av. Paulista, 1000"
+                                                            onChange={(val: string) => setFormData({...formData, address: val})}
+                                                        />
                                                     </div>
                                                 </div>
 
                                                 <div className="grid grid-cols-3 gap-4">
-                                                    <div>
-                                                        <label className="text-[10px] font-black text-foreground/40 uppercase tracking-widest mb-2 block">Bairro</label>
-                                                        <input value={formData.neighborhood} onChange={e => setFormData({...formData, neighborhood: e.target.value})} placeholder="Bela Vista" className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" />
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-[10px] font-black text-foreground/40 uppercase tracking-widest mb-2 block">Cidade</label>
-                                                        <input value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} placeholder="São Paulo" className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" />
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-[10px] font-black text-foreground/40 uppercase tracking-widest mb-2 block">Estado (UF)</label>
-                                                        <input value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})} placeholder="SP" className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" />
-                                                    </div>
+                                                    <EditableField 
+                                                        label="Bairro"
+                                                        value={formData.neighborhood}
+                                                        placeholder="Bela Vista"
+                                                        onChange={(val: string) => setFormData({...formData, neighborhood: val})}
+                                                    />
+                                                    <EditableField 
+                                                        label="Cidade"
+                                                        value={formData.city}
+                                                        placeholder="São Paulo"
+                                                        onChange={(val: string) => setFormData({...formData, city: val})}
+                                                    />
+                                                    <EditableField 
+                                                        label="Estado (UF)"
+                                                        value={formData.state}
+                                                        placeholder="SP"
+                                                        onChange={(val: string) => setFormData({...formData, state: val})}
+                                                    />
                                                 </div>
                                             </div>
                                         )}
@@ -431,20 +508,16 @@ export default function ProfilePage() {
                                         )}
 
                                         <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="text-[10px] font-black text-foreground/40 uppercase tracking-widest mb-2 block">Email Público</label>
-                                                <div className="relative">
-                                                    <Mail className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-foreground/20" />
-                                                    <input value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-background border border-surface-border rounded-xl pl-11 pr-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" />
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <label className="text-[10px] font-black text-foreground/40 uppercase tracking-widest mb-2 block">Telefone / WhatsApp</label>
-                                                <div className="relative">
-                                                    <Phone className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-foreground/20" />
-                                                    <input value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full bg-background border border-surface-border rounded-xl pl-11 pr-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" />
-                                                </div>
-                                            </div>
+                                            <EditableField 
+                                                label="Email Público"
+                                                value={formData.email}
+                                                onChange={(val: string) => setFormData({...formData, email: val})}
+                                            />
+                                            <EditableField 
+                                                label="Telefone / WhatsApp"
+                                                value={formData.phone}
+                                                onChange={(val: string) => setFormData({...formData, phone: val})}
+                                            />
                                         </div>
                                     </div>
                                 </div>
@@ -452,26 +525,34 @@ export default function ProfilePage() {
                                 <div className="bg-surface border border-surface-border rounded-3xl p-8 shadow-sm">
                                     <h3 className="text-xl font-bold mb-6">Links e Redes</h3>
                                     <div className="space-y-4">
-                                        <div className="relative">
-                                            <Globe className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-foreground/20" />
-                                            <input value={formData.website} onChange={e => setFormData({...formData, website: e.target.value})} placeholder="Seu site oficial" className="w-full bg-background border border-surface-border rounded-xl pl-11 pr-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" />
-                                        </div>
+                                        <EditableField 
+                                            label="Site Oficial"
+                                            value={formData.website}
+                                            placeholder="Seu site oficial"
+                                            onChange={(val: string) => setFormData({...formData, website: val})}
+                                        />
                                         {profileType === "Desenvolvedor" && (
                                             <>
-                                                <div className="relative">
-                                                    <Code2 className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-foreground/20" />
-                                                    <input value={formData.github} onChange={e => setFormData({...formData, github: e.target.value})} placeholder="Seu GitHub (Ex: https://github.com/usuario)" className="w-full bg-background border border-surface-border rounded-xl pl-11 pr-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" />
-                                                </div>
-                                                <div className="relative">
-                                                    <Lock className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-foreground/20" />
-                                                    <input value={formData.linkedin} onChange={e => setFormData({...formData, linkedin: e.target.value})} placeholder="Seu LinkedIn (Ex: https://linkedin.com/in/usuario)" className="w-full bg-background border border-surface-border rounded-xl pl-11 pr-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" />
-                                                </div>
+                                                <EditableField 
+                                                    label="GitHub"
+                                                    value={formData.github}
+                                                    placeholder="Seu GitHub (Ex: https://github.com/usuario)"
+                                                    onChange={(val: string) => setFormData({...formData, github: val})}
+                                                />
+                                                <EditableField 
+                                                    label="LinkedIn"
+                                                    value={formData.linkedin}
+                                                    placeholder="Seu LinkedIn (Ex: https://linkedin.com/in/usuario)"
+                                                    onChange={(val: string) => setFormData({...formData, linkedin: val})}
+                                                />
                                             </>
                                         )}
-                                        <div className="relative">
-                                            <AtSign className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-foreground/20" />
-                                            <input value={formData.twitter} onChange={e => setFormData({...formData, twitter: e.target.value})} placeholder="Seu X / Twitter" className="w-full bg-background border border-surface-border rounded-xl pl-11 pr-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" />
-                                        </div>
+                                        <EditableField 
+                                            label="Twitter / X"
+                                            value={formData.twitter}
+                                            placeholder="Seu X / Twitter"
+                                            onChange={(val: string) => setFormData({...formData, twitter: val})}
+                                        />
                                     </div>
                                 </div>
                             </div>
@@ -539,6 +620,27 @@ export default function ProfilePage() {
                     )}
                 </AnimatePresence>
             </div>
+
+            {/* Unsaved Changes Banner */}
+            <AnimatePresence>
+                {isDirty && (
+                    <motion.div 
+                        initial={{ opacity: 0, y: 100 }} 
+                        animate={{ opacity: 1, y: 0 }} 
+                        exit={{ opacity: 0, y: 100 }}
+                        className="fixed bottom-0 left-0 right-0 z-[9000] bg-accent text-white py-4 px-6 flex flex-col md:flex-row items-center justify-between gap-4 shadow-[0_-10px_40px_rgba(0,0,0,0.2)] md:ml-[280px]"
+                    >
+                        <div className="flex items-center gap-3 font-bold text-sm">
+                            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                            Você tem alterações não salvas. Salve para não perdê-las.
+                        </div>
+                        <button onClick={handleSaveProfile} disabled={loading} className="bg-white text-accent hover:bg-white/90 font-black px-6 py-2.5 rounded-xl transition-all shadow-lg flex items-center gap-2 cursor-pointer text-xs uppercase tracking-wider">
+                            {loading ? <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" /> : <Save className="w-4 h-4" />}
+                            Salvar Perfil
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Custom Toast Notification */}
             <AnimatePresence>
