@@ -1,12 +1,12 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, AlertCircle, Eye, EyeOff } from "lucide-react";
 
-export default function RegisterPage() {
+function RegisterForm() {
   const searchParams = useSearchParams();
   const role: "client" | "developer" = searchParams.get("role") === "developer" ? "developer" : "client";
   const [name, setName] = useState("");
@@ -241,10 +241,10 @@ export default function RegisterPage() {
                className="w-full p-4.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-foreground/30 font-medium text-foreground pr-12"
                placeholder="••••••••"
                required minLength={6} disabled={notification?.type === 'success'}
-             />
-             <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-foreground/40 hover:text-foreground transition-colors">
-               {showPassword ? <EyeOff className="w-5 h-5"/> : <Eye className="w-5 h-5"/>}
-             </button>
+              />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-foreground/40 hover:text-foreground transition-colors">
+                {showPassword ? <EyeOff className="w-5 h-5"/> : <Eye className="w-5 h-5"/>}
+              </button>
           </div>
           <div className={`flex flex-col gap-3 mt-3 transition-opacity duration-300 ${password.length > 0 ? 'opacity-100' : 'opacity-0 select-none'}`}>
              <div className="flex items-center gap-3">
@@ -285,5 +285,17 @@ export default function RegisterPage() {
         Já possui acesso? <Link href="/login" className="text-foreground font-semibold hover:underline">Fazer login</Link>
       </p>
     </motion.div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center p-12">
+        <div className="w-8 h-8 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
+      </div>
+    }>
+      <RegisterForm />
+    </Suspense>
   );
 }

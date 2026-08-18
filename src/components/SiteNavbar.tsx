@@ -8,7 +8,7 @@ export function SiteNavbar() {
   const router = useRouter();
   const pathname = usePathname();
 
-  if (pathname !== "/" && pathname !== "/tutorial") {
+  if (pathname !== "/" && pathname !== "/tutorial" && pathname !== "/faq") {
     return null;
   }
 
@@ -21,6 +21,7 @@ export function SiteNavbar() {
         <div className="hidden md:flex items-center gap-8">
           <Link href="/" className="text-[13px] font-bold opacity-60 hover:opacity-100 transition-opacity uppercase tracking-widest">Página Inicial</Link>
           <Link href="/tutorial" className="text-[13px] font-bold opacity-60 hover:opacity-100 transition-opacity uppercase tracking-widest">Como Funciona</Link>
+          <Link href="/faq" className="text-[13px] font-bold opacity-60 hover:opacity-100 transition-opacity uppercase tracking-widest">FAQ</Link>
         </div>
         <div className="flex items-center gap-3 md:gap-4">
           <ThemeToggle />

@@ -20,7 +20,10 @@ import {
     EyeOff,
     Link as LinkIcon,
     Search,
-    FileText
+    FileText,
+    Copy,
+    Check,
+    User
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -34,6 +37,7 @@ export default function AdminDeploy() {
     const [filteredProfiles, setFilteredProfiles] = useState<any[]>([]);
     const [profileSearch, setProfileSearch] = useState("");
     const [selectedProfile, setSelectedProfile] = useState<any>(null);
+    const [copiedField, setCopiedField] = useState<string | null>(null);
     
     // Novas variáveis de estado para Busca e Filtros
     const [projectSearch, setProjectSearch] = useState("");
@@ -95,6 +99,12 @@ export default function AdminDeploy() {
     useEffect(() => {
         if (configProjectId) loadProjectFiles(configProjectId);
     }, [configProjectId]);
+
+    const copyToClipboard = (text: string, field: string) => {
+        navigator.clipboard.writeText(text);
+        setCopiedField(field);
+        setTimeout(() => setCopiedField(null), 2000);
+    };
 
     const handleCreateProject = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -340,11 +350,44 @@ export default function AdminDeploy() {
                                     {/* Esquerda: Detalhes e Status */}
                                     <div className="lg:col-span-12">
                                         <h2 className="text-6xl font-black text-white italic uppercase tracking-tighter mb-4">{projects.find(p => p.id === configProjectId).name}</h2>
-                                        <div className="flex items-center gap-4 mb-16">
+                                        <div className="flex items-center gap-4 mb-8">
                                             <span className="text-[10px] font-black text-accent border border-accent/20 bg-accent/5 px-4 py-1.5 rounded-full uppercase tracking-widest">Configuration Mode</span>
-                                            <button onClick={() => handleDeleteProject(configProjectId)} className="flex items-center gap-2 text-red-500/50 hover:text-red-500 text-[10px] font-black uppercase tracking-widest bg-red-500/5 p-2 px-4 rounded-full transition-all">
+                                            <button onClick={() => handleDeleteProject(configProjectId)} className="flex items-center gap-2 text-red-500/50 hover:text-red-500 text-[10px] font-black uppercase tracking-widest bg-red-500/5 p-2 px-4 rounded-full transition-all cursor-pointer">
                                                 <Trash2 className="w-4 h-4" /> Deletar Projeto
                                             </button>
+                                        </div>
+
+                                        {/* Identificação do Produto (ID) */}
+                                        <div className="bg-[#050505] p-8 rounded-[32px] border border-white/5 mb-6">
+                                            <h4 className="text-[10px] font-black text-[#222] uppercase tracking-[0.4em] flex items-center gap-3 mb-4"><User className="w-5 h-5"/> Identificação do Produto</h4>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <p className="text-[9px] font-black text-[#333] uppercase tracking-widest mb-1.5">ID do Produto (project_id)</p>
+                                                    <div className="flex items-center gap-3 bg-[#0c0c0d] border border-white/5 rounded-2xl p-4">
+                                                        <code className="flex-1 text-xs font-mono text-[#555] truncate">{configProjectId}</code>
+                                                        <button
+                                                            id="copy-project-id-btn"
+                                                            onClick={() => copyToClipboard(configProjectId, 'project_id')}
+                                                            className="shrink-0 p-2 hover:bg-white/10 rounded-lg transition-colors cursor-pointer text-[#333] hover:text-white"
+                                                        >
+                                                            {copiedField === 'project_id' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[9px] font-black text-[#333] uppercase tracking-widest mb-1.5">ID do Cliente (client_id)</p>
+                                                    <div className="flex items-center gap-3 bg-[#0c0c0d] border border-white/5 rounded-2xl p-4">
+                                                        <code className="flex-1 text-xs font-mono text-[#555] truncate">{projects.find(p => p.id === configProjectId)?.client_id || '—'}</code>
+                                                        <button
+                                                            id="copy-client-id-btn"
+                                                            onClick={() => copyToClipboard(projects.find(p => p.id === configProjectId)?.client_id || '', 'client_id')}
+                                                            className="shrink-0 p-2 hover:bg-white/10 rounded-lg transition-colors cursor-pointer text-[#333] hover:text-white"
+                                                        >
+                                                            {copiedField === 'client_id' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
 
                                         {/* Domain Edit Field */}

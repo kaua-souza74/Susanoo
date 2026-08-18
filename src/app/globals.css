@@ -108,6 +108,17 @@ body {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
+/* Cursor pointer global para melhorar usabilidade de elementos clicáveis */
+button,
+a,
+select,
+option,
+input[type="button"],
+input[type="submit"],
+[role="button"] {
+  cursor: pointer !important;
+}
+
 .glass {
   background: var(--surface);
   box-shadow: inset 0 0 0 1px var(--surface-border);
@@ -120,3 +131,4 @@ body {
   border: 1px solid var(--surface-border);
   box-shadow: none;
 }
+

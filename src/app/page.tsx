@@ -1,4 +1,5 @@
 "use client";
+import { useState, useRef } from "react";
 import { 
   ArrowRight, 
   MessageSquare, 
@@ -8,17 +9,21 @@ import {
   Monitor,
   BadgeCheck,
   Quote,
-  Star
+  Star,
+  ChevronDown,
+  ChevronUp,
+  HelpCircle
 } from "lucide-react";
-import { motion, useScroll, useTransform } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Logo } from "@/components/logo";
 import { useRouter } from "next/navigation";
-import { useRef } from "react";
+import { useScroll, useTransform } from "framer-motion";
 import { ShaderAnimation } from "@/components/ui/shader-animation";
 
 export default function Home() {
   const router = useRouter();
   const targetRef = useRef(null);
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
   const { scrollYProgress } = useScroll({
     target: targetRef,
     offset: ["start start", "end start"]
@@ -173,6 +178,86 @@ export default function Home() {
                 </div>
                 <p className="text-sm md:text-base text-background/80 relative z-10 font-bold">Estamos disponíveis para acompanhar o funcionamento do seu projeto e oferecer suporte sempre que necessário.</p>
              </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ Section */}
+      <section className="py-20 md:py-32 px-4 md:px-6 bg-background relative z-10 border-t border-surface-border">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-5xl font-black tracking-tighter mb-4 uppercase italic">
+              Dúvidas Frequentes
+            </h2>
+            <p className="text-base md:text-lg text-foreground/40 font-bold max-w-xl mx-auto italic">
+              Tem alguma pergunta sobre o funcionamento dos cronogramas, pagamentos ou suporte da Susanoo? Veja abaixo.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-3.5 mb-10">
+            {[
+              {
+                q: "Como funciona o cronograma do meu projeto?",
+                a: "O cronograma detalhado de entrega é liberado automaticamente na sua conta assim que o pagamento do projeto ou template for confirmado no checkout. Você pode acompanhar todas as etapas de briefing, design de interface (UI), desenvolvimento e deploy em tempo real pelo seu painel do cliente."
+              },
+              {
+                q: "Quais são as formas de pagamento aceitas?",
+                a: "Aceitamos pagamentos via PIX (com ativação automática de projetos) e Cartão de Crédito com processamento seguro e criptografado."
+              },
+              {
+                q: "Como faço para conversar com o desenvolvedor do meu projeto?",
+                a: "Pelo painel do cliente, acesse o chat integrado para trocar mensagens diretas e tirar dúvidas em tempo real com o profissional responsável."
+              },
+              {
+                q: "Os sites possuem otimização para SEO e carregamento rápido?",
+                a: "Sim! Desenvolvemos com as melhores práticas de Next.js, garantindo pontuações altíssimas no Google Lighthouse para seu negócio se destacar nas buscas."
+              }
+            ].map((item, idx) => {
+              const isOpen = openFaq === idx;
+              return (
+                <div
+                  key={idx}
+                  className={`bg-surface/40 backdrop-blur-md border border-surface-border rounded-2xl overflow-hidden transition-all duration-300 ${
+                    isOpen ? "shadow-md hover:border-accent/40" : "hover:border-foreground/10"
+                  }`}
+                >
+                  <button
+                    onClick={() => setOpenFaq(isOpen ? null : idx)}
+                    className="w-full text-left p-5 flex items-center justify-between gap-4 font-black text-sm md:text-base text-foreground cursor-pointer"
+                  >
+                    <span className={isOpen ? "text-accent" : ""}>{item.q}</span>
+                    {isOpen ? (
+                      <ChevronUp className="w-4 h-4 text-accent shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-foreground/40 shrink-0" />
+                    )}
+                  </button>
+                  <AnimatePresence initial={false}>
+                    {isOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2, ease: "easeInOut" }}
+                      >
+                        <div className="px-5 pb-5 text-xs md:text-sm text-foreground/60 leading-relaxed border-t border-surface-border/50 pt-3.5 font-medium">
+                          {item.a}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="text-center">
+            <button
+              onClick={() => router.push("/faq")}
+              className="group inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-accent hover:opacity-80 transition-opacity cursor-pointer"
+            >
+              Ver todas as dúvidas no FAQ completo <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </button>
           </div>
         </div>
       </section>

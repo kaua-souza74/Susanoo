@@ -235,7 +235,7 @@ export default function DevelopersPage() {
                                             e.stopPropagation();
                                             router.push(`/dashboard/chat?devId=${dev.id}&devName=${encodeURIComponent(dev.name)}`);
                                         }}
-                                        className="px-4 py-2.5 text-xs font-black uppercase tracking-wider bg-foreground text-background rounded-xl hover:opacity-85 transition-all flex items-center gap-1.5"
+                                        className="px-4 py-2.5 text-xs font-black uppercase tracking-wider bg-foreground text-background rounded-xl hover:opacity-85 transition-all flex items-center gap-1.5 cursor-pointer"
                                     >
                                         <Mail className="w-3.5 h-3.5" /> Contato
                                     </button>
@@ -244,7 +244,7 @@ export default function DevelopersPage() {
                                             e.stopPropagation();
                                             router.push(`/dashboard/developers/${dev.id}`);
                                         }}
-                                        className="px-4 py-2.5 text-xs font-bold text-foreground/50 hover:text-foreground rounded-xl border border-surface-border hover:border-foreground/20 transition-all"
+                                        className="px-4 py-2.5 text-xs font-bold text-foreground/50 hover:text-foreground rounded-xl border border-surface-border hover:border-foreground/20 transition-all cursor-pointer"
                                     >
                                         Ver Perfil
                                     </button>

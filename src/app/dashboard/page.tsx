@@ -57,8 +57,8 @@ export default function DiscoverHome() {
    useEffect(() => {
      const loadAccount = async () => {
        setUserType(await getAuthenticatedAccountType());
-       const [profileKey, projectKey, developersKey, chatKey, reviewKey, onboardingKey] = await Promise.all([
-         getAccountStorageKey("store-profile-completed"), getAccountStorageKey("first-project"), getAccountStorageKey("explored-developers"), getAccountStorageKey("first-chat"), getAccountStorageKey("first-review"), getAccountStorageKey("onboarding-dismissed")
+       const [profileKey, projectKey, developersKey, chatKey, reviewKey, onboardingKey, likeKey] = await Promise.all([
+         getAccountStorageKey("store-profile-completed"), getAccountStorageKey("first-project"), getAccountStorageKey("explored-developers"), getAccountStorageKey("first-chat"), getAccountStorageKey("first-review"), getAccountStorageKey("onboarding-dismissed"), getAccountStorageKey("liked_projects")
        ]);
        setStoreProfileCompleted(localStorage.getItem(profileKey) === "true" || localStorage.getItem("susanoo_store_profile_completed") === "true");
        setHasProjects(localStorage.getItem(projectKey) === "true");
@@ -66,6 +66,9 @@ export default function DiscoverHome() {
        setHasChat(localStorage.getItem(chatKey) === "true");
        setHasReview(localStorage.getItem(reviewKey) === "true");
        setOnboardingDismissed(localStorage.getItem(onboardingKey) === "true");
+       // Curtidas vinculadas por conta — chave única por user.id
+       const storedLikes = JSON.parse(localStorage.getItem(likeKey) || '[]');
+       setLikedProjectIds(storedLikes.map((p: any) => p.id));
      };
      loadAccount();
 
@@ -80,9 +83,6 @@ export default function DiscoverHome() {
          setLoading(false);
      };
      fetchProjects();
-
-     const storedLikes = JSON.parse(localStorage.getItem('susanoo_liked_projects') || '[]');
-     setLikedProjectIds(storedLikes.map((p: any) => p.id));
 
      // Listen to layout completion updates
      const handleProfileComplete = () => {
@@ -113,8 +113,9 @@ export default function DiscoverHome() {
      setOnboardingDismissed(true);
    };
 
-   const toggleFavorite = (project: any) => {
-     const stored = JSON.parse(localStorage.getItem('susanoo_liked_projects') || '[]');
+   const toggleFavorite = async (project: any) => {
+     const likeKey = await getAccountStorageKey("liked_projects");
+     const stored = JSON.parse(localStorage.getItem(likeKey) || '[]');
      const exists = stored.find((p: any) => p.id === project.id);
      let newStored;
      if (exists) {
@@ -122,7 +123,7 @@ export default function DiscoverHome() {
      } else {
          newStored = [...stored, { id: project.id, name: project.name, cover_url: project.cover_url, deploy_url: project.deploy_url }];
      }
-     localStorage.setItem('susanoo_liked_projects', JSON.stringify(newStored));
+     localStorage.setItem(likeKey, JSON.stringify(newStored));
      setLikedProjectIds(newStored.map((p: any) => p.id));
    };
 
