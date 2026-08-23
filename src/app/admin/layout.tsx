@@ -1,7 +1,7 @@
 "use client";
 import { ReactNode, useState, useEffect } from "react";
 import Link from "next/link";
-import { LayoutDashboard, Users, MessageSquareText, Settings, LogOut, LayoutList, Rocket, Plus, Clock } from "lucide-react";
+import { LayoutDashboard, Users, MessageSquareText, Settings, LogOut, LayoutList, Rocket, Plus, Clock, Bell } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useRouter, usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -63,6 +63,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                <NavItem icon={<Rocket className="w-5 h-5"/>} label="Deploy & Publicação" active={pathname?.includes('/admin/deploy')} href="/admin/deploy" />
                <NavItem icon={<Plus className="w-5 h-5"/>} label="Adicionar Site" active={pathname?.includes('/admin/add-site')} href="/admin/add-site" />
                <NavItem icon={<Clock className="w-5 h-5"/>} label="Cronograma Master" active={pathname?.includes('/admin/timeline')} href="/admin/timeline" />
+               <NavItem icon={<Bell className="w-5 h-5"/>} label="Notificações" active={pathname?.includes('/admin/notifications')} href="/admin/notifications" />
             </div>
         </div>
 

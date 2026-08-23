@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Users, TrendingUp, Clock, MessageSquareText, LayoutList, Rocket, ArrowRight } from "lucide-react";
+import { Users, TrendingUp, Clock, MessageSquareText, LayoutList, Rocket, ArrowRight, Bell } from "lucide-react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 
@@ -37,6 +37,7 @@ export default function AdminOverview() {
         { id: 'deploy', title: 'Publicação de Sites', desc: 'Central de domínios, Vercel e links de produção entregues aos clientes.', icon: <Rocket className="w-8 h-8"/>, path: '/admin/deploy', color: 'from-emerald-600 to-emerald-900', border: 'border-emerald-500/30' },
         { id: 'add-site', title: 'Adicionar Site ao Portfólio', desc: 'Cadastre novos sites, gerencie as vitrines de 10 fotos e preços no marketplace.', icon: <LayoutList className="w-8 h-8"/>, path: '/admin/add-site', color: 'from-purple-500 to-purple-800', border: 'border-purple-500/20' },
         { id: 'timeline', title: 'Cronograma Master', desc: 'Gerencie os marcos e o progresso das etapas de cada projeto dos clientes.', icon: <Clock className="w-8 h-8"/>, path: '/admin/timeline', color: 'from-orange-500 to-orange-800', border: 'border-orange-500/20' },
+        { id: 'notifications', title: 'Notificações Globais', desc: 'Histórico operacional, alertas do sistema e avisos operacionais.', icon: <Bell className="w-8 h-8"/>, path: '/admin/notifications', color: 'from-red-600 to-red-950', border: 'border-red-500/30' },
         { id: 'clients', title: 'Simulador de Visão', desc: 'Acesse como se fosse o cliente para conferir a experiência do portal deles.', icon: <Users className="w-8 h-8"/>, path: '/admin/clients', color: 'from-[#333] to-[#111]', border: 'border-surface-border' },
     ];
 

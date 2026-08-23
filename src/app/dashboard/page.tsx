@@ -57,6 +57,9 @@ export default function DiscoverHome() {
    useEffect(() => {
      const loadAccount = async () => {
        setUserType(await getAuthenticatedAccountType());
+       const { data: { session } } = await supabase.auth.getSession();
+       const userId = session?.user?.id;
+
        const [profileKey, projectKey, developersKey, chatKey, reviewKey, onboardingKey, likeKey] = await Promise.all([
          getAccountStorageKey("store-profile-completed"), getAccountStorageKey("first-project"), getAccountStorageKey("explored-developers"), getAccountStorageKey("first-chat"), getAccountStorageKey("first-review"), getAccountStorageKey("onboarding-dismissed"), getAccountStorageKey("liked_projects")
        ]);
@@ -66,6 +69,19 @@ export default function DiscoverHome() {
        setHasChat(localStorage.getItem(chatKey) === "true");
        setHasReview(localStorage.getItem(reviewKey) === "true");
        setOnboardingDismissed(localStorage.getItem(onboardingKey) === "true");
+       
+       if (userId) {
+         try {
+           const { data: dbLikes } = await supabase.from('likes').select('project_id').eq('user_id', userId);
+           if (dbLikes && dbLikes.length > 0) {
+             setLikedProjectIds(dbLikes.map((l: any) => l.project_id));
+             return;
+           }
+         } catch (e) {
+           console.error("Erro ao carregar curtidas do banco:", e);
+         }
+       }
+
        // Curtidas vinculadas por conta — chave única por user.id
        const storedLikes = JSON.parse(localStorage.getItem(likeKey) || '[]');
        setLikedProjectIds(storedLikes.map((p: any) => p.id));
@@ -114,14 +130,23 @@ export default function DiscoverHome() {
    };
 
    const toggleFavorite = async (project: any) => {
+     const { data: { session } } = await supabase.auth.getSession();
+     const userId = session?.user?.id;
+
      const likeKey = await getAccountStorageKey("liked_projects");
      const stored = JSON.parse(localStorage.getItem(likeKey) || '[]');
      const exists = stored.find((p: any) => p.id === project.id);
      let newStored;
      if (exists) {
          newStored = stored.filter((p: any) => p.id !== project.id);
+         if (userId) {
+           await supabase.from('likes').delete().eq('user_id', userId).eq('project_id', project.id);
+         }
      } else {
          newStored = [...stored, { id: project.id, name: project.name, cover_url: project.cover_url, deploy_url: project.deploy_url }];
+         if (userId) {
+           await supabase.from('likes').insert([{ user_id: userId, project_id: project.id }]);
+         }
      }
      localStorage.setItem(likeKey, JSON.stringify(newStored));
      setLikedProjectIds(newStored.map((p: any) => p.id));
@@ -510,7 +535,9 @@ export default function DiscoverHome() {
                                <div className="lg:col-span-8 bg-surface/30 flex flex-col h-full overflow-y-auto custom-scrollbar border-b lg:border-b-0 lg:border-r border-surface-border">
                                    <div className="p-6">
                                        <div className="aspect-[16/9] w-full rounded-2xl overflow-hidden bg-background border border-surface-border relative shadow-inner">
-                                           {activeProduct.cover_url ? (
+                                           {activeProduct.video_url ? (
+                                               <video src={activeProduct.video_url} controls autoPlay muted loop className="w-full h-full object-cover" />
+                                           ) : activeProduct.cover_url ? (
                                                <img src={activeProduct.cover_url} className="w-full h-full object-cover" alt={activeProduct.name} />
                                            ) : (
                                                <div className="absolute inset-0 flex items-center justify-center text-7xl font-black text-foreground/5 uppercase italic tracking-tighter">
@@ -614,38 +641,43 @@ export default function DiscoverHome() {
                                            <p className="text-xs text-emerald-500 font-bold mt-1.5 flex items-center gap-1.5">
                                                <Zap className="w-3.5 h-3.5 fill-current" /> Acesso imediato no e-mail
                                            </p>
+                                            <div className="flex flex-col gap-3.5 bg-surface/50 border border-surface-border rounded-2xl p-4 text-sm text-foreground/75 mt-4">
+                                              <div className="flex items-center gap-3">
+                                                <Zap className="w-4 h-4 text-accent shrink-0" />
+                                                <span>Código-fonte completo</span>
+                                              </div>
+                                              <div className="flex items-center gap-3">
+                                                <Shield className="w-4 h-4 text-accent shrink-0" />
+                                                <span>Compra 100% Garantida por 7 dias</span>
+                                              </div>
+                                            </div>
                                        </div>
 
-                                       <div className="flex flex-col gap-3.5 bg-surface/50 border border-surface-border rounded-2xl p-4 text-sm text-foreground/75">
-                                         <div className="flex items-center gap-3">
-                                           <Zap className="w-4 h-4 text-accent shrink-0" />
-                                           <span>Código-fonte completo</span>
-                                         </div>
-                                         <div className="flex items-center gap-3">
-                                           <Shield className="w-4 h-4 text-accent shrink-0" />
-                                           <span>Compra 100% Garantida por 7 dias</span>
-                                         </div>
+                                       <div className="flex flex-col gap-3 mt-8 lg:mt-0 pt-6 border-t border-surface-border">
+                                            <button 
+                                                onClick={() => { handleAddToCart(activeProduct); setActiveProduct(null); }}
+                                                className="w-full py-4.5 bg-accent text-white font-black rounded-xl hover:bg-accent/90 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-accent/20 flex items-center justify-center gap-2 text-sm uppercase tracking-wider"
+                                            >
+                                                <ShoppingBag className="w-5 h-5" /> Adquirir Agora
+                                            </button>
+                                            <button 
+                                                onClick={(e) => handleAddToCart(activeProduct, e)}
+                                                className={`w-full py-4.5 font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 border text-sm uppercase tracking-wider ${isInCart(activeProduct.id) ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600' : 'bg-surface border-surface-border text-foreground hover:border-accent/40 hover:bg-surface-border/50'}`}
+                                            >
+                                                {isInCart(activeProduct.id) ? <><Check className="w-4 h-4" /> No Carrinho</> : <><ShoppingCart className="w-4 h-4" /> Adicionar ao Carrinho</>}
+                                            </button>
+                                            <button 
+                                                onClick={() => router.push(`/preview/${activeProduct.id}`)}
+                                                className="w-full py-4.5 bg-surface border border-surface-border hover:border-foreground/20 text-foreground font-black rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider cursor-pointer"
+                                            >
+                                                <ExternalLink className="w-4 h-4" /> Prévia Ao Vivo
+                                            </button>
+                                            {activeProduct.deploy_url && (
+                                              <a href={activeProduct.deploy_url.startsWith('http') ? activeProduct.deploy_url : `https://${activeProduct.deploy_url}`} target="_blank" rel="noreferrer" className="w-full py-3.5 font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 text-foreground/50 hover:text-foreground">
+                                                <ExternalLink className="w-4 h-4" /> Ver demonstração do site
+                                              </a>
+                                            )}
                                        </div>
-                                   </div>
-
-                                   <div className="flex flex-col gap-3 mt-8 lg:mt-0 pt-6 border-t border-surface-border">
-                                       <button 
-                                           onClick={() => { handleAddToCart(activeProduct); setActiveProduct(null); }}
-                                           className="w-full py-4.5 bg-accent text-white font-black rounded-xl hover:bg-accent/90 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-accent/20 flex items-center justify-center gap-2 text-sm uppercase tracking-wider"
-                                       >
-                                           <ShoppingBag className="w-5 h-5" /> Adquirir Agora
-                                       </button>
-                                       <button 
-                                           onClick={(e) => handleAddToCart(activeProduct, e)}
-                                           className={`w-full py-4.5 font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 border text-sm uppercase tracking-wider ${isInCart(activeProduct.id) ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600' : 'bg-surface border-surface-border text-foreground hover:border-accent/40 hover:bg-surface-border/50'}`}
-                                       >
-                                           {isInCart(activeProduct.id) ? <><Check className="w-4 h-4" /> No Carrinho</> : <><ShoppingCart className="w-4 h-4" /> Adicionar ao Carrinho</>}
-                                       </button>
-                                       {activeProduct.deploy_url && (
-                                         <a href={activeProduct.deploy_url.startsWith('http') ? activeProduct.deploy_url : `https://${activeProduct.deploy_url}`} target="_blank" rel="noreferrer" className="w-full py-3.5 font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 text-foreground/50 hover:text-foreground">
-                                           <ExternalLink className="w-4 h-4" /> Ver demonstração do site
-                                         </a>
-                                       )}
                                    </div>
                                </div>
                            </div>

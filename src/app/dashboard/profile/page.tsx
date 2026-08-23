@@ -52,10 +52,12 @@ export default function ProfilePage() {
     const [loading, setLoading] = useState(false);
     const [cepLoading, setCepLoading] = useState(false);
     const [profileType, setProfileType] = useState<"Comércio" | "Desenvolvedor">("Comércio");
-    const [activeTab, setActiveTab] = useState<"Informações" | "Curtidos">("Informações");
+    const [activeTab, setActiveTab] = useState<"Informações" | "Curtidos" | "Meus Projetos">("Informações");
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [isDirty, setIsDirty] = useState(false);
     const [originalData, setOriginalData] = useState<any>(null);
+    const [likesPrivate, setLikesPrivate] = useState(false);
+    const [myProjects, setMyProjects] = useState<any[]>([]);
     
     const [formData, setFormData] = useState({
         name: "",
@@ -149,7 +151,51 @@ export default function ProfilePage() {
            setOriginalData((prev: any) => prev || { ...formData, skills: [] }); // Simplification for demo
         }, 500);
 
-        // Fetch liked projects
+        // Buscar do banco de dados (Projetos do usuário, curtidas e privacidade de curtidas)
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user?.id) {
+                // Projetos do usuário
+                const { data: projs } = await supabase
+                    .from('projects')
+                    .select('*')
+                    .eq('client_id', session.user.id);
+                setMyProjects(projs || []);
+
+                // Curtidas privadas
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('likes_private')
+                    .eq('id', session.user.id)
+                    .single();
+                if (profile) {
+                    setLikesPrivate(profile.likes_private || false);
+                }
+
+                // Curtidas reais
+                const { data: dbLikes } = await supabase
+                    .from('likes')
+                    .select('project_id, projects(id, name, price, photos, deploy_url)')
+                    .eq('user_id', session.user.id);
+                if (dbLikes) {
+                    const mappedLikes = dbLikes
+                        .filter((l: any) => l.projects)
+                        .map((l: any) => ({
+                            id: l.projects.id,
+                            name: l.projects.name,
+                            price: l.projects.price,
+                            cover_url: l.projects.photos?.[0] || "",
+                            deploy_url: l.projects.deploy_url
+                        }));
+                    setLikedProjects(mappedLikes);
+                    return;
+                }
+            }
+        } catch (err) {
+            console.error("Erro ao buscar dados do Supabase para o perfil:", err);
+        }
+
+        // Fallback para localStorage
         const storedLikes = JSON.parse(localStorage.getItem('susanoo_liked_projects') || '[]');
         setLikedProjects(storedLikes);
         };
@@ -282,6 +328,14 @@ export default function ProfilePage() {
                 window.dispatchEvent(new Event("profileCompletedChanged"));
             }
 
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user?.id) {
+                await supabase
+                    .from('profiles')
+                    .update({ likes_private: likesPrivate })
+                    .eq('id', session.user.id);
+            }
+
             showToast("Perfil salvo com sucesso!");
             setIsDirty(false);
             setOriginalData({ ...formData, skills });
@@ -373,10 +427,19 @@ export default function ProfilePage() {
                             <motion.div layoutId="profile-tab" className="absolute bottom-[-17px] left-0 right-0 h-0.5 bg-accent" />
                         )}
                     </button>
+                    <button 
+                        onClick={() => setActiveTab("Meus Projetos")}
+                        className={`text-sm font-black uppercase tracking-widest px-4 py-2 transition-colors relative ${activeTab === "Meus Projetos" ? "text-foreground" : "text-foreground/40 hover:text-foreground/80"}`}
+                    >
+                        Meus Projetos
+                        {activeTab === "Meus Projetos" && (
+                            <motion.div layoutId="profile-tab" className="absolute bottom-[-17px] left-0 right-0 h-0.5 bg-accent" />
+                        )}
+                    </button>
                 </div>
 
                 <AnimatePresence mode="wait">
-                    {activeTab === "Informações" ? (
+                    {activeTab === "Informações" && (
                         <motion.div key="informacoes" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="grid grid-cols-1 md:grid-cols-3 gap-8">
                             {/* Left Column (Main forms) */}
                             <div className="md:col-span-2 space-y-6">
@@ -574,8 +637,25 @@ export default function ProfilePage() {
                                 </div>
                             </div>
                         </motion.div>
-                    ) : (
+                    )}
+                    {activeTab === "Curtidos" && (
                         <motion.div key="curtidos" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="w-full">
+                            <div className="mb-6 flex items-center justify-between bg-surface border border-surface-border p-4 rounded-2xl">
+                                <div className="flex items-center gap-2 text-sm font-bold text-foreground">
+                                    <Lock className="w-4 h-4 text-accent" />
+                                    <span>Privacidade das Curtidas</span>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={likesPrivate} 
+                                        onChange={(e) => { setLikesPrivate(e.target.checked); setIsDirty(true); }}
+                                        className="sr-only peer" 
+                                    />
+                                    <div className="w-11 h-6 bg-surface-border rounded-full peer peer-focus:ring-2 peer-focus:ring-accent peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+                                    <span className="ml-3 text-xs font-bold text-foreground">{likesPrivate ? "Privado" : "Público"}</span>
+                                </label>
+                            </div>
                             {likedProjects.length > 0 ? (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                     {likedProjects.map((proj) => (
@@ -614,6 +694,41 @@ export default function ProfilePage() {
                                     </div>
                                     <h3 className="text-2xl font-black italic tracking-tighter text-foreground mb-2">Nenhum projeto favoritado</h3>
                                     <p className="text-foreground/40 font-medium">Explore o Marketplace e salve os sites que você mais gostar.</p>
+                                </div>
+                            )}
+                        </motion.div>
+                    )}
+                    {activeTab === "Meus Projetos" && (
+                        <motion.div key="meus-projetos" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="w-full space-y-6">
+                            <div className="bg-surface/50 border border-surface-border p-5 rounded-2xl flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Lock className="w-4 h-4 text-accent" />
+                                    <span className="text-xs font-bold text-foreground/70">🔒 Esta aba é privada e visível apenas para você.</span>
+                                </div>
+                            </div>
+
+                            {myProjects.length > 0 ? (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                    {myProjects.map((proj) => (
+                                        <div key={proj.id} className="bg-surface border border-surface-border rounded-3xl p-5 shadow-sm relative overflow-hidden group">
+                                            <div className="w-full aspect-video bg-background border border-surface-border rounded-xl mb-4 flex items-center justify-center relative overflow-hidden">
+                                                <h3 className="text-3xl font-black text-foreground/5 uppercase tracking-tighter">{proj.name.substring(0,3)}</h3>
+                                                <div className="absolute top-2 left-2 flex items-center gap-1 bg-background/80 backdrop-blur-md px-2 py-1 rounded-md border border-surface-border text-[10px] font-bold text-foreground">
+                                                    {proj.manual_progress || 0}%
+                                                </div>
+                                            </div>
+                                            <h4 className="font-bold text-sm text-foreground truncate">{proj.name}</h4>
+                                            <p className="text-[10px] text-foreground/40 mt-1">ID: {proj.id.substring(0,8)}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="py-20 flex flex-col items-center justify-center text-center">
+                                    <div className="w-20 h-20 bg-surface rounded-full flex items-center justify-center mb-6">
+                                        <Building className="w-8 h-8 text-foreground/20" />
+                                    </div>
+                                    <h3 className="text-2xl font-black italic tracking-tighter text-foreground mb-2">Nenhum projeto ativo</h3>
+                                    <p className="text-foreground/40 font-medium">Acompanhe seus projetos adquiridos ou fale com um consultor.</p>
                                 </div>
                             )}
                         </motion.div>

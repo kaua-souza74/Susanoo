@@ -162,7 +162,7 @@ export default function DevelopersPage() {
                 </motion.div>
 
                 {/* Grade de Profissionais */}
-                <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {loading ? (
                         <div className="flex items-center justify-center py-20">
                             <div className="w-8 h-8 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
