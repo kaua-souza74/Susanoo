@@ -1,11 +1,11 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
 import { Calendar, Plus, Trash2, CheckCircle2, Clock, Circle, ChevronUp, ChevronDown, Rocket, AlertCircle, ImageIcon, Bell, Save, Users } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 
-export default function AdminTimeline() {
+function AdminTimelineContent() {
     const searchParams = useSearchParams();
     const [projects, setProjects] = useState<any[]>([]);
     const [selectedProjectId, setSelectedProjectId] = useState<string>("");
@@ -336,5 +336,17 @@ export default function AdminTimeline() {
                 )}
             </div>
         </div>
+    );
+}
+
+export default function AdminTimeline() {
+    return (
+        <Suspense fallback={
+            <div className="flex-1 flex items-center justify-center bg-background">
+                <div className="w-8 h-8 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
+            </div>
+        }>
+            <AdminTimelineContent />
+        </Suspense>
     );
 }

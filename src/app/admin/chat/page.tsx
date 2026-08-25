@@ -196,24 +196,61 @@ export default function AdminTeamsChat() {
        const { data: projs } = await supabase.from('projects').select('*');
        const { data: custChats } = await supabase.from('chats').select('*');
        
-       // Buscar perfis dos clientes para mostrar o nome real
-       const clientIds = (custChats || []).filter(c => c.user_id).map(c => c.user_id);
+       const myUserId = session?.user?.id;
+       const filteredCustChats = (custChats || []).filter(c => {
+           // Se for DM, só mostrar se o admin for um dos participantes
+           if (c.type === 'dm') {
+               return c.participants && c.participants.includes(myUserId);
+           }
+           // Mostrar grupos e canais de suporte no admin
+           return c.type === 'group' || c.type === 'support';
+       });
+
+       // Buscar perfis das pessoas associadas aos chats para mostrar o nome real
+       const userIdsToFetch = new Set<string>();
+       filteredCustChats.forEach(c => {
+           if (c.user_id) userIdsToFetch.add(c.user_id);
+           if (c.participants && Array.isArray(c.participants)) {
+               c.participants.forEach((pid: string) => userIdsToFetch.add(pid));
+           }
+       });
+
        let profilesMap: Record<string, any> = {};
-       if (clientIds.length > 0) {
-           const { data: profiles } = await supabase.from('profiles').select('id, name, email').in('id', clientIds);
+       if (userIdsToFetch.size > 0) {
+           const { data: profiles } = await supabase.from('profiles').select('id, name, email, role').in('id', Array.from(userIdsToFetch));
            (profiles || []).forEach(p => { profilesMap[p.id] = p; });
        }
        
        const all = [
-           ...(projs || []).map(p => ({ ...p, isProject: true })),
-           ...(custChats || []).map(c => ({
-               ...c,
-               isProject: false,
-               // Para chats de suporte, usar o nome real do cliente
-               name: c.type === 'support' && c.user_id && profilesMap[c.user_id]?.name
-                   ? `${profilesMap[c.user_id].name} (Suporte)`
-                   : c.name
-           }))
+           ...(projs || []).map(p => ({ ...p, isProject: true, name: p.name })),
+           ...filteredCustChats.map(c => {
+               let name = c.name;
+               let sub = 'Grupo HQ';
+               
+               if (c.type === 'support') {
+                   const clientProfile = c.user_id ? profilesMap[c.user_id] : null;
+                   const clientName = clientProfile?.name || clientProfile?.email?.split('@')[0] || 'Cliente';
+                   const clientRole = clientProfile?.role === 'developer' ? 'Dev' : 'Cliente';
+                   name = `${clientName} (Suporte ${clientRole})`;
+                   sub = 'Atendimento Suporte';
+               } else if (c.type === 'dm') {
+                   const otherId = c.participants?.find((pid: string) => pid !== myUserId);
+                   const otherProf = otherId ? profilesMap[otherId] : null;
+                   name = otherProf?.name || otherProf?.email?.split('@')[0] || c.name || 'Chat Privado';
+                   const otherRole = otherProf?.role === 'developer' ? 'Desenvolvedor' : (otherProf?.role === 'admin' ? 'Administrador' : 'Cliente');
+                   sub = `DM com ${otherRole}`;
+               } else if (c.type === 'group') {
+                   name = c.name;
+                   sub = 'Grupo Staff';
+               }
+               
+               return {
+                   ...c,
+                   isProject: false,
+                   name,
+                   sub
+               };
+           })
        ];
        setChannels(all);
        if (all.length > 0 && !activeChannel) setActiveChannel(all[0]);
@@ -437,8 +474,8 @@ export default function AdminTeamsChat() {
                                     {c.name.substring(0,2).toUpperCase()}
                                 </div>
                                 <div className="flex flex-col items-start overflow-hidden">
-                                    <span className="text-sm font-bold text-white truncate w-full">{c.name}</span>
-                                    <span className="text-[10px] text-[#555] font-black uppercase">{c.isProject ? 'Software' : (c.type === 'support' ? 'Suporte Oficial' : (c.type === 'dm' ? 'Direct Message' : 'Grupo HQ'))}</span>
+                                     <span className="text-sm font-bold text-white truncate w-full">{c.name}</span>
+                                     <span className="text-[10px] text-[#555] font-black uppercase">{c.isProject ? 'Software' : c.sub}</span>
                                 </div>
                             </button>
                             {!c.isProject && (

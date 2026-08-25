@@ -4,6 +4,7 @@ import { Camera, Save, MapPin, Globe, Code2, AtSign, Star, ShieldCheck, Mail, Ph
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { getAccountStorageKey, getAuthenticatedAccountType } from "@/lib/account";
+import { useRouter } from "next/navigation";
 
 const EditableField = ({ label, value, onChange, placeholder, isTextarea = false, className = "" }: any) => {
     const [isEditing, setIsEditing] = useState(false);
@@ -49,6 +50,7 @@ const EditableField = ({ label, value, onChange, placeholder, isTextarea = false
 };
 
 export default function ProfilePage() {
+    const router = useRouter();
     const [loading, setLoading] = useState(false);
     const [cepLoading, setCepLoading] = useState(false);
     const [profileType, setProfileType] = useState<"Comércio" | "Desenvolvedor">("Comércio");
@@ -175,7 +177,7 @@ export default function ProfilePage() {
                 // Curtidas reais
                 const { data: dbLikes } = await supabase
                     .from('likes')
-                    .select('project_id, projects(id, name, price, photos, deploy_url)')
+                    .select('project_id, projects(id, name, cover_url, deploy_url)')
                     .eq('user_id', session.user.id);
                 if (dbLikes) {
                     const mappedLikes = dbLikes
@@ -183,8 +185,8 @@ export default function ProfilePage() {
                         .map((l: any) => ({
                             id: l.projects.id,
                             name: l.projects.name,
-                            price: l.projects.price,
-                            cover_url: l.projects.photos?.[0] || "",
+                            price: 49.90,
+                            cover_url: l.projects.cover_url || "",
                             deploy_url: l.projects.deploy_url
                         }));
                     setLikedProjects(mappedLikes);
@@ -194,10 +196,6 @@ export default function ProfilePage() {
         } catch (err) {
             console.error("Erro ao buscar dados do Supabase para o perfil:", err);
         }
-
-        // Fallback para localStorage
-        const storedLikes = JSON.parse(localStorage.getItem('susanoo_liked_projects') || '[]');
-        setLikedProjects(storedLikes);
         };
         loadProfile();
     }, []);
@@ -659,7 +657,7 @@ export default function ProfilePage() {
                             {likedProjects.length > 0 ? (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                     {likedProjects.map((proj) => (
-                                        <div key={proj.id} className="group flex flex-col cursor-pointer">
+                                        <div key={proj.id} onClick={() => router.push(`/dashboard?productId=${proj.id}`)} className="group flex flex-col cursor-pointer">
                                             <div className="aspect-[4/3] w-full rounded-[24px] bg-[#050505] mb-4 overflow-hidden relative shadow-3xl transition-all duration-500 group-hover:-translate-y-1 border border-surface-border group-hover:border-accent/30">
                                                 {proj.cover_url ? (
                                                     <img src={proj.cover_url} className="absolute inset-0 w-full h-full object-cover grayscale-[0.5] group-hover:grayscale-0 transition-all duration-700" alt={proj.name}/>
@@ -672,7 +670,7 @@ export default function ProfilePage() {
                                                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 z-20 gap-4 scale-90 group-hover:scale-100">
                                                     <button onClick={(e) => {
                                                         e.stopPropagation();
-                                                        window.open(proj.deploy_url, '_blank');
+                                                        router.push(`/dashboard?productId=${proj.id}`);
                                                     }} className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-black hover:scale-110 active:scale-90 transition-transform shadow-2xl">
                                                         <ExternalLink className="w-4 h-4" />
                                                     </button>

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { 
   Search, 
   ExternalLink, 
@@ -26,18 +26,20 @@ import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { useCart } from "@/components/CartContext";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getAuthenticatedAccountType, getAccountStorageKey } from "@/lib/account";
 
 type MainMode = "Susanoo" | "Geral";
 
-export default function DiscoverHome() {
+function DiscoverHomeContent() {
    const router = useRouter();
+   const searchParams = useSearchParams();
    const [userType, setUserType] = useState<"Comércio" | "Desenvolvedor">("Comércio");
    const [mainMode, setMainMode] = useState<MainMode>("Susanoo");
    const [search, setSearch] = useState("");
    const [projects, setProjects] = useState<any[]>([]);
    const [loading, setLoading] = useState(true);
+   const [toastMsg, setToastMsg] = useState<string | null>(null);
    const [activeProduct, setActiveProduct] = useState<any | null>(null);
    const [favorited, setFavorited] = useState(false);
    const [liked, setLiked] = useState(false);
@@ -51,6 +53,7 @@ export default function DiscoverHome() {
    const [hasChat, setHasChat] = useState(false);
    const [hasReview, setHasReview] = useState(false);
    const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+   const [showProgressCard, setShowProgressCard] = useState(true);
 
    const { addToCart, items, setIsCartOpen } = useCart();
 
@@ -60,8 +63,8 @@ export default function DiscoverHome() {
        const { data: { session } } = await supabase.auth.getSession();
        const userId = session?.user?.id;
 
-       const [profileKey, projectKey, developersKey, chatKey, reviewKey, onboardingKey, likeKey] = await Promise.all([
-         getAccountStorageKey("store-profile-completed"), getAccountStorageKey("first-project"), getAccountStorageKey("explored-developers"), getAccountStorageKey("first-chat"), getAccountStorageKey("first-review"), getAccountStorageKey("onboarding-dismissed"), getAccountStorageKey("liked_projects")
+       const [profileKey, projectKey, developersKey, chatKey, reviewKey, onboardingKey, likeKey, progressKey] = await Promise.all([
+         getAccountStorageKey("store-profile-completed"), getAccountStorageKey("first-project"), getAccountStorageKey("explored-developers"), getAccountStorageKey("first-chat"), getAccountStorageKey("first-review"), getAccountStorageKey("onboarding-dismissed"), getAccountStorageKey("liked_projects"), getAccountStorageKey("progress-card-dismissed")
        ]);
        setStoreProfileCompleted(localStorage.getItem(profileKey) === "true" || localStorage.getItem("susanoo_store_profile_completed") === "true");
        setHasProjects(localStorage.getItem(projectKey) === "true");
@@ -69,6 +72,7 @@ export default function DiscoverHome() {
        setHasChat(localStorage.getItem(chatKey) === "true");
        setHasReview(localStorage.getItem(reviewKey) === "true");
        setOnboardingDismissed(localStorage.getItem(onboardingKey) === "true");
+       setShowProgressCard(localStorage.getItem(progressKey) !== "true");
        
        if (userId) {
          try {
@@ -129,28 +133,57 @@ export default function DiscoverHome() {
      setOnboardingDismissed(true);
    };
 
-   const toggleFavorite = async (project: any) => {
-     const { data: { session } } = await supabase.auth.getSession();
-     const userId = session?.user?.id;
-
-     const likeKey = await getAccountStorageKey("liked_projects");
-     const stored = JSON.parse(localStorage.getItem(likeKey) || '[]');
-     const exists = stored.find((p: any) => p.id === project.id);
-     let newStored;
-     if (exists) {
-         newStored = stored.filter((p: any) => p.id !== project.id);
-         if (userId) {
-           await supabase.from('likes').delete().eq('user_id', userId).eq('project_id', project.id);
-         }
-     } else {
-         newStored = [...stored, { id: project.id, name: project.name, cover_url: project.cover_url, deploy_url: project.deploy_url }];
-         if (userId) {
-           await supabase.from('likes').insert([{ user_id: userId, project_id: project.id }]);
-         }
-     }
-     localStorage.setItem(likeKey, JSON.stringify(newStored));
-     setLikedProjectIds(newStored.map((p: any) => p.id));
+   const handleDismissProgressCard = async () => {
+     localStorage.setItem(await getAccountStorageKey("progress-card-dismissed"), "true");
+     setShowProgressCard(false);
    };
+
+   const toggleFavorite = async (project: any) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
+      if (!userId) {
+        setToastMsg("Você precisa estar logado para curtir!");
+        setTimeout(() => setToastMsg(null), 3000);
+        return;
+      }
+
+      const likeKey = await getAccountStorageKey("liked_projects");
+      const stored = JSON.parse(localStorage.getItem(likeKey) || '[]');
+      const exists = stored.find((p: any) => p.id === project.id);
+      let newStored;
+      
+      try {
+        if (exists) {
+            newStored = stored.filter((p: any) => p.id !== project.id);
+            await supabase.from('likes').delete().eq('user_id', userId).eq('project_id', project.id);
+            setToastMsg(`"${project.name}" removido dos favoritos.`);
+        } else {
+            newStored = [...stored, { id: project.id, name: project.name, cover_url: project.cover_url, deploy_url: project.deploy_url }];
+            await supabase.from('likes').insert([{ user_id: userId, project_id: project.id }]);
+            setToastMsg(`"${project.name}" adicionado aos favoritos!`);
+        }
+        localStorage.setItem(likeKey, JSON.stringify(newStored));
+        setLikedProjectIds(newStored.map((p: any) => p.id));
+      } catch (err) {
+        console.error("Erro ao favoritar:", err);
+        setToastMsg("Erro ao atualizar favorito.");
+      }
+      
+      setTimeout(() => setToastMsg(null), 3000);
+    };
+
+    useEffect(() => {
+      if (!loading && projects.length > 0) {
+        const prodId = searchParams.get('productId');
+        if (prodId) {
+          const found = projects.find(p => p.id === prodId);
+          if (found) {
+            openProduct(found);
+          }
+        }
+      }
+    }, [loading, projects, searchParams]);
 
    const markDevelopersExplored = async () => {
      localStorage.setItem(await getAccountStorageKey("explored-developers"), "true");
@@ -340,27 +373,36 @@ export default function DiscoverHome() {
                )}
 
                {/* 2. Checklist Progressiva para incentivar o cliente */}
-               <div className="bg-surface border border-surface-border rounded-3xl p-6 shadow-sm">
-                 <h3 className="text-base font-black uppercase tracking-wider text-foreground/70 mb-4">Seu Progresso de Configuração</h3>
-                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+               {showProgressCard && (
+                 <div className="bg-surface border border-surface-border rounded-3xl p-6 shadow-sm relative">
+                   <button 
+                     onClick={handleDismissProgressCard} 
+                     className="absolute top-4 right-4 text-foreground/40 hover:text-foreground cursor-pointer"
+                     title="Remover card de progresso"
+                   >
+                     <X className="w-4 h-4" />
+                   </button>
+                   <h3 className="text-base font-black uppercase tracking-wider text-foreground/70 mb-4 pr-6">Seu Progresso de Configuração</h3>
+                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                      {[
-                     { label: "Perfil Preenchido", checked: storeProfileCompleted, link: "/dashboard/profile" },
-                     { label: "Profissionais explorados", checked: hasExploredDevelopers, link: "/dashboard/developers" },
-                     { label: "Explorar sites e templates", checked: hasProjects, link: "#templates-grid" }
-                   ].map((item, idx) => (
-                     <div 
-                       key={idx} 
-                       onClick={() => router.push(item.link)}
-                       className={`border rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all ${item.checked ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-600' : 'bg-background border-surface-border hover:border-foreground/20 text-foreground/60'}`}
-                     >
-                       <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${item.checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-surface-border'}`}>
-                         {item.checked && <Check className="w-3.5 h-3.5" />}
+                       { label: "Perfil Preenchido", checked: storeProfileCompleted, link: "/dashboard/profile" },
+                       { label: "Profissionais explorados", checked: hasExploredDevelopers, link: "/dashboard/developers" },
+                       { label: "Explorar sites e templates", checked: hasProjects, link: "#templates-grid" }
+                     ].map((item, idx) => (
+                       <div 
+                         key={idx} 
+                         onClick={() => router.push(item.link)}
+                         className={`border rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all ${item.checked ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-600' : 'bg-background border-surface-border hover:border-foreground/20 text-foreground/60'}`}
+                       >
+                         <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${item.checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-surface-border'}`}>
+                           {item.checked && <Check className="w-3.5 h-3.5" />}
+                         </div>
+                         <span className="text-xs font-bold">{item.label}</span>
                        </div>
-                       <span className="text-xs font-bold">{item.label}</span>
-                     </div>
-                   ))}
+                     ))}
+                   </div>
                  </div>
-               </div>
+               )}
 
                {/* 3. Onboarding de Acompanhamento (Só aparece após ter projetos) */}
                {hasProjects && (
@@ -685,6 +727,34 @@ export default function DiscoverHome() {
                    </motion.div>
                )}
            </AnimatePresence>
-       </div>
-   );
+            {/* Toast de Curtida */}
+            <AnimatePresence>
+                {toastMsg && (
+                    <motion.div 
+                        initial={{ opacity: 0, y: 50, scale: 0.95 }} 
+                        animate={{ opacity: 1, y: 0, scale: 1 }} 
+                        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                        className="fixed bottom-6 right-6 z-[9999] bg-surface border border-surface-border shadow-2xl px-6 py-4 rounded-2xl flex items-center gap-3 max-w-sm border-accent/20"
+                    >
+                        <div className="w-8 h-8 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center shrink-0 animate-pulse">
+                            <Heart className="w-4 h-4 fill-red-500 text-red-500" />
+                        </div>
+                        <p className="text-sm font-bold text-foreground">{toastMsg}</p>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+}
+
+export default function DiscoverHome() {
+    return (
+        <Suspense fallback={
+            <div className="flex-1 flex items-center justify-center py-20">
+                <div className="w-8 h-8 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
+            </div>
+        }>
+            <DiscoverHomeContent />
+        </Suspense>
+    );
 }

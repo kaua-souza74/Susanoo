@@ -75,67 +75,132 @@ function ChatPageContent() {
                 setShowOnboarding(true);
             }
 
-            // Chat de Suporte Oficial (Tabela chats de type 'support')
-            // Usando user_id para identificar o dono do chat de suporte
-            const { data: existingSupportChats, error: supportErr } = await supabase.from('chats')
+            // Buscar todos os chats nos quais este usuário participa ou de suporte atrelados a ele
+            const { data: allChatsData } = await supabase.from('chats')
+                .select('*')
+                .contains('participants', [session.user.id]);
+            
+            const { data: oldSupportChats } = await supabase.from('chats')
                 .select('*')
                 .eq('type', 'support')
                 .eq('user_id', session.user.id);
-            
-            let supportChannel: any = null;
-            if (!supportErr && existingSupportChats && existingSupportChats.length > 0) {
-                supportChannel = { ...existingSupportChats[0], isProject: false, name: 'Susanoo HQ', isStaff: true };
-            } else {
-                // Se não existir, cria o chat de suporte na tabela chats
+
+            let allChats = [...(allChatsData || [])];
+            (oldSupportChats || []).forEach(osc => {
+                if (!allChats.find(c => c.id === osc.id)) {
+                    allChats.push(osc);
+                }
+            });
+
+            // Chat de Suporte Oficial (Tabela chats de type 'support')
+            let supportChannel = allChats.find(c => c.type === 'support');
+            if (!supportChannel) {
+                // Se não existir, cria o chat de suporte na tabela chats com participants
                 const { data: newSc, error: createErr } = await supabase.from('chats').insert([{
                     name: `Suporte - ${session.user.email?.split('@')[0] || 'Cliente'}`,
                     type: 'support',
-                    user_id: session.user.id
+                    user_id: session.user.id,
+                    participants: [session.user.id]
                 }]).select().single();
-                if (!createErr && newSc) supportChannel = { ...newSc, isProject: false, name: 'Susanoo HQ', isStaff: true };
-            }
-
-            // Se veio pelo botão de contato do dev
-            let addedDevChat = null;
-            if (initDevId && initDevName) {
-                // Buscar DM existente entre cliente e dev (usando user_id do cliente)
-                const { data: exist } = await supabase.from('chats')
-                    .select('*')
-                    .eq('type', 'dm')
-                    .eq('user_id', session.user.id);
-                
-                const existingDm = exist?.find(c => c.name === `Chat com ${initDevName}`);
-                if (existingDm) {
-                    addedDevChat = { ...existingDm, isProject: false };
-                } else {
-                    const { data: newDc } = await supabase.from('chats').insert([{
-                        name: `Chat com ${initDevName}`,
-                        type: 'dm',
-                        user_id: session.user.id
-                    }]).select().single();
-                    if (newDc) addedDevChat = { ...newDc, isProject: false };
+                if (!createErr && newSc) {
+                    supportChannel = newSc;
+                    allChats.push(newSc);
                 }
             }
 
-            // Carregando todos os canais do cliente
-            let loadedChats: any[] = [];
-            if (supportChannel) loadedChats.push(supportChannel);
-
-            // Carregando DMs do cliente
-            const { data: myChats } = await supabase.from('chats').select('*').eq('type', 'dm').eq('user_id', session.user.id);
-            if (myChats) {
-                myChats.forEach(c => {
-                    if (!loadedChats.find(lc => lc.id === c.id)) loadedChats.push({...c, isProject: false});
-                });
+            // Se veio pelo botão de contato do dev (DM)
+            let addedDevChat = null;
+            if (initDevId && initDevName) {
+                // Buscar DM existente com ambos os IDs em participants
+                const existingDm = allChats.find(c => 
+                    c.type === 'dm' && 
+                    c.participants && 
+                    c.participants.includes(session.user.id) && 
+                    c.participants.includes(initDevId)
+                );
+                
+                if (existingDm) {
+                    addedDevChat = existingDm;
+                } else {
+                    const myProfileName = prof?.name || session.user.email?.split('@')[0] || 'Cliente';
+                    const { data: newDc } = await supabase.from('chats').insert([{
+                        name: `DM - ${myProfileName} & ${initDevName}`,
+                        type: 'dm',
+                        user_id: session.user.id,
+                        participants: [session.user.id, initDevId]
+                    }]).select().single();
+                    if (newDc) {
+                        addedDevChat = newDc;
+                        allChats.push(newDc);
+                    }
+                }
             }
 
-            if (addedDevChat && !loadedChats.find(lc => lc.id === addedDevChat.id)) {
-                loadedChats.push(addedDevChat);
+            // Mapear perfis dos outros participantes de DMs
+            const allParticipantIds = new Set<string>();
+            allChats.forEach(c => {
+                if (c.participants && Array.isArray(c.participants)) {
+                    c.participants.forEach((pid: string) => {
+                        if (pid !== session.user.id) {
+                            allParticipantIds.add(pid);
+                        }
+                    });
+                }
+            });
+            
+            let profilesMap: Record<string, any> = {};
+            if (allParticipantIds.size > 0) {
+                const { data: profs } = await supabase
+                    .from('profiles')
+                    .select('id, name, email, role')
+                    .in('id', Array.from(allParticipantIds));
+                if (profs) {
+                    profs.forEach(p => { profilesMap[p.id] = p; });
+                }
             }
+
+            // Formatar os canais do cliente com nomes reais
+            const loadedChats = allChats.map(c => {
+                let name = c.name;
+                let isStaff = false;
+                let sub = 'Rede Geral';
+                
+                if (c.type === 'support') {
+                    name = 'Susanoo HQ';
+                    isStaff = true;
+                    sub = 'Suporte Oficial';
+                } else if (c.type === 'dm') {
+                    const otherId = c.participants?.find((pid: string) => pid !== session.user.id);
+                    const otherProf = otherId ? profilesMap[otherId] : null;
+                    if (otherProf) {
+                        name = otherProf.name || otherProf.email?.split('@')[0] || 'Membro';
+                        sub = otherProf.role === 'developer' ? 'Desenvolvedor' : (otherProf.role === 'admin' ? 'Administrador' : 'Cliente');
+                    } else {
+                        name = c.name?.replace('Chat com ', '') || 'Conversa Privada';
+                        sub = 'Direct Message';
+                    }
+                }
+                
+                return {
+                    ...c,
+                    isProject: false,
+                    name,
+                    isStaff,
+                    sub
+                };
+            });
 
             setChannels(loadedChats);
 
-            let actCh = addedDevChat || supportChannel || loadedChats[0];
+            let actCh = null;
+            if (addedDevChat) {
+                actCh = loadedChats.find(c => c.id === addedDevChat.id);
+            } else if (supportChannel) {
+                actCh = loadedChats.find(c => c.id === supportChannel.id);
+            } else {
+                actCh = loadedChats[0];
+            }
+
             if (actCh && mounted) {
                 setActiveChannel(actCh);
                 await loadMessages(actCh);
@@ -306,7 +371,7 @@ function ChatPageContent() {
                             </div>
                             <div className="flex flex-col items-start overflow-hidden flex-1 text-left">
                                 <span className="text-sm font-bold text-foreground truncate w-full">{c.name}</span>
-                                <span className="text-[10px] text-foreground/50 font-bold uppercase">{c.isStaff ? 'Suporte Oficial' : 'Rede Geral'}</span>
+                                <span className="text-[10px] text-foreground/50 font-bold uppercase">{c.sub}</span>
                             </div>
                         </button>
                     ))}
@@ -328,7 +393,7 @@ function ChatPageContent() {
                                         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                                     </h1>
                                     <p className="text-[10px] font-black text-foreground/30 uppercase tracking-widest">
-                                        {activeChannel.isStaff ? 'Atendimento Suporte' : 'Chat Direto'}
+                                        {activeChannel.sub}
                                     </p>
                                 </div>
                             </div>

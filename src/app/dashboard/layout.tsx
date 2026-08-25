@@ -20,6 +20,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [hasExploredDevelopers, setHasExploredDevelopers] = useState(false);
   const [hasProjects, setHasProjects] = useState(false);
+  const [dbNotifications, setDbNotifications] = useState<any[]>([]);
 
   const checkProfileCompletion = () => {
     const type = localStorage.getItem("susanoo_profile_type");
@@ -31,31 +32,85 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     }
   };
 
+  const fetchDbNotifications = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .or(`user_id.is.null,user_id.eq.${userId}`)
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        setDbNotifications(data);
+      }
+    } catch (e) {
+      console.error("Erro ao carregar notificações no layout:", e);
+    }
+  };
+
+  const markNotificationAsRead = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('id', id);
+      if (!error) {
+        setDbNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+      }
+    } catch (e) {
+      console.error("Erro ao marcar notificação como lida:", e);
+    }
+  };
+
   useEffect(() => {
      setMounted(true);
+     let active = true;
+     let notifChannel: any = null;
      
      const checkType = async () => {
          const type = await getAuthenticatedAccountType();
+         if (!active) return;
          setUserType(type);
          checkProfileCompletion();
      };
      
      checkType();
       
-      // Load onboarding state for notifications
-      const loadOnboarding = async () => {
+      const loadOnboardingAndNotifications = async () => {
          const { data: { session } } = await supabase.auth.getSession();
-         const uid = session?.user?.id || 'guest';
-         setHasExploredDevelopers(localStorage.getItem(`${uid}_explored-developers`) === 'true');
-         setHasProjects(localStorage.getItem(`${uid}_first-project`) === 'true');
+         if (!active) return;
+         
+         const uid = session?.user?.id;
+         const uidStorage = uid || 'guest';
+         setHasExploredDevelopers(localStorage.getItem(`${uidStorage}_explored-developers`) === 'true');
+         setHasProjects(localStorage.getItem(`${uidStorage}_first-project`) === 'true');
+         
+         if (uid) {
+           await fetchDbNotifications(uid);
+           if (!active) return;
+           
+           const channelName = `user-notifs-${uid}`;
+           const existingChannel = supabase.channel(channelName);
+           if (existingChannel) {
+             await supabase.removeChannel(existingChannel);
+           }
+           
+           notifChannel = supabase.channel(channelName)
+             .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
+                 if (active) fetchDbNotifications(uid);
+             });
+             
+           notifChannel.subscribe();
+         }
       };
-      loadOnboarding();
+      loadOnboardingAndNotifications();
      
      window.addEventListener("profileTypeChanged", checkType);
      window.addEventListener("profileCompletedChanged", checkProfileCompletion);
      return () => {
+       active = false;
        window.removeEventListener("profileTypeChanged", checkType);
        window.removeEventListener("profileCompletedChanged", checkProfileCompletion);
+       if (notifChannel) supabase.removeChannel(notifChannel);
      };
   }, []);
 
@@ -80,7 +135,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   <div className="flex items-center gap-1.5 relative">
                     <button onClick={() => setShowNotifications(!showNotifications)} className="relative p-2 hover:bg-surface-border/50 rounded-full transition-colors cursor-pointer text-foreground/60 hover:text-foreground">
                       <Bell className="w-4 h-4" />
-                      <span className="absolute top-0 right-0 bg-red-500 w-2 h-2 rounded-full border-2 border-background"></span>
+                      {dbNotifications.some(n => !n.read) && (
+                        <span className="absolute top-0 right-0 bg-red-500 w-2 h-2 rounded-full border-2 border-background"></span>
+                      )}
                     </button>
                     <button onClick={() => setIsCartOpen(true)} className="relative p-2 hover:bg-surface-border/50 rounded-full transition-colors cursor-pointer text-foreground/60 hover:text-foreground">
                       <ShoppingCart className="w-4 h-4" />
@@ -94,37 +151,45 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
                     {/* Notifications Dropdown */}
                     {showNotifications && (
-                      <div className="absolute top-12 left-0 w-80 bg-surface border border-surface-border rounded-2xl shadow-2xl z-[9999] overflow-hidden">
+                      <div className="absolute top-12 left-0 w-80 bg-surface border border-surface-border rounded-2xl shadow-2xl z-[9999] overflow-hidden font-sans">
                         <div className="p-4 border-b border-surface-border">
                           <h4 className="text-sm font-black text-foreground">Notificações</h4>
                         </div>
-                        <div className="p-3 border-b border-surface-border/50">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-foreground/40 mb-2">Progresso</p>
-                          <div className="flex flex-col gap-2">
-                            {[
-                              { label: "Perfil Preenchido", checked: storeProfileCompleted, link: "/dashboard/profile" },
-                              { label: "Profissionais explorados", checked: hasExploredDevelopers, link: "/dashboard/developers" },
-                              { label: "Explorar sites e templates", checked: hasProjects, link: "#templates-grid" },
-                            ].map((item, idx) => (
+
+                        <div className="p-3 max-h-60 overflow-y-auto custom-scrollbar flex flex-col gap-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-foreground/40 mb-1">Alertas do Sistema</p>
+                          {dbNotifications.length === 0 ? (
+                            <div className="p-3 text-center text-xs text-foreground/40">
+                              Nenhum alerta ativo por enquanto.
+                            </div>
+                          ) : (
+                            dbNotifications.map((notif) => (
                               <div 
-                                key={idx} 
-                                onClick={() => { router.push(item.link); setShowNotifications(false); }}
-                                className={`flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer transition-all ${ item.checked ? 'bg-emerald-500/8 text-emerald-600' : 'hover:bg-surface-border/20 text-foreground/60'}`}
+                                key={notif.id}
+                                className={`p-3 rounded-xl border flex flex-col justify-between gap-1.5 transition-all ${notif.read ? 'bg-surface border-surface-border opacity-60' : 'bg-accent/5 border-accent/20'}`}
                               >
-                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${ item.checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-surface-border'}`}>
-                                  {item.checked && <Check className="w-2.5 h-2.5" />}
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="overflow-hidden">
+                                    <p className={`text-xs font-bold text-foreground flex items-center gap-1.5 ${notif.read ? '' : 'text-accent'}`}>
+                                      {notif.title}
+                                      {!notif.read && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse shrink-0" />}
+                                    </p>
+                                    <p className="text-[11px] text-foreground/60 leading-relaxed mt-0.5 break-words">{notif.content}</p>
+                                  </div>
+                                  {!notif.read && (
+                                    <button 
+                                      onClick={(e) => { e.stopPropagation(); markNotificationAsRead(notif.id); }}
+                                      className="p-1 hover:bg-emerald-500/10 text-emerald-500 rounded-lg transition-colors shrink-0 cursor-pointer"
+                                      title="Marcar como lida"
+                                    >
+                                      <Check className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                 </div>
-                                <span className="text-xs font-bold">{item.label}</span>
+                                <span className="text-[9px] text-foreground/30 font-medium block">{new Date(notif.created_at).toLocaleString('pt-BR')}</span>
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="p-3">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-foreground/40 mb-2">Mensagens</p>
-                          <div className="p-3 hover:bg-surface-border/10 cursor-pointer rounded-xl transition-colors">
-                            <p className="text-xs font-bold text-foreground mb-1">Bem-vindo à Susanoo! 🎉</p>
-                            <p className="text-[11px] text-foreground/60 leading-relaxed">Explore o marketplace e encontre o projeto ideal.</p>
-                          </div>
+                            ))
+                          )}
                         </div>
                       </div>
                     )}
