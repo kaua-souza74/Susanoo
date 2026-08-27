@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Send, Paperclip, X, FileText, Download, UserRound, Loader2, Users, Search, Hash, ShieldAlert } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { playNotificationSound } from "@/lib/utils";
 
 type Message = {
     id: string;
@@ -47,17 +48,30 @@ function ChatPageContent() {
     const [stagedFiles, setStagedFiles] = useState<File[]>([]);
     const [previews, setPreviews] = useState<string[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
+    const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+    const [pinnedChannelIds, setPinnedChannelIds] = useState<string[]>([]);
+    const [editingMessage, setEditingMessage] = useState<any | null>(null);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const chatChannelRef = useRef<any>(null);
     const typingTimeoutRef = useRef<any>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const channelsRef = useRef<any[]>([]);
+    const activeChannelRef = useRef<any>(null);
 
     const getMyName = () => {
         if (profile?.name) return profile.name;
         if (user?.email) return user.email.split('@')[0];
         return 'Usuário';
     };
+
+    useEffect(() => {
+        channelsRef.current = channels;
+    }, [channels]);
+
+    useEffect(() => {
+        activeChannelRef.current = activeChannel;
+    }, [activeChannel]);
 
     useEffect(() => {
         let mounted = true;
@@ -105,6 +119,25 @@ function ChatPageContent() {
                 if (!createErr && newSc) {
                     supportChannel = newSc;
                     allChats.push(newSc);
+                }
+            }
+
+            const boughtSite = searchParams.get('boughtSite');
+            if (supportChannel && boughtSite) {
+                const { data: existingInstructions } = await supabase.from('messages')
+                    .select('id')
+                    .eq('chat_id', supportChannel.id)
+                    .like('content', `%Confirmamos a compra do site/template ${boughtSite}%`);
+
+                if (!existingInstructions || existingInstructions.length === 0) {
+                    await supabase.from('messages').insert([{
+                        chat_id: supportChannel.id,
+                        user_id: '00000000-0000-0000-0000-000000000000',
+                        sender_name: 'Sistema Susanoo',
+                        content: `🤖 **Sistema Susanoo**: Olá! Confirmamos a compra do site/template **${boughtSite}**. 
+
+Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aqui mesmo os detalhes de como deseja o seu projeto (cores preferidas, seções desejadas, logotipos e quaisquer outras instruções adicionais). Ficamos no aguardo das suas especificações!`
+                    }]);
                 }
             }
 
@@ -193,7 +226,9 @@ function ChatPageContent() {
             setChannels(loadedChats);
 
             let actCh = null;
-            if (addedDevChat) {
+            if (boughtSite && supportChannel) {
+                actCh = loadedChats.find(c => c.id === supportChannel.id) || supportChannel;
+            } else if (addedDevChat) {
                 actCh = loadedChats.find(c => c.id === addedDevChat.id);
             } else if (supportChannel) {
                 actCh = loadedChats.find(c => c.id === supportChannel.id);
@@ -211,20 +246,80 @@ function ChatPageContent() {
         return () => { mounted = false; };
     }, [router, initDevId, initDevName]);
 
+    // Solicita permissão para notificações do navegador uma única vez se ativado
+    useEffect(() => {
+        if (typeof window !== "undefined" && localStorage.getItem("susanoo_chat_alerts") !== "false") {
+            if (Notification.permission === "default") {
+                Notification.requestPermission();
+            }
+        }
+    }, []);
+
+    // Listener global para mensagens em todos os canais (som pop, contador de não lidas, notificação nativa, fixar topo)
+    useEffect(() => {
+        if (!user) return;
+
+        const globalCh = supabase.channel('global-chat-client-listener')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload: any) => {
+                const newMsg = payload.new;
+                if (!newMsg) return;
+
+                const currentChannels = channelsRef.current;
+                const currentActive = activeChannelRef.current;
+
+                // Verificar se a mensagem pertence a algum dos nossos canais
+                const targetChannelId = newMsg.project_id || newMsg.chat_id;
+                const matchingChannel = currentChannels.find(c => c.id === targetChannelId);
+                if (!matchingChannel) return;
+
+                // Se a mensagem foi enviada pelo próprio usuário, ignoramos
+                if (newMsg.user_id === user.id) return;
+
+                // Fixar conversa: move o canal para o topo adicionando o ID na lista de fixados
+                setPinnedChannelIds(prev => [targetChannelId, ...prev.filter(id => id !== targetChannelId)]);
+
+                const isActive = currentActive && currentActive.id === targetChannelId;
+                const isAlertEnabled = localStorage.getItem("susanoo_chat_alerts") !== "false";
+
+                if (isActive) {
+                    // Adiciona na tela se o chat correspondente estiver aberto
+                    setMessages(prev => prev.find(m => m.id === newMsg.id) ? prev : [...prev, newMsg]);
+                } else {
+                    // Incrementa o contador de não lidas
+                    setUnreadCounts(prev => ({
+                        ...prev,
+                        [targetChannelId]: (prev[targetChannelId] || 0) + 1
+                    }));
+                }
+
+                // Tocar som pop e disparar notificação nativa caso habilitado
+                if (isAlertEnabled) {
+                    playNotificationSound();
+
+                    if (typeof window !== "undefined" && Notification.permission === "granted") {
+                        new Notification(matchingChannel.name || "Nova mensagem no SUSANOO", {
+                            body: newMsg.content || "Enviou um anexo",
+                        });
+                    }
+                }
+            })
+            .subscribe();
+
+        return () => { supabase.removeChannel(globalCh); };
+    }, [user]);
+
     useEffect(() => {
         if (!activeChannel) return;
         const cid = activeChannel.id;
-        const field = activeChannel.isProject ? 'project_id' : 'chat_id';
-        const ch = supabase.channel(`chat-client-${cid}`, { config: { broadcast: { ack: true } } })
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload: any) => {
-                if (payload.new[field] === cid) {
-                    setMessages(prev => prev.find(m => m.id === payload.new.id) ? prev : [...prev, payload.new]);
-                }
-            })
+        const ch = supabase.channel(`chat-room-${cid}`, { config: { broadcast: { ack: true } } })
             .on('broadcast', { event: 'sync' }, ({ payload }) => {
                 const msg = payload?.newMessage;
+                const field = activeChannel.isProject ? 'project_id' : 'chat_id';
                 if (msg && msg[field] === cid) {
-                    setMessages(prev => prev.find(m => m.id === msg.id) ? prev : [...prev, msg]);
+                    setMessages(prev => {
+                        if (prev.find(m => m.id === msg.id)) return prev;
+                        return [...prev, msg];
+                    });
                 }
             })
             .on('broadcast', { event: 'typing' }, (raw: any) => {
@@ -235,7 +330,7 @@ function ChatPageContent() {
             .subscribe();
         chatChannelRef.current = ch;
         return () => { supabase.removeChannel(ch); };
-    }, [activeChannel?.id]);
+    }, [activeChannel?.id, user]);
 
     useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
@@ -251,6 +346,12 @@ function ChatPageContent() {
         setStagedFiles([]);
         setPreviews([]);
         setTypingUsers([]);
+        
+        setUnreadCounts(prev => ({
+            ...prev,
+            [channel.id]: 0
+        }));
+
         await loadMessages(channel);
     };
 
@@ -287,6 +388,16 @@ function ChatPageContent() {
         const msgContent = content;
         const filesToSend = [...stagedFiles];
         setContent(""); setStagedFiles([]); setPreviews([]);
+
+        if (editingMessage) {
+            const { error } = await supabase.from('messages').update({ content: msgContent }).eq('id', editingMessage.id);
+            if (!error) {
+                setMessages(prev => prev.map(m => m.id === editingMessage.id ? { ...m, content: msgContent } : m));
+                chatChannelRef.current?.send({ type: 'broadcast', event: 'sync', payload: {} });
+            }
+            setEditingMessage(null);
+            return;
+        }
 
         const base = activeChannel.isProject ? { project_id: activeChannel.id } : { chat_id: activeChannel.id };
 
@@ -360,21 +471,43 @@ function ChatPageContent() {
                     </div>
                 </div>
                 <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                    {channels.filter(c => c.name?.toLowerCase().includes(searchTerm.toLowerCase())).map(c => (
-                        <button 
-                            key={c.id}
-                            onClick={() => handleSelectChannel(c)}
-                            className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${activeChannel?.id === c.id ? 'bg-accent/10 border border-accent/20 shadow-sm' : 'hover:bg-surface border border-transparent hover:shadow-sm'}`}
-                        >
-                            <div className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center font-black text-sm uppercase transition-colors ${activeChannel?.id === c.id ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-surface-border text-foreground/50 group-hover:bg-accent/20 group-hover:text-accent'}`}>
-                                {c.isStaff ? <ShieldAlert className="w-5 h-5"/> : c.name?.substring(0,2)}
-                            </div>
-                            <div className="flex flex-col items-start overflow-hidden flex-1 text-left">
-                                <span className="text-sm font-bold text-foreground truncate w-full">{c.name}</span>
-                                <span className="text-[10px] text-foreground/50 font-bold uppercase">{c.sub}</span>
-                            </div>
-                        </button>
-                    ))}
+                    {[...channels]
+                        .sort((a, b) => {
+                            const aIndex = pinnedChannelIds.indexOf(a.id);
+                            const bIndex = pinnedChannelIds.indexOf(b.id);
+                            if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+                            if (aIndex !== -1) return -1;
+                            if (bIndex !== -1) return 1;
+                            return 0;
+                        })
+                        .filter(c => c.name?.toLowerCase().includes(searchTerm.toLowerCase())).map(c => {
+                            const unreadCount = unreadCounts[c.id] || 0;
+                            return (
+                                <button 
+                                    key={c.id}
+                                    onClick={() => handleSelectChannel(c)}
+                                    className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${activeChannel?.id === c.id ? 'bg-accent/10 border border-accent/20 shadow-sm' : 'hover:bg-surface border border-transparent hover:shadow-sm'}`}
+                                >
+                                    <div className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center font-black text-sm uppercase transition-colors relative ${activeChannel?.id === c.id ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-surface-border text-foreground/50 group-hover:bg-accent/20 group-hover:text-accent'}`}>
+                                        {c.isStaff ? <ShieldAlert className="w-5 h-5"/> : c.name?.substring(0,2)}
+                                        {pinnedChannelIds.includes(c.id) && (
+                                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-accent rounded-full border border-background" title="Fixada recentemente" />
+                                        )}
+                                    </div>
+                                    <div className="flex flex-col items-start overflow-hidden flex-1 text-left">
+                                        <span className="text-sm font-bold text-foreground truncate w-full flex items-center justify-between gap-1">
+                                            {c.name}
+                                            {unreadCount > 0 && (
+                                                <span className="text-[9px] bg-accent text-white px-1.5 py-0.5 rounded-md font-bold uppercase shrink-0 animate-pulse">
+                                                    {unreadCount} não lida{unreadCount > 1 ? 's' : ''}
+                                                </span>
+                                            )}
+                                        </span>
+                                        <span className="text-[10px] text-foreground/50 font-bold uppercase">{c.sub}</span>
+                                    </div>
+                                </button>
+                            );
+                        })}
                 </div>
             </div>
 
@@ -423,7 +556,7 @@ function ChatPageContent() {
                                 return (
                                     <motion.div key={msg.id}
                                         initial={{ opacity: 0, scale:0.95, originY: 1 }} animate={{ opacity: 1, scale:1 }}
-                                        className={`flex w-full gap-3 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                                        className={`flex w-full gap-3 group ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
 
                                         {isStaff ? (
                                             <div className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-[10px] font-black uppercase bg-accent border-accent/40 text-white shadow-[0_0_12px_rgba(var(--accent-rgb),0.5)]">
@@ -471,6 +604,14 @@ function ChatPageContent() {
                                                     {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                 </p>
                                             </div>
+                                            <div className={`flex gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ${isMe ? 'flex-row-reverse' : ''}`}>
+                                                {isMe && (
+                                                    <>
+                                                        <button onClick={() => { setEditingMessage(msg); setContent(msg.content || ""); }} className="text-[9px] font-black text-emerald-500 uppercase tracking-widest cursor-pointer hover:underline">Editar</button>
+                                                        <button onClick={async () => { if (confirm("Deseja apagar esta mensagem?")) { await supabase.from('messages').delete().eq('id', msg.id); setMessages(prev => prev.filter(m => m.id !== msg.id)); } }} className="text-[9px] font-black text-red-500 uppercase tracking-widest cursor-pointer hover:underline">Apagar</button>
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
                                     </motion.div>
                                 );
@@ -490,6 +631,12 @@ function ChatPageContent() {
 
                         <div className="px-6 pb-6 bg-background">
                             <div className="max-w-4xl mx-auto flex flex-col gap-3">
+                                {editingMessage && (
+                                    <div className="flex justify-between items-center px-4 py-2 bg-accent/20 rounded-xl border border-accent/30 text-xs font-bold text-white mb-1 animate-pulse">
+                                        <span>Editando mensagem...</span>
+                                        <button onClick={() => { setEditingMessage(null); setContent(""); }} className="text-red-400 hover:text-red-300 uppercase tracking-wider text-[10px] cursor-pointer">Cancelar</button>
+                                    </div>
+                                )}
                                 <AnimatePresence>
                                     {previews.length > 0 && (
                                         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="flex gap-3 flex-wrap p-3 bg-surface border border-surface-border rounded-2xl">

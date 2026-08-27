@@ -3,6 +3,7 @@ import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { MapPin, Star, ShieldCheck, Mail, ArrowLeft, Globe, Code2, AtSign, Briefcase, ExternalLink } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { ReviewsSection } from "@/components/ReviewsSection";
 
 const MOCK_DEVS = [
     { 
@@ -173,6 +174,10 @@ export default function DeveloperProfilePage({ params }: { params: Promise<{ id:
                             ))}
                         </div>
                     </motion.div>
+
+                    <div className="mt-12 pt-8 border-t border-surface-border">
+                        <ReviewsSection developerId={dev.id.toString()} />
+                    </div>
                 </div>
 
                 <div className="space-y-6">

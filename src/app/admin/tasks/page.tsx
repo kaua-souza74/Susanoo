@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Plus, MoreHorizontal, LayoutList, ChevronDown, Check, X, Trash2 } from "lucide-react";
+import { Plus, MoreHorizontal, LayoutList, ChevronDown, Check, X, Trash2, Search } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const TEAM = [
@@ -18,16 +18,23 @@ export default function AdminTrello() {
    // Trello Menu Customizado
    const [filterProject, setFilterProject] = useState<string>("all");
    const [isDropdown, setIsDropdown] = useState(false);
+   const [searchQuery, setSearchQuery] = useState("");
 
    // Criação de Modal Options
    const [isModalOpen, setIsModalOpen] = useState(false);
    const [newTask, setNewTask] = useState({ title: '', assignee: TEAM[0].name, project_id: 'all' });
 
+   const getProjectDisplayName = (proj: any) => {
+      if (!proj) return "Geral HQ";
+      const email = proj.profiles?.email || "Sem Cliente";
+      return `${email} - ${proj.name}`;
+   };
+
    const load = async () => {
-      const { data: projs } = await supabase.from('projects').select('*');
+      const { data: projs } = await supabase.from('projects').select('*, profiles(email, name)');
       setProjects(projs || []);
       
-      const { data: allTasks } = await supabase.from('tasks').select('*, projects(name)').order('created_at', { ascending: false });
+      const { data: allTasks } = await supabase.from('tasks').select('*, projects(*, profiles(email, name))').order('created_at', { ascending: false });
       setTasks(allTasks || []);
    };
 
@@ -92,7 +99,12 @@ export default function AdminTrello() {
    };
 
    const displayTasks = filterProject === 'all' ? tasks : tasks.filter(t => t.project_id === filterProject);
-   const selectedProjectName = filterProject === 'all' ? 'Universo Global (Todos Canais)' : projects.find(p => p.id === filterProject)?.name || 'Todos';
+   
+   const selectedProjectName = filterProject === 'all' 
+      ? 'Todos os Projetos Ativos' 
+      : projects.find(p => p.id === filterProject) 
+         ? getProjectDisplayName(projects.find(p => p.id === filterProject)) 
+         : 'Todos';
 
    return (
        <div className="flex-1 overflow-x-hidden p-8 md:p-12 2xl:p-16 bg-[#050505] flex flex-col h-full relative">
@@ -107,24 +119,55 @@ export default function AdminTrello() {
                <div className="flex flex-col sm:flex-row gap-4 items-center">
                    
                    <div className="relative w-full sm:w-auto z-40">
-                       <button onClick={() => setIsDropdown(!isDropdown)} className="bg-[#111] border border-[#222] hover:border-accent text-white px-6 py-4 rounded-2xl text-sm font-bold flex items-center justify-between w-full sm:w-[300px] transition-all shadow-2xl">
-                           <span className="truncate">{selectedProjectName}</span>
-                           <ChevronDown className={`w-4 h-4 text-accent transition-transform ${isDropdown ? 'rotate-180' : ''}`}/>
+                       <button onClick={() => setIsDropdown(!isDropdown)} className="bg-[#111] border border-[#222] hover:border-accent text-white px-6 py-4 rounded-2xl text-sm font-bold flex items-center justify-between w-full sm:w-[320px] transition-all shadow-2xl">
+                           <span className="truncate text-left pr-2">{selectedProjectName}</span>
+                           <ChevronDown className={`w-4 h-4 text-accent shrink-0 transition-transform ${isDropdown ? 'rotate-180' : ''}`}/>
                        </button>
 
                        <AnimatePresence>
                        {isDropdown && (
-                           <motion.div initial={{opacity:0, y:-10}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-10}} className="absolute top-[110%] left-0 w-full min-w-[300px] bg-[#0a0a0a] border border-[#222] rounded-2xl shadow-3xl flex flex-col overflow-hidden">
-                               <button onClick={() => {setFilterProject('all'); setIsDropdown(false)}} className={`p-4 text-sm font-bold text-left transition-colors flex items-center justify-between ${filterProject === 'all' ? 'bg-accent/20 text-white' : 'text-[#888] hover:text-white hover:bg-[#111]'}`}>
-                                   Universo Global (Todos)
-                                   {filterProject === 'all' && <Check className="w-4 h-4 text-accent"/>}
-                               </button>
-                               {projects.map(p => (
-                                   <button key={p.id} onClick={() => {setFilterProject(p.id); setIsDropdown(false)}} className={`p-4 text-sm font-bold text-left border-t border-[#222] transition-colors flex items-center justify-between ${filterProject === p.id ? 'bg-accent/20 text-white' : 'text-[#888] hover:text-white hover:bg-[#111]'}`}>
-                                       {p.name}
-                                       {filterProject === p.id && <Check className="w-4 h-4 text-accent"/>}
+                           <motion.div 
+                              initial={{opacity:0, y:-10, scale: 0.98}} 
+                              animate={{opacity:1, y:0, scale: 1}} 
+                              exit={{opacity:0, y:-10, scale: 0.98}} 
+                              className="absolute top-[110%] right-0 w-full min-w-[320px] bg-[#0a0a0c]/95 border border-[#222] rounded-3xl shadow-3xl flex flex-col overflow-hidden backdrop-blur-xl z-50 p-2 gap-1"
+                           >
+                               <div className="p-2 border-b border-[#222] mb-1 flex items-center gap-2">
+                                   <Search className="w-4 h-4 text-foreground/30 shrink-0" />
+                                   <input 
+                                       type="text" 
+                                       placeholder="Buscar e-mail ou site..." 
+                                       value={searchQuery}
+                                       onChange={(e) => setSearchQuery(e.target.value)}
+                                       className="w-full bg-[#111] border border-[#222] px-4 py-2 rounded-xl text-xs font-bold text-white placeholder-foreground/30 focus:border-accent outline-none transition-colors"
+                                   />
+                               </div>
+                               <div className="max-h-[280px] overflow-y-auto custom-scrollbar flex flex-col gap-1 pr-1">
+                                   <button 
+                                       onClick={() => {setFilterProject('all'); setIsDropdown(false); setSearchQuery("");}} 
+                                       className={`p-3.5 text-xs font-black uppercase tracking-wider rounded-xl text-left transition-colors flex items-center justify-between ${filterProject === 'all' ? 'bg-accent/20 text-white' : 'text-[#888] hover:text-white hover:bg-[#111]'}`}
+                                   >
+                                       Todos os Projetos Ativos
+                                       {filterProject === 'all' && <Check className="w-4 h-4 text-accent"/>}
                                    </button>
-                               ))}
+                                   {projects
+                                       .filter(p => {
+                                           const nameMatch = (p.name || "").toLowerCase().includes(searchQuery.toLowerCase());
+                                           const emailMatch = (p.profiles?.email || "").toLowerCase().includes(searchQuery.toLowerCase());
+                                           return nameMatch || emailMatch;
+                                       })
+                                       .map(p => (
+                                           <button 
+                                               key={p.id} 
+                                               onClick={() => {setFilterProject(p.id); setIsDropdown(false); setSearchQuery("");}} 
+                                               className={`p-3.5 text-xs font-bold rounded-xl text-left transition-colors flex flex-col border-t border-[#111] ${filterProject === p.id ? 'bg-accent/20 text-white' : 'text-[#888] hover:text-white hover:bg-[#111]'}`}
+                                           >
+                                               <span className="text-[10px] font-black text-accent/80 block uppercase tracking-wider">{p.profiles?.email || 'Sem Cliente'}</span>
+                                               <span className="text-sm font-bold text-white mt-0.5">{p.name}</span>
+                                           </button>
+                                       ))
+                                   }
+                               </div>
                            </motion.div>
                        )}
                        </AnimatePresence>
@@ -165,8 +208,11 @@ export default function AdminTrello() {
                                           <Trash2 className="w-3.5 h-3.5" />
                                        </button>
 
-                                       <div className="mb-4">
-                                           <span className="bg-[#111] border border-[#222] text-[9px] uppercase font-black tracking-[0.2em] text-[#555] px-3 py-1.5 rounded-lg">
+                                       <div className="mb-4 flex flex-col gap-0.5">
+                                           <span className="text-[10px] font-bold text-accent">
+                                               {task.projects?.profiles?.email || 'Geral'}
+                                           </span>
+                                           <span className="bg-[#111] border border-[#222] text-[9px] uppercase font-black tracking-[0.2em] text-[#555] px-3 py-1.5 rounded-lg w-fit">
                                                {task.projects?.name || 'Geral HQ'}
                                            </span>
                                        </div>
@@ -212,10 +258,10 @@ export default function AdminTrello() {
                            
                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                <div>
-                                   <label className="block text-[10px] font-black text-[#555] mb-3 uppercase tracking-[0.3em]">Canal / Projeto</label>
+                                   <label className="block text-[10px] font-black text-[#555] mb-3 uppercase tracking-[0.3em]">Projeto Associado</label>
                                    <select value={newTask.project_id} onChange={e => setNewTask({...newTask, project_id: e.target.value})} className="w-full bg-[#111] border border-[#222] p-5 text-white rounded-2xl outline-none focus:border-accent appearance-none cursor-pointer">
-                                       <option value="all">Universo Global</option>
-                                       {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                       <option value="all">Geral HQ (Sem Projeto)</option>
+                                       {projects.map(p => <option key={p.id} value={p.id}>{getProjectDisplayName(p)}</option>)}
                                    </select>
                                </div>
                                <div>

@@ -15,6 +15,8 @@ export function AddSiteForm({ isAdmin = false }: { isAdmin?: boolean }) {
         price: "",
         installments: false,
         category: "Landing Page",
+        product_type: "ready_made",
+        deploy_url: "",
     });
 
     const [photos, setPhotos] = useState<File[]>([]);
@@ -111,6 +113,8 @@ export function AddSiteForm({ isAdmin = false }: { isAdmin?: boolean }) {
                 specifications: specsObj,
                 photos: uploadedUrls,
                 category: formData.category,
+                product_type: formData.product_type,
+                deploy_url: formData.deploy_url,
                 status: isAdmin ? 'published' : 'pending_review',
                 show_in_gallery: true,
             };
@@ -122,7 +126,7 @@ export function AddSiteForm({ isAdmin = false }: { isAdmin?: boolean }) {
             showToast("Site cadastrado com sucesso!");
             
             // Clear form
-            setFormData({ name: "", description: "", price: "", installments: false, category: "Landing Page" });
+            setFormData({ name: "", description: "", price: "", installments: false, category: "Landing Page", product_type: "ready_made", deploy_url: "" });
             setPhotos([]);
             setPhotoUrls([]);
             setSpecs([{ key: "", value: "" }]);
@@ -181,15 +185,24 @@ export function AddSiteForm({ isAdmin = false }: { isAdmin?: boolean }) {
                             <label className="text-xs font-bold text-foreground/40 uppercase tracking-widest mb-2 block">Nome do Site</label>
                             <input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent outline-none transition-colors" placeholder="Ex: SaaS E-commerce" />
                         </div>
-                        <div>
-                            <label className="text-xs font-bold text-foreground/40 uppercase tracking-widest mb-2 block">Categoria</label>
-                            <select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent outline-none transition-colors">
-                                <option>Landing Page</option>
-                                <option>E-commerce</option>
-                                <option>Dashboard / SaaS</option>
-                                <option>Blog</option>
-                                <option>Aplicativo Web</option>
-                            </select>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-xs font-bold text-foreground/40 uppercase tracking-widest mb-2 block">Categoria</label>
+                                <select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent outline-none transition-colors">
+                                    <option>Landing Page</option>
+                                    <option>E-commerce</option>
+                                    <option>Dashboard / SaaS</option>
+                                    <option>Blog</option>
+                                    <option>Aplicativo Web</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-foreground/40 uppercase tracking-widest mb-2 block">Tipo de Produto</label>
+                                <select value={formData.product_type} onChange={e => setFormData({...formData, product_type: e.target.value})} className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent outline-none transition-colors">
+                                    <option value="ready_made">Site Pronto</option>
+                                    <option value="template">Template</option>
+                                </select>
+                            </div>
                         </div>
                         <div>
                             <label className="text-xs font-bold text-foreground/40 uppercase tracking-widest mb-2 block">Descrição Completa</label>
@@ -210,6 +223,11 @@ export function AddSiteForm({ isAdmin = false }: { isAdmin?: boolean }) {
                                     Aceita Parcelamento?
                                 </button>
                             </div>
+                        </div>
+
+                        <div>
+                            <label className="text-xs font-bold text-foreground/40 uppercase tracking-widest mb-2 block">Link de Demonstração (Demo/Preview URL)</label>
+                            <input value={formData.deploy_url} onChange={e => setFormData({...formData, deploy_url: e.target.value})} className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent outline-none transition-colors" placeholder="https://exemplo.com" />
                         </div>
 
                         <div>

@@ -26,6 +26,7 @@ import {
     Edit3
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { playNotificationSound } from "@/lib/utils";
 
 type Message = { 
     id: string; 
@@ -79,6 +80,8 @@ export default function AdminTeamsChat() {
    const [typingUsers, setTypingUsers] = useState<string[]>([]);
    const [replyingTo, setReplyingTo] = useState<Message | null>(null);
    const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+   const [pinnedChannelIds, setPinnedChannelIds] = useState<string[]>([]);
    
    // Group CRUD State
    const [isModalOpen, setIsModalOpen] = useState(false);
@@ -89,10 +92,12 @@ export default function AdminTeamsChat() {
    const [stagedFiles, setStagedFiles] = useState<File[]>([]);
    const [previews, setPreviews] = useState<string[]>([]);
    
-   const messagesEndRef = useRef<HTMLDivElement>(null);
-   const chatChannelRef = useRef<any>(null);
-   const typingTimeoutRef = useRef<any>(null);
-   const fileInputRef = useRef<HTMLInputElement>(null);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const chatChannelRef = useRef<any>(null);
+    const typingTimeoutRef = useRef<any>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const channelsRef = useRef<any[]>([]);
+    const activeChannelRef = useRef<any>(null);
 
    // Retorna o nome do staff de forma confiável
    const getMyName = (currentUser = user, currentProfile = adminProfile) => {
@@ -109,51 +114,110 @@ export default function AdminTeamsChat() {
            return currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || currentUser.email.split('@')[0];
        }
        return 'Staff';
-   };
+    };
 
-   useEffect(() => {
-       fetchData();
-       return () => { supabase.removeAllChannels(); }
-   }, []);
+    useEffect(() => {
+        channelsRef.current = channels;
+    }, [channels]);
+
+    useEffect(() => {
+        activeChannelRef.current = activeChannel;
+    }, [activeChannel]);
+ 
+    useEffect(() => {
+        fetchData();
+        return () => { supabase.removeAllChannels(); }
+    }, []);
 
 
    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
    useEffect(() => {
-       if (!activeChannel) return;
-       
-       const id = activeChannel.id;
-       const filterField = activeChannel.isProject ? 'project_id' : 'chat_id';
-       
-       const channel = supabase.channel(`chat-${id}`, { 
-           config: { broadcast: { ack: true } } 
-       })
-       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload: any) => {
-           if (payload.new[filterField] === id) {
-               setMessages(prev => {
-                   if (prev.find(m => m.id === payload.new.id)) return prev;
-                   return [...prev, payload.new];
-               });
-           }
-       })
-       .on('broadcast', { event: 'sync' }, ({ payload }) => {
-           if (payload?.newMessage && payload.newMessage[filterField] === id) {
-               setMessages(prev => {
-                   if (prev.find(m => m.id === payload.newMessage.id)) return prev;
-                   return [...prev, payload.newMessage];
-               });
-           }
-       })
-       .on('broadcast', { event: 'typing' }, ({ payload }) => {
-           const { name, isTyping } = payload;
-           if (name === getMyName()) return;
-           setTypingUsers(prev => isTyping ? [...new Set([...prev, name])] : prev.filter(n => n !== name));
-       })
-       .subscribe();
+        if (typeof window !== "undefined" && localStorage.getItem("susanoo_chat_alerts") !== "false") {
+            if (Notification.permission === "default") {
+                Notification.requestPermission();
+            }
+        }
+    }, []);
 
-       chatChannelRef.current = channel;
-       return () => { supabase.removeChannel(channel); }
-   }, [activeChannel?.id]);
+    // Listener global para mensagens em todos os canais (som pop, contador de não lidas, notificação nativa, fixar topo)
+    useEffect(() => {
+        if (!user) return;
+
+        const globalCh = supabase.channel('global-chat-admin-listener')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload: any) => {
+                const newMsg = payload.new;
+                if (!newMsg) return;
+
+                const currentChannels = channelsRef.current;
+                const currentActive = activeChannelRef.current;
+
+                // Verificar se a mensagem pertence a algum dos nossos canais
+                const targetChannelId = newMsg.project_id || newMsg.chat_id;
+                const matchingChannel = currentChannels.find(c => c.id === targetChannelId);
+                if (!matchingChannel) return;
+
+                // Se a mensagem foi enviada pelo próprio usuário, ignoramos
+                if (newMsg.user_id === user.id) return;
+
+                // Fixar conversa: move o canal para o topo adicionando o ID na lista de fixados
+                setPinnedChannelIds(prev => [targetChannelId, ...prev.filter(id => id !== targetChannelId)]);
+
+                const isActive = currentActive && currentActive.id === targetChannelId;
+                const isAlertEnabled = localStorage.getItem("susanoo_chat_alerts") !== "false";
+
+                if (isActive) {
+                    // Adiciona na tela se o chat correspondente estiver aberto
+                    setMessages(prev => prev.find(m => m.id === newMsg.id) ? prev : [...prev, newMsg]);
+                } else {
+                    // Incrementa o contador de não lidas
+                    setUnreadCounts(prev => ({
+                        ...prev,
+                        [targetChannelId]: (prev[targetChannelId] || 0) + 1
+                    }));
+                }
+
+                // Tocar som pop e disparar notificação nativa caso habilitado
+                if (isAlertEnabled) {
+                    playNotificationSound();
+
+                    if (typeof window !== "undefined" && Notification.permission === "granted") {
+                        new Notification(matchingChannel.name || "Nova mensagem - Administrador", {
+                            body: newMsg.content || "Enviou um anexo",
+                        });
+                    }
+                }
+            })
+            .subscribe();
+
+        return () => { supabase.removeChannel(globalCh); };
+    }, [user]);
+
+    useEffect(() => {
+        if (!activeChannel) return;
+        const id = activeChannel.id;
+        const filterField = activeChannel.isProject ? 'project_id' : 'chat_id';
+        const channel = supabase.channel(`chat-room-${id}`, { 
+            config: { broadcast: { ack: true } } 
+        })
+        .on('broadcast', { event: 'sync' }, ({ payload }) => {
+            if (payload?.newMessage && payload.newMessage[filterField] === id) {
+                setMessages(prev => {
+                    if (prev.find(m => m.id === payload.newMessage.id)) return prev;
+                    return [...prev, payload.newMessage];
+                });
+            }
+        })
+        .on('broadcast', { event: 'typing' }, ({ payload }) => {
+            const { name, isTyping } = payload;
+            if (name === getMyName()) return;
+            setTypingUsers(prev => isTyping ? [...new Set([...prev, name])] : prev.filter(n => n !== name));
+        })
+        .subscribe();
+
+        chatChannelRef.current = channel;
+        return () => { supabase.removeChannel(channel); }
+    }, [activeChannel?.id, user]);
 
    const fetchData = async () => {
        const { data: { session } } = await supabase.auth.getSession();
@@ -263,15 +327,21 @@ export default function AdminTeamsChat() {
         if (data) setMessages(data as any || []);
    };
 
-   const handleSelectChannel = async (channel: any) => {
-       setActiveChannel(channel);
-       setReplyingTo(null);
-       setEditingMessage(null);
-       setStagedFiles([]);
-       setPreviews([]);
-       setTypingUsers([]);
-       await loadMessages(channel);
-   };
+    const handleSelectChannel = async (channel: any) => {
+        setActiveChannel(channel);
+        setReplyingTo(null);
+        setEditingMessage(null);
+        setStagedFiles([]);
+        setPreviews([]);
+        setTypingUsers([]);
+        
+        setUnreadCounts(prev => ({
+            ...prev,
+            [channel.id]: 0
+        }));
+
+        await loadMessages(channel);
+    };
 
    const handleCreateGroup = async () => {
        if (!groupName.trim()) return;
@@ -464,28 +534,50 @@ export default function AdminTeamsChat() {
                    </div>
                </div>
                <div className="flex-1 overflow-y-auto p-4 space-y-1">
-                   {channels.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(c => (
-                       <div key={c.id} className="group relative flex items-center">
-                            <button 
-                                onClick={() => handleSelectChannel(c)}
-                                className={`flex-1 flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] ${activeChannel?.id === c.id ? 'bg-accent/10 border border-accent/20 shadow-sm' : 'hover:bg-[#111] hover:shadow-sm'}`}
-                            >
-                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-black text-sm transition-colors ${activeChannel?.id === c.id ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-[#222] text-[#888] group-hover:bg-accent/20 group-hover:text-accent'}`}>
-                                    {c.name.substring(0,2).toUpperCase()}
+                    {[...channels]
+                        .sort((a, b) => {
+                            const aIndex = pinnedChannelIds.indexOf(a.id);
+                            const bIndex = pinnedChannelIds.indexOf(b.id);
+                            if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+                            if (aIndex !== -1) return -1;
+                            if (bIndex !== -1) return 1;
+                            return 0;
+                        })
+                        .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(c => {
+                            const unreadCount = unreadCounts[c.id] || 0;
+                            return (
+                                <div key={c.id} className="group relative flex items-center">
+                                     <button 
+                                         onClick={() => handleSelectChannel(c)}
+                                         className={`flex-1 flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] ${!c.isProject ? 'pr-16' : ''} ${activeChannel?.id === c.id ? 'bg-accent/10 border border-accent/20 shadow-sm' : 'hover:bg-[#111] hover:shadow-sm'}`}
+                                     >
+                                         <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-black text-sm transition-colors relative ${activeChannel?.id === c.id ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-[#222] text-[#888] group-hover:bg-accent/20 group-hover:text-accent'}`}>
+                                             {c.name.substring(0,2).toUpperCase()}
+                                             {pinnedChannelIds.includes(c.id) && (
+                                                 <span className="absolute -top-1 -right-1 w-2 h-2 bg-accent rounded-full border border-[#0a0a0a]" title="Fixada recentemente" />
+                                             )}
+                                         </div>
+                                         <div className="flex flex-col items-start overflow-hidden flex-1 min-w-0">
+                                              <span className="text-sm font-bold text-white truncate w-full flex items-center justify-between gap-1">
+                                                  <span className="truncate">{c.name}</span>
+                                                  {unreadCount > 0 && (
+                                                      <span className="text-[9px] bg-accent text-white px-1.5 py-0.5 rounded-md font-bold uppercase shrink-0 animate-pulse">
+                                                          {unreadCount} n.l.
+                                                      </span>
+                                                  )}
+                                              </span>
+                                              <span className="text-[10px] text-[#555] font-black uppercase">{c.isProject ? 'Software' : c.sub}</span>
+                                         </div>
+                                     </button>
+                                     {!c.isProject && (
+                                         <div className="absolute right-2 opacity-0 group-hover:opacity-100 flex gap-1 transition-all">
+                                             <button onClick={() => { setIsEditingChat(c); setGroupName(c.name); setIsModalOpen(true); }} className="p-2 hover:bg-white/10 rounded-lg text-[#555] hover:text-white"><Edit3 className="w-3.5 h-3.5"/></button>
+                                             <button onClick={() => handleDeleteChat(c.id)} className="p-2 hover:bg-red-500/10 rounded-lg text-[#555] hover:text-red-500"><Trash2 className="w-3.5 h-3.5"/></button>
+                                         </div>
+                                     )}
                                 </div>
-                                <div className="flex flex-col items-start overflow-hidden">
-                                     <span className="text-sm font-bold text-white truncate w-full">{c.name}</span>
-                                     <span className="text-[10px] text-[#555] font-black uppercase">{c.isProject ? 'Software' : c.sub}</span>
-                                </div>
-                            </button>
-                            {!c.isProject && (
-                                <div className="absolute right-2 opacity-0 group-hover:opacity-100 flex gap-1 transition-all">
-                                    <button onClick={() => { setIsEditingChat(c); setGroupName(c.name); setIsModalOpen(true); }} className="p-2 hover:bg-white/10 rounded-lg text-[#555] hover:text-white"><Edit3 className="w-3.5 h-3.5"/></button>
-                                    <button onClick={() => handleDeleteChat(c.id)} className="p-2 hover:bg-red-500/10 rounded-lg text-[#555] hover:text-red-500"><Trash2 className="w-3.5 h-3.5"/></button>
-                                </div>
-                            )}
-                       </div>
-                   ))}
+                            );
+                        })}
                </div>
            </div>
 
@@ -556,11 +648,14 @@ export default function AdminTeamsChat() {
                                                    );
                                                })()}
                                                <div className="mt-2 text-[8px] font-bold opacity-30 text-right">{new Date(msg.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
-                                           </div>
-                                           <div className={`flex gap-2 mt-1 opacity-0 hover:opacity-100 transition-opacity ${isStaffFromTag ? 'flex-row-reverse' : ''}`}>
-                                               <button onClick={() => setReplyingTo(msg)} className="text-[9px] font-black text-accent uppercase tracking-widest">Responder</button>
-                                               <button onClick={async () => await supabase.from('messages').delete().eq('id', msg.id)} className="text-[9px] font-black text-red-500 uppercase tracking-widest">Apagar</button>
-                                           </div>
+                                            </div>
+                                            <div className={`flex gap-2 mt-1 opacity-0 hover:opacity-100 transition-opacity ${isStaffFromTag ? 'flex-row-reverse' : ''}`}>
+                                                <button onClick={() => setReplyingTo(msg)} className="text-[9px] font-black text-accent uppercase tracking-widest cursor-pointer">Responder</button>
+                                                {isStaffFromTag && (
+                                                    <button onClick={() => { setEditingMessage(msg); setContent(parseReply(msg.content).actualContent); }} className="text-[9px] font-black text-emerald-500 uppercase tracking-widest cursor-pointer hover:underline">Editar</button>
+                                                )}
+                                                <button onClick={async () => await supabase.from('messages').delete().eq('id', msg.id)} className="text-[9px] font-black text-red-500 uppercase tracking-widest cursor-pointer">Apagar</button>
+                                            </div>
                                        </div>
                                    </div>
                                );
@@ -569,7 +664,19 @@ export default function AdminTeamsChat() {
                        </div>
 
                        <div className="p-6 bg-[#0a0a0a] border-t border-[#222]">
-                           <div className="max-w-5xl mx-auto flex flex-col gap-3">
+                            <div className="max-w-5xl mx-auto flex flex-col gap-3">
+                                {editingMessage && (
+                                    <div className="flex justify-between items-center px-4 py-2 bg-accent/20 rounded-xl border border-accent/30 text-xs font-bold text-white mb-1 animate-pulse">
+                                        <span>Editando mensagem...</span>
+                                        <button onClick={() => { setEditingMessage(null); setContent(""); }} className="text-red-400 hover:text-red-300 uppercase tracking-wider text-[10px] cursor-pointer">Cancelar</button>
+                                    </div>
+                                )}
+                                {replyingTo && (
+                                    <div className="flex justify-between items-center px-4 py-2 bg-white/5 rounded-xl border border-white/10 text-xs font-bold text-[#888] mb-1">
+                                        <span>Respondendo a <strong className="text-white">{replyingTo.sender_name}</strong>...</span>
+                                        <button onClick={() => setReplyingTo(null)} className="text-red-400 hover:text-red-300 uppercase tracking-wider text-[10px] cursor-pointer">Cancelar</button>
+                                    </div>
+                                )}
                                {stagedFiles.length > 0 && (
                                    <div className="flex gap-3 overflow-x-auto pb-2 p-3 bg-[#111] rounded-2xl border border-[#222]">
                                        {previews.map((p, i) => (

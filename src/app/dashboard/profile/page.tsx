@@ -9,8 +9,8 @@ import { useRouter } from "next/navigation";
 const EditableField = ({ label, value, onChange, placeholder, isTextarea = false, className = "" }: any) => {
     const [isEditing, setIsEditing] = useState(false);
     return (
-        <div className={`relative group ${className}`}>
-            <label className="text-[10px] font-black text-foreground/40 uppercase tracking-widest mb-1 block">
+        <div className={`relative flex flex-col gap-1.5 ${className}`}>
+            <label className="text-[11px] font-bold text-foreground/50 uppercase tracking-wider">
                 {label}
             </label>
             {isEditing ? (
@@ -21,7 +21,7 @@ const EditableField = ({ label, value, onChange, placeholder, isTextarea = false
                             value={value}
                             onChange={(e) => onChange(e.target.value)}
                             onBlur={() => setIsEditing(false)}
-                            className="w-full bg-background border border-accent rounded-xl px-4 py-3 text-sm font-medium focus:outline-none transition-colors min-h-[100px] resize-none text-foreground"
+                            className="w-full bg-background border border-accent/60 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all min-h-[100px] resize-none text-foreground shadow-inner"
                         />
                     ) : (
                         <input
@@ -30,18 +30,18 @@ const EditableField = ({ label, value, onChange, placeholder, isTextarea = false
                             onChange={(e) => onChange(e.target.value)}
                             onBlur={() => setIsEditing(false)}
                             placeholder={placeholder}
-                            className="w-full bg-background border border-accent rounded-xl px-4 py-3 text-sm font-medium focus:outline-none transition-colors text-foreground"
+                            className="w-full bg-background border border-accent/60 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-foreground shadow-inner"
                         />
                     )}
                 </div>
             ) : (
                 <div 
                     onClick={() => setIsEditing(true)}
-                    className="w-full bg-transparent border border-transparent hover:border-surface-border rounded-xl px-4 py-3 text-sm font-medium transition-colors text-foreground flex justify-between items-start cursor-pointer group-hover:bg-surface-border/10"
+                    className="w-full bg-surface border border-surface-border/60 hover:border-accent/40 rounded-xl px-4 py-3.5 text-sm font-medium transition-all text-foreground flex justify-between items-center cursor-pointer hover:bg-accent/5 hover:shadow-sm"
                 >
-                    <span className={!value ? "text-foreground/40 italic" : "whitespace-pre-line"}>{value || placeholder || "Não informado"}</span>
-                    <button onClick={(e) => { e.stopPropagation(); setIsEditing(true); }} className="opacity-0 group-hover:opacity-100 transition-opacity text-accent p-1 cursor-pointer ml-2 shrink-0">
-                        <Pencil className="w-4 h-4" />
+                    <span className={!value ? "text-foreground/30 italic" : "whitespace-pre-line font-medium"}>{value || placeholder || "Não informado"}</span>
+                    <button onClick={(e) => { e.stopPropagation(); setIsEditing(true); }} className="text-foreground/40 hover:text-accent p-1.5 cursor-pointer ml-2 shrink-0 transition-colors">
+                        <Pencil className="w-3.5 h-3.5" />
                     </button>
                 </div>
             )}
@@ -348,9 +348,9 @@ export default function ProfilePage() {
         <div className="flex-1 overflow-y-auto w-full bg-background text-foreground transition-colors duration-300 pb-20">
             {/* Banner Section */}
             <div 
-                className="w-full relative h-[280px] bg-surface flex items-end px-8 md:px-16 pb-8 border-b border-surface-border group cursor-pointer"
+                className="w-full relative h-[280px] flex items-end px-8 md:px-16 pb-8 border-b border-surface-border group cursor-pointer"
                 style={{ 
-                    backgroundImage: formData.banner_url ? `url(${formData.banner_url})` : 'none',
+                    backgroundImage: formData.banner_url ? `url(${formData.banner_url})` : 'linear-gradient(to right, #6366f1, #a855f7, #ec4899)',
                     backgroundSize: 'cover',
                     backgroundPosition: 'center'
                 }}
@@ -366,36 +366,36 @@ export default function ProfilePage() {
                     <Camera className="w-4 h-4"/> Alterar Banner
                 </button>
                 
-                <div className="relative z-10 flex flex-col sm:flex-row items-center gap-6 w-full max-w-5xl mx-auto translate-y-16">
+                <div className="relative z-10 flex flex-col sm:flex-row items-center gap-6 w-full max-w-5xl mx-auto translate-y-16 bg-surface/35 backdrop-blur-xl border border-surface-border/50 p-6 rounded-3xl shadow-2xl">
                     <div className="relative group cursor-pointer" onClick={() => avatarInputRef.current?.click()}>
                         <input type="file" ref={avatarInputRef} hidden accept="image/*" onChange={(e) => handleImageUpload(e, 'avatar')} />
-                        <div className="w-28 h-28 md:w-36 md:h-36 rounded-full bg-background border-4 border-background overflow-hidden relative shadow-2xl flex items-center justify-center">
+                        <div className="w-24 h-24 md:w-28 md:h-28 rounded-full bg-background border-4 border-background overflow-hidden relative shadow-2xl flex items-center justify-center">
                             {formData.avatar_url ? (
                                 <img src={formData.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
                             ) : (
-                                <span className="text-3xl font-black text-foreground/20 uppercase tracking-tighter">PERFIL</span>
+                                <span className="text-xl font-black text-foreground/20 uppercase tracking-tighter">PERFIL</span>
                             )}
                             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm z-20">
-                                <Camera className="w-6 h-6 text-white mb-1" />
+                                <Camera className="w-5 h-5 text-white mb-1" />
                             </div>
                         </div>
                     </div>
                     
-                    <div className="flex-1 text-center sm:text-left mt-4 sm:mt-0">
+                    <div className="flex-1 text-center sm:text-left">
                         <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-1">
-                            <h1 className="text-2xl md:text-4xl font-black tracking-tight text-white drop-shadow-lg">{formData.name || "Sem Nome"}</h1>
+                            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white drop-shadow-lg">{formData.name || "Sem Nome"}</h1>
                             <span className="bg-accent/80 backdrop-blur-md text-white border border-accent/20 px-3 py-1 rounded-full text-[9px] font-black uppercase inline-flex items-center gap-1 mx-auto sm:mx-0 w-fit">
                                 <ShieldCheck className="w-3 h-3"/> Conta Ativa
                             </span>
                         </div>
-                        <p className="text-white/80 drop-shadow-md font-medium text-xs sm:text-sm flex items-center justify-center sm:justify-start gap-4">
+                        <p className="text-white/80 drop-shadow-md font-medium text-xs sm:text-sm flex items-center justify-center sm:justify-start gap-4 mt-2">
                             <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5"/> {formData.location || "Localização não preenchida"}</span>
                             <span className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400"/> 5.0 (12 avaliações)</span>
                         </p>
                     </div>
 
                     <div className="flex items-center gap-4 mt-6 sm:mt-0">
-                        <button onClick={handleSaveProfile} disabled={loading} className="bg-accent hover:bg-accent/80 text-white font-bold px-6 py-2.5 rounded-xl transition-all shadow-lg flex items-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-[0.97] disabled:opacity-50 text-sm">
+                        <button onClick={handleSaveProfile} disabled={loading} className="bg-accent hover:bg-accent/90 text-white font-bold px-6 py-2.5 rounded-xl transition-all shadow-lg flex items-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-[0.97] disabled:opacity-50 text-sm">
                             {loading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Save className="w-4 h-4" />}
                             {loading ? "Salvando..." : "Salvar Perfil"}
                         </button>
@@ -440,16 +440,19 @@ export default function ProfilePage() {
                     {activeTab === "Informações" && (
                         <motion.div key="informacoes" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="grid grid-cols-1 md:grid-cols-3 gap-8">
                             {/* Left Column (Main forms) */}
-                            <div className="md:col-span-2 space-y-6">
-                                <div className="bg-surface border border-surface-border rounded-3xl p-8 shadow-sm">
-                                    <h3 className="text-xl font-bold mb-6 flex items-center justify-between">
-                                        Informações Básicas
-                                        <span className="text-[10px] font-medium text-foreground/40 bg-background px-3 py-1.5 rounded-lg border border-surface-border">
+                            <div className="md:col-span-2 space-y-8">
+                                <div className="bg-surface border border-surface-border rounded-3xl p-8 shadow-xl shadow-black/5 hover:border-accent/15 transition-all duration-300">
+                                    <div className="flex items-center justify-between mb-8 pb-4 border-b border-surface-border">
+                                        <h3 className="text-xl font-bold text-foreground tracking-tight flex items-center gap-3">
+                                            <span className="w-1.5 h-6 bg-accent rounded-full"></span>
+                                            Informações Básicas
+                                        </h3>
+                                        <span className="text-[10px] font-black tracking-wider text-accent bg-accent/10 border border-accent/20 px-3.5 py-1.5 rounded-xl uppercase">
                                             {profileType === "Desenvolvedor" ? "Conta Profissional" : "Conta Comércio"}
                                         </span>
-                                    </h3>
+                                    </div>
                                     
-                                    <div className="space-y-5">
+                                    <div className="space-y-6">
                                         <EditableField 
                                             label={profileType === "Desenvolvedor" ? "Nome Completo" : "Razão Social / Nome da Empresa"}
                                             value={formData.name}
@@ -457,7 +460,7 @@ export default function ProfilePage() {
                                         />
 
                                         {profileType === "Comércio" && (
-                                            <div className="grid grid-cols-2 gap-4">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                                                 <EditableField 
                                                     label="CNPJ (Opcional)"
                                                     value={formData.cnpj}
@@ -491,10 +494,13 @@ export default function ProfilePage() {
 
                                         {/* CEP e Endereço Integration via ViaCEP (Only for Commerce) */}
                                         {profileType === "Comércio" && (
-                                            <div className="border-t border-surface-border pt-5 space-y-4">
-                                                <h4 className="font-bold text-sm flex items-center gap-2"><Building className="w-4 h-4 text-accent" /> Endereço Comercial</h4>
+                                            <div className="border-t border-surface-border pt-6 mt-6 space-y-4">
+                                                <h4 className="font-bold text-base flex items-center gap-2.5 text-foreground">
+                                                    <Building className="w-5 h-5 text-accent" /> Endereço Comercial
+                                                </h4>
+                                                <p className="text-xs text-foreground/40 -mt-2">O preenchimento do CEP autocompleta automaticamente seu endereço.</p>
                                                 
-                                                <div className="grid grid-cols-3 gap-4">
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 bg-background/40 border border-surface-border/60 p-5 rounded-2xl">
                                                     <div className="relative col-span-1">
                                                         <EditableField 
                                                             label="CEP"
@@ -503,7 +509,7 @@ export default function ProfilePage() {
                                                             onChange={(val: string) => setFormData({...formData, cep: val})}
                                                         />
                                                         {cepLoading && (
-                                                            <div className="absolute right-3 top-[44px] w-4 h-4 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
+                                                            <div className="absolute right-3 top-[38px] w-4 h-4 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
                                                         )}
                                                     </div>
                                                     <div className="col-span-2">
@@ -514,9 +520,7 @@ export default function ProfilePage() {
                                                             onChange={(val: string) => setFormData({...formData, address: val})}
                                                         />
                                                     </div>
-                                                </div>
-
-                                                <div className="grid grid-cols-3 gap-4">
+                                                    
                                                     <EditableField 
                                                         label="Bairro"
                                                         value={formData.neighborhood}
@@ -541,16 +545,16 @@ export default function ProfilePage() {
 
                                         {/* Skills Builder (Only for Developers) */}
                                         {profileType === "Desenvolvedor" && (
-                                            <div className="border-t border-surface-border pt-5 space-y-4">
-                                                <label className="text-[10px] font-black text-foreground/40 uppercase tracking-widest block flex items-center gap-2">
-                                                    <Code2 className="w-4 h-4"/> Especialidades & Tecnologias
+                                            <div className="border-t border-surface-border pt-6 mt-6 space-y-4">
+                                                <label className="text-[11px] font-bold text-foreground/50 uppercase tracking-wider block flex items-center gap-2">
+                                                    <Code2 className="w-5 h-5 text-accent"/> Especialidades & Tecnologias
                                                 </label>
                                                 
                                                 <div className="flex flex-wrap gap-2 mb-3">
                                                     {skills.map(sk => (
-                                                        <span key={sk} className="flex items-center gap-1.5 bg-background border border-surface-border text-foreground px-3 py-1.5 rounded-lg text-xs font-bold">
+                                                        <span key={sk} className="flex items-center gap-1.5 bg-background border border-surface-border text-foreground px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:border-red-500/30 transition-colors">
                                                             {sk}
-                                                            <button onClick={() => removeSkill(sk)} className="text-red-400 hover:scale-110 transition-transform"><X className="w-3 h-3" /></button>
+                                                            <button onClick={() => removeSkill(sk)} className="text-red-400 hover:scale-110 transition-transform cursor-pointer"><X className="w-3 h-3" /></button>
                                                         </span>
                                                     ))}
                                                 </div>
@@ -561,14 +565,14 @@ export default function ProfilePage() {
                                                         onChange={e => setNewSkill(e.target.value)} 
                                                         onKeyDown={handleAddSkill}
                                                         placeholder="Digite a tecnologia e aperte Enter..." 
-                                                        className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent focus:outline-none transition-colors text-foreground" 
+                                                        className="w-full bg-background border border-surface-border rounded-xl px-4 py-3.5 text-sm font-medium focus:border-accent/60 focus:outline-none focus:ring-2 focus:ring-accent/15 transition-all text-foreground" 
                                                     />
-                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-foreground/20 px-2 py-1 bg-surface rounded-md">↵ Enter</span>
+                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-foreground/20 px-2.5 py-1 bg-surface border border-surface-border rounded-lg">↵ Enter</span>
                                                 </div>
                                             </div>
                                         )}
 
-                                        <div className="grid grid-cols-2 gap-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 border-t border-surface-border pt-6">
                                             <EditableField 
                                                 label="Email Público"
                                                 value={formData.email}
@@ -583,9 +587,12 @@ export default function ProfilePage() {
                                     </div>
                                 </div>
 
-                                <div className="bg-surface border border-surface-border rounded-3xl p-8 shadow-sm">
-                                    <h3 className="text-xl font-bold mb-6">Links e Redes</h3>
-                                    <div className="space-y-4">
+                                <div className="bg-surface border border-surface-border rounded-3xl p-8 shadow-xl shadow-black/5 hover:border-accent/15 transition-all duration-300">
+                                    <h3 className="text-xl font-bold mb-6 text-foreground flex items-center gap-3">
+                                        <span className="w-1.5 h-6 bg-accent rounded-full"></span>
+                                        Links e Redes
+                                    </h3>
+                                    <div className="space-y-5">
                                         <EditableField 
                                             label="Site Oficial"
                                             value={formData.website}
@@ -593,7 +600,7 @@ export default function ProfilePage() {
                                             onChange={(val: string) => setFormData({...formData, website: val})}
                                         />
                                         {profileType === "Desenvolvedor" && (
-                                            <>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                                                 <EditableField 
                                                     label="GitHub"
                                                     value={formData.github}
@@ -606,7 +613,7 @@ export default function ProfilePage() {
                                                     placeholder="Seu LinkedIn (Ex: https://linkedin.com/in/usuario)"
                                                     onChange={(val: string) => setFormData({...formData, linkedin: val})}
                                                 />
-                                            </>
+                                            </div>
                                         )}
                                         <EditableField 
                                             label="Twitter / X"
@@ -620,18 +627,18 @@ export default function ProfilePage() {
 
                             {/* Right Column (Side details) */}
                             <div className="space-y-6">
-                                <div className="bg-surface border border-surface-border rounded-3xl p-6 shadow-sm flex flex-col items-center text-center">
-                                    <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4">
-                                        <Star className="w-7 h-7 text-emerald-500 fill-emerald-500" />
+                                <div className="bg-surface border border-surface-border rounded-3xl p-6 shadow-xl shadow-black/5 hover:border-accent/15 transition-all duration-300 flex flex-col items-center text-center">
+                                    <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4 text-emerald-500 shadow-inner">
+                                        <Star className="w-7 h-7 fill-current" />
                                     </div>
                                     <h4 className="text-lg font-black text-foreground">Selo de Qualidade</h4>
-                                    <p className="text-xs font-medium text-foreground/45 mt-2 mb-4 leading-relaxed">
+                                    <p className="text-xs font-medium text-foreground/45 mt-2 mb-4 leading-relaxed max-w-[200px]">
                                         Entregue projetos com excelência e conquiste notas máximas para se destacar na comunidade.
                                     </p>
-                                    <div className="w-full bg-background rounded-full h-1.5 mb-2 border border-surface-border">
-                                        <div className="w-[70%] bg-emerald-500 h-full rounded-full" />
+                                    <div className="w-full bg-background rounded-full h-2 mb-2 border border-surface-border overflow-hidden p-0.5">
+                                        <div className="w-[70%] bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full" />
                                     </div>
-                                    <span className="text-[10px] font-black text-foreground/40 uppercase tracking-wid5">7 / 10 Projetos</span>
+                                    <span className="text-[10px] font-black text-foreground/40 uppercase tracking-wider">7 / 10 Projetos</span>
                                 </div>
                             </div>
                         </motion.div>

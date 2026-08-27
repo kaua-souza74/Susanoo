@@ -2,6 +2,7 @@
 import { useState, useRef } from "react";
 import { 
   ArrowRight, 
+  ArrowDown,
   MessageSquare, 
   Zap, 
   Shield, 
@@ -32,13 +33,15 @@ export default function Home() {
   const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
   const scale = useTransform(scrollYProgress, [0, 0.5], [1, 0.9]);
   const y = useTransform(scrollYProgress, [0, 0.5], [0, 100]);
+  const sectionY = useTransform(scrollYProgress, [0, 0.8], [150, 0]);
+  const sectionScale = useTransform(scrollYProgress, [0, 0.8], [0.93, 1]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground transition-colors selection:bg-accent selection:text-white overflow-x-hidden">
+    <div className="min-h-screen bg-background text-foreground transition-colors selection:bg-accent selection:text-white">
       {/* Navbar moved to layout.tsx */}
 
       {/* Hero Section */}
-      <section ref={targetRef} className="relative pt-24 pb-16 md:pt-32 md:pb-24 px-4 md:px-6 min-h-screen flex flex-col items-center justify-center overflow-hidden">
+      <section ref={targetRef} className="sticky top-0 h-screen w-full flex flex-col items-center justify-center overflow-hidden z-0 px-4 md:px-6">
         <div className="absolute inset-0 z-0 opacity-40">
            <ShaderAnimation />
         </div>
@@ -87,10 +90,30 @@ export default function Home() {
           </motion.div>
         </motion.div>
 
+        {/* Selo de Rolar para Baixo */}
+        <div 
+          onClick={() => window.scrollTo({ top: window.innerHeight + 50, behavior: 'smooth' })}
+          className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center justify-center cursor-pointer group"
+        >
+          <div className="w-20 h-20 md:w-24 md:h-24 bg-black border border-surface-border text-white rounded-full flex items-center justify-center relative shadow-2xl transition-all duration-300 group-hover:scale-105 active:scale-95 group-hover:border-accent/40">
+            <svg viewBox="0 0 100 100" className="w-full h-full animate-[spin_12s_linear_infinite]">
+              <path id="circlePath" d="M 50, 50 m -35, 0 a 35,35 0 1,1 70,0 a 35,35 0 1,1 -70,0" fill="none" />
+              <text fill="white" className="text-[8px] font-black uppercase tracking-[0.22em] fill-current">
+                <textPath href="#circlePath" startOffset="0%">ROLE PARA BAIXO • ROLE PARA BAIXO • </textPath>
+              </text>
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <ArrowDown className="w-4 h-4 md:w-5 md:h-5 text-white animate-bounce" />
+            </div>
+          </div>
+        </div>
+
         <motion.div style={{ y: useTransform(scrollYProgress, [0, 1], [0, -400]) }} className="absolute top-[20%] -left-32 w-[600px] h-[600px] bg-accent/10 rounded-full blur-[140px] pointer-events-none" />
       </section>
 
-      <section className="relative z-10 border-t border-surface-border bg-surface/40 px-4 py-16 md:px-6 md:py-24">
+      <section 
+        className="relative z-10 border-t border-surface-border bg-background px-4 py-16 md:px-6 md:py-24 shadow-[0_-30px_60px_rgba(0,0,0,0.95)]"
+      >
         <div className="mx-auto max-w-7xl">
           <div className="mb-10 flex flex-col gap-4 text-center md:mb-14 md:flex-row md:items-end md:justify-between md:text-left">
             <div><p className="mb-3 text-xs font-black uppercase tracking-[0.24em] text-accent">Quem escolhe a Susanoo</p><h2 className="text-3xl font-black uppercase italic tracking-tighter md:text-5xl">Confiança que aparece no resultado.</h2></div>

@@ -80,11 +80,12 @@ export default function CheckoutPage() {
       }
 
       // Pagamento confirmado e projetos criados com sucesso
+      const firstItemName = items[0]?.name || "Site";
       clearCart();
       setSuccess(true);
 
       setTimeout(() => {
-        router.push("/dashboard/projects");
+        router.push(`/dashboard/chat?boughtSite=${encodeURIComponent(firstItemName)}`);
       }, 3000);
 
     } catch (err: any) {
@@ -108,9 +109,9 @@ export default function CheckoutPage() {
           </motion.div>
           <h2 className="text-3xl font-black mb-3 text-foreground">Pagamento Aprovado!</h2>
           <p className="text-foreground/60 max-w-md mx-auto mb-3">
-            Seus projetos já estão disponíveis no seu painel. O cronograma de desenvolvimento foi liberado!
+            Obrigado pela compra! Você está sendo redirecionado para o chat de suporte para acertar os detalhes do seu projeto.
           </p>
-          <p className="text-sm text-foreground/40 mb-8">Redirecionando para os seus projetos...</p>
+          <p className="text-sm text-foreground/40 mb-8">Redirecionando para o chat de suporte...</p>
           <div className="w-8 h-8 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
         </motion.div>
       </div>

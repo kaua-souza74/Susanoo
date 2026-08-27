@@ -28,6 +28,7 @@ import { useCart } from "@/components/CartContext";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getAuthenticatedAccountType, getAccountStorageKey } from "@/lib/account";
+import { ReviewsSection } from "@/components/ReviewsSection";
 
 type MainMode = "Susanoo" | "Geral";
 
@@ -632,28 +633,7 @@ function DiscoverHomeContent() {
                                            </div>
                                        )}
                                        {activeTab === "comentarios" && (
-                                           <div className="flex flex-col gap-4">
-                                               {[
-                                                 { nome: "Ana Lima", nota: 5, data: "há 2 semanas", texto: "Site extremamente leve e bonito. Meus clientes adoraram a rapidez do carregamento." },
-                                                 { nome: "Carlos Mendes", nota: 5, data: "há 1 mês", texto: "Facilitou muito o andamento do meu negócio. O suporte inicial me ajudou a publicar sem complicações." },
-                                               ].map((c, i) => (
-                                                 <div key={i} className="bg-surface border border-surface-border rounded-2xl p-5">
-                                                   <div className="flex items-center justify-between mb-3">
-                                                     <div>
-                                                       <span className="font-bold text-sm text-foreground block">{c.nome}</span>
-                                                       <span className="text-[10px] text-foreground/40">{c.data}</span>
-                                                     </div>
-                                                     <div className="flex gap-0.5">{[...Array(c.nota)].map((_, s) => <Star key={s} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />)}</div>
-                                                   </div>
-                                                   <p className="text-sm text-foreground/75 leading-relaxed">{c.texto}</p>
-                                                 </div>
-                                               ))}
-                                               <div className="flex items-center justify-center gap-4 pt-4 border-t border-surface-border">
-                                                 <button onClick={() => setLiked(!liked)} className={`flex items-center gap-2 text-sm font-black uppercase tracking-wider transition-colors ${liked ? 'text-accent' : 'text-foreground/40 hover:text-foreground'}`}>
-                                                   <ThumbsUp className={`w-4 h-4 ${liked ? 'fill-accent' : ''}`} /> {liked ? 'Útil (43)' : 'Marcar como útil (42)'}
-                                                 </button>
-                                               </div>
-                                           </div>
+                                            <ReviewsSection projectId={activeProduct.id} />
                                        )}
                                    </div>
                                </div>

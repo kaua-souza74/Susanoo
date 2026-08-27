@@ -14,6 +14,17 @@ export default function SettingsPage() {
     const [accountType, setAccountType] = useState<"Comércio" | "Desenvolvedor">("Comércio");
     const router = useRouter();
 
+    // Password change states
+    const [showPasswordForm, setShowPasswordForm] = useState(false);
+    const [newPassword, setNewPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [passwordLoading, setPasswordLoading] = useState(false);
+
+    // Preferences states
+    const [feedbackEmails, setFeedbackEmails] = useState(true);
+    const [chatAlerts, setChatAlerts] = useState(true);
+    const [deployNotifs, setDeployNotifs] = useState(true);
+
     const showToast = (msg: string) => {
         setToast(msg);
         setTimeout(() => setToast(null), 3000);
@@ -28,11 +39,51 @@ export default function SettingsPage() {
         load();
         
         getAuthenticatedAccountType().then(setAccountType);
+
+        // Load preferences
+        setFeedbackEmails(localStorage.getItem("susanoo_feedback_emails") !== "false");
+        setChatAlerts(localStorage.getItem("susanoo_chat_alerts") !== "false");
+        setDeployNotifs(localStorage.getItem("susanoo_deploy_notifications") !== "false");
     }, []);
 
     const handleSave = async () => {
+        localStorage.setItem("susanoo_feedback_emails", feedbackEmails ? "true" : "false");
+        localStorage.setItem("susanoo_chat_alerts", chatAlerts ? "true" : "false");
+        localStorage.setItem("susanoo_deploy_notifications", deployNotifs ? "true" : "false");
         setSaved(true);
         setTimeout(() => setSaved(false), 2500);
+    };
+
+    const handleUpdatePassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newPassword) {
+            showToast("Digite a nova senha!");
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            showToast("As senhas não coincidem!");
+            return;
+        }
+        if (newPassword.length < 6) {
+            showToast("A senha deve ter pelo menos 6 caracteres!");
+            return;
+        }
+        setPasswordLoading(true);
+        try {
+            const { error } = await supabase.auth.updateUser({ password: newPassword });
+            if (error) {
+                showToast("Erro: " + error.message);
+            } else {
+                showToast("Senha alterada com sucesso!");
+                setNewPassword("");
+                setConfirmPassword("");
+                setShowPasswordForm(false);
+            }
+        } catch (e: any) {
+            showToast("Erro ao alterar a senha.");
+        } finally {
+            setPasswordLoading(false);
+        }
     };
 
     const tabs = [
@@ -134,13 +185,63 @@ export default function SettingsPage() {
                                             </div>
                                             <button onClick={() => showToast("Módulo 2FA em processo de ativação...")} className="px-4 py-2 hover:bg-surface border border-surface-border text-foreground rounded-lg text-sm font-bold cursor-pointer">Configurar</button>
                                         </div>
-                                        <div className="p-5 bg-background rounded-2xl border border-surface-border flex items-center justify-between">
-                                            <div>
-                                                <h4 className="font-bold text-foreground">Alterar Senha</h4>
-                                                <p className="text-sm text-foreground/50 mt-1">Ultima alteração: há 30 dias.</p>
+                                        
+                                        <div className="p-5 bg-background rounded-2xl border border-surface-border flex flex-col gap-4">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <h4 className="font-bold text-foreground">Alterar Senha</h4>
+                                                    <p className="text-sm text-foreground/50 mt-1">Defina uma nova senha forte para acessar sua conta.</p>
+                                                </div>
+                                                <button onClick={() => setShowPasswordForm(!showPasswordForm)} className="px-4 py-2 border border-surface-border text-foreground rounded-lg text-sm font-bold cursor-pointer hover:bg-surface transition-colors">
+                                                    {showPasswordForm ? "Cancelar" : "Alterar"}
+                                                </button>
                                             </div>
-                                            <button className="px-4 py-2 border border-surface-border text-foreground rounded-lg text-sm font-bold cursor-pointer hover:bg-surface">Alterar</button>
+                                            
+                                            <AnimatePresence>
+                                                {showPasswordForm && (
+                                                    <motion.form 
+                                                        initial={{ height: 0, opacity: 0 }}
+                                                        animate={{ height: "auto", opacity: 1 }}
+                                                        exit={{ height: 0, opacity: 0 }}
+                                                        className="overflow-hidden flex flex-col gap-4 pt-4 border-t border-surface-border"
+                                                        onSubmit={handleUpdatePassword}
+                                                    >
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                            <div>
+                                                                <label className="text-xs font-bold uppercase tracking-widest opacity-40 mb-2 block text-foreground">Nova Senha</label>
+                                                                <input 
+                                                                    type="password" 
+                                                                    value={newPassword}
+                                                                    onChange={(e) => setNewPassword(e.target.value)}
+                                                                    className="w-full bg-surface border border-surface-border rounded-xl p-4 text-foreground font-medium text-[14px] focus:outline-none focus:border-accent" 
+                                                                    placeholder="Mínimo 6 caracteres"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-xs font-bold uppercase tracking-widest opacity-40 mb-2 block text-foreground">Confirmar Nova Senha</label>
+                                                                <input 
+                                                                    type="password" 
+                                                                    value={confirmPassword}
+                                                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                                                    className="w-full bg-surface border border-surface-border rounded-xl p-4 text-foreground font-medium text-[14px] focus:outline-none focus:border-accent" 
+                                                                    placeholder="Confirme a nova senha"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex justify-end">
+                                                            <button 
+                                                                type="submit" 
+                                                                disabled={passwordLoading}
+                                                                className="px-6 py-3 bg-accent text-white font-bold rounded-xl text-sm hover:opacity-90 transition-opacity flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                                            >
+                                                                {passwordLoading ? "Atualizando..." : "Salvar Nova Senha"}
+                                                            </button>
+                                                        </div>
+                                                    </motion.form>
+                                                )}
+                                            </AnimatePresence>
                                         </div>
+
                                         <div className="p-5 bg-red-500/5 rounded-2xl border border-red-500/20 flex items-center justify-between mt-2">
                                             <div>
                                                 <h4 className="font-bold text-red-500">Desconectar Dispositivos</h4>
@@ -157,17 +258,20 @@ export default function SettingsPage() {
                                     <h2 className="text-2xl font-bold text-foreground mb-8 border-b border-surface-border pb-4">Preferências</h2>
                                     <div className="flex flex-col gap-5">
                                         {[
-                                            { t: "E-mail de Feedback", d: "Resumos de progresso e métricas da loja." },
-                                            { t: "Alertas de Chat", d: "Sons e avisos de novas mensagens da UI." },
-                                            { t: "Notificações de Deploy", d: "Avisar sempre que houver update (Susanoo)." }
+                                            { t: "E-mail de Feedback", d: "Resumos de progresso e métricas da loja.", state: feedbackEmails, toggle: () => setFeedbackEmails(!feedbackEmails) },
+                                            { t: "Alertas de Chat", d: "Sons e avisos de novas mensagens da UI.", state: chatAlerts, toggle: () => setChatAlerts(!chatAlerts) },
+                                            { t: "Notificações de Deploy", d: "Avisar sempre que houver update (Susanoo).", state: deployNotifs, toggle: () => setDeployNotifs(!deployNotifs) }
                                         ].map((item, i) => (
                                             <div key={i} className="flex items-center justify-between p-3 bg-background rounded-2xl border border-surface-border">
                                                 <div>
                                                     <h4 className="font-bold text-foreground text-sm">{item.t}</h4>
                                                     <p className="text-[13px] text-foreground/50 mt-0.5">{item.d}</p>
                                                 </div>
-                                                <div className="w-10 h-6 bg-accent rounded-full relative cursor-pointer shadow-inner">
-                                                    <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-md"></div>
+                                                <div 
+                                                    onClick={item.toggle}
+                                                    className={`w-12 h-7 rounded-full relative cursor-pointer shadow-inner transition-colors duration-300 flex items-center p-1 ${item.state ? 'bg-accent justify-end' : 'bg-surface-border justify-start'}`}
+                                                >
+                                                    <motion.div layout className="w-5 h-5 bg-white rounded-full shadow-md" />
                                                 </div>
                                             </div>
                                         ))}
