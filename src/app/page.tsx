@@ -286,7 +286,7 @@ export default function Home() {
       </section>
 
       {/* Partners / Trust Strip */}
-      <section className="py-12 md:py-24 px-6 border-y border-surface-border bg-foreground overflow-hidden">
+      <section className="relative z-10 py-12 md:py-24 px-6 border-y border-surface-border bg-foreground overflow-hidden">
          <div className="max-w-7xl mx-auto text-center grayscale opacity-40 hover:grayscale-0 hover:opacity-100 transition-all duration-700">
             <div className="text-2xl sm:text-3xl md:text-5xl font-black tracking-tighter cursor-default italic uppercase break-words leading-tight text-background">
               SITES • E-COMMERCE • MARKETPLACE • DESIGN • DESENVOLVIMENTO • IA • SUSANOO
@@ -295,7 +295,7 @@ export default function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="py-24 px-6 border-t border-surface-border bg-background">
+      <footer className="relative z-10 py-24 px-6 border-t border-surface-border bg-background">
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-start gap-12 mb-20">
              <div className="flex flex-col gap-6">

@@ -32,8 +32,8 @@ const FAQ_ITEMS = [
         a: "Pelo seu painel do cliente, acesse a aba 'Chat' ou vá na seção de 'Profissionais' para iniciar uma conversa direta por mensagem com o desenvolvedor do seu projeto. O suporte e acompanhamento são integrados e transparentes."
       },
       {
-        q: "O que é o Kanban e como posso interagir?",
-        a: "O Kanban é um quadro visual onde você pode ver as tarefas do projeto divididas em 'A Fazer', 'Em Andamento', 'Revisão' e 'Concluído'. Isso garante que você saiba exatamente o que está sendo desenvolvido a cada dia."
+        q: "Como funciona o Acompanhamento de Progresso e Tarefas?",
+        a: "Na central de Progresso Integrado, você tem acesso ao cronograma de marcos e ao quadro de tarefas em tempo real divididas em 'A Fazer', 'Em Produção' e 'Concluído'. Isso garante total transparência sobre cada etapa do desenvolvimento do seu site."
       },
       {
         q: "Como funciona a publicação (deploy) do meu site?",

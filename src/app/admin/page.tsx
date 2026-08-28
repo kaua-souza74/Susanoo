@@ -33,7 +33,7 @@ export default function AdminOverview() {
 
     const hqModules = [
         { id: 'teams', title: 'Equipes & Clientes (Teams)', desc: 'Responda a todos os clientes em tempo real numa interface unificada.', icon: <MessageSquareText className="w-8 h-8"/>, path: '/admin/chat', color: 'from-blue-600 to-blue-900', border: 'border-blue-500/30' },
-        { id: 'trello', title: 'Gestão Ágil (Trello)', desc: 'Painel mestre com todas as tarefas da agência para manipulação Drag & Drop.', icon: <LayoutList className="w-8 h-8"/>, path: '/admin/tasks', color: 'from-accent to-[#581c87]', border: 'border-accent/30' },
+        { id: 'trello', title: 'Progresso & Tarefas', desc: 'Painel mestre com todas as tarefas da agência para manipulação e sincronização de progresso com clientes.', icon: <LayoutList className="w-8 h-8"/>, path: '/admin/tasks', color: 'from-accent to-[#581c87]', border: 'border-accent/30' },
         { id: 'deploy', title: 'Publicação de Sites', desc: 'Central de domínios, Vercel e links de produção entregues aos clientes.', icon: <Rocket className="w-8 h-8"/>, path: '/admin/deploy', color: 'from-emerald-600 to-emerald-900', border: 'border-emerald-500/30' },
         { id: 'add-site', title: 'Adicionar Site ao Portfólio', desc: 'Cadastre novos sites, gerencie as vitrines de 10 fotos e preços no marketplace.', icon: <LayoutList className="w-8 h-8"/>, path: '/admin/add-site', color: 'from-purple-500 to-purple-800', border: 'border-purple-500/20' },
         { id: 'timeline', title: 'Cronograma Master', desc: 'Gerencie os marcos e o progresso das etapas de cada projeto dos clientes.', icon: <Clock className="w-8 h-8"/>, path: '/admin/timeline', color: 'from-orange-500 to-orange-800', border: 'border-orange-500/20' },

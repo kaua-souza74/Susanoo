@@ -59,7 +59,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                
                <div className="px-3 mb-2 mt-4 opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-[10px] font-bold text-foreground/40 uppercase tracking-widest">Operações</span></div>
                <NavItem badge={unreadChat} icon={<MessageSquareText className="w-5 h-5"/>} label="Comunicações (Teams)" active={pathname?.includes('/admin/chat')} href="/admin/chat" />
-               <NavItem badge={unreadTasks} icon={<LayoutList className="w-5 h-5"/>} label="Projetos (Trello View)" active={pathname?.includes('/admin/tasks')} href="/admin/tasks" />
+               <NavItem badge={unreadTasks} icon={<LayoutList className="w-5 h-5"/>} label="Progresso & Tarefas" active={pathname?.includes('/admin/tasks')} href="/admin/tasks" />
                <NavItem icon={<Rocket className="w-5 h-5"/>} label="Deploy & Publicação" active={pathname?.includes('/admin/deploy')} href="/admin/deploy" />
                <NavItem icon={<Plus className="w-5 h-5"/>} label="Adicionar Site" active={pathname?.includes('/admin/add-site')} href="/admin/add-site" />
                <NavItem icon={<Clock className="w-5 h-5"/>} label="Cronograma Master" active={pathname?.includes('/admin/timeline')} href="/admin/timeline" />

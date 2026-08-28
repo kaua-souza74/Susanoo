@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { Camera, Save, MapPin, Globe, Code2, AtSign, Star, ShieldCheck, Mail, Phone, Plus, X, Heart, ExternalLink, Building, Lock, Pencil } from "lucide-react";
+import { Camera, Save, MapPin, Globe, Code2, AtSign, Star, ShieldCheck, Mail, Phone, Plus, X, Heart, ExternalLink, Building, Lock, Pencil, Trash2, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { getAccountStorageKey, getAuthenticatedAccountType } from "@/lib/account";
@@ -49,12 +49,49 @@ const EditableField = ({ label, value, onChange, placeholder, isTextarea = false
     );
 };
 
+// Converte e otimiza imagens localmente em canvas para formato leve e persistente
+const processImageFile = (file: File, maxWidth: number, maxHeight: number, quality = 0.85): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (readerEvent) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(readerEvent.target?.result as string);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve(dataUrl);
+      };
+      img.onerror = () => reject(new Error("Erro ao carregar imagem para processamento."));
+      img.src = readerEvent.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error("Erro ao ler arquivo."));
+    reader.readAsDataURL(file);
+  });
+};
+
 export default function ProfilePage() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
     const [cepLoading, setCepLoading] = useState(false);
     const [profileType, setProfileType] = useState<"Comércio" | "Desenvolvedor">("Comércio");
-    const [activeTab, setActiveTab] = useState<"Informações" | "Curtidos" | "Meus Projetos">("Informações");
+    const [activeTab, setActiveTab] = useState<"Informações" | "Curtidos" | "Minhas Compras">("Informações");
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [isDirty, setIsDirty] = useState(false);
     const [originalData, setOriginalData] = useState<any>(null);
@@ -99,86 +136,83 @@ export default function ProfilePage() {
         setTimeout(() => setToastMessage(null), 3000);
     };
 
-    // Load initial profile data
-    useEffect(() => {
-        const loadProfile = async () => {
+    // Load initial profile data from Supabase Auth Metadata, Database Profiles, and LocalStorage
+    const loadProfile = async () => {
+        setLoading(true);
         const type = await getAuthenticatedAccountType();
         setProfileType(type);
 
-        if (type === "Desenvolvedor") {
-            const devData = localStorage.getItem(await getAccountStorageKey("dev-profile"));
-            if (devData) {
-                try {
-                    const parsed = JSON.parse(devData);
-                    setFormData(prev => ({
-                        ...prev,
-                        name: parsed.name || "",
-                        email: parsed.email || "",
-                        github: parsed.github || "",
-                        linkedin: parsed.linkedin || "",
-                        portfolio: parsed.portfolio || "",
-                        experience: parsed.experience || "",
-                        location: parsed.location || "São Paulo, SP",
-                        bio: parsed.bio || "Desenvolvedor de soluções na Susanoo."
-                    }));
-                    if (parsed.specialties) setSkills(parsed.specialties);
-                } catch (e) {}
-            }
-        } else {
-            const clientData = localStorage.getItem(await getAccountStorageKey("client-profile"));
-            if (clientData) {
-                try {
-                    const parsed = JSON.parse(clientData);
-                    setFormData(prev => ({
-                        ...prev,
-                        name: parsed.name || "",
-                        email: parsed.email || "",
-                        storeName: parsed.storeName || "",
-                        segment: parsed.segment || "",
-                        cnpj: parsed.cnpj || "",
-                        cep: parsed.cep || "",
-                        address: parsed.address || "",
-                        neighborhood: parsed.neighborhood || "",
-                        city: parsed.city || "",
-                        state: parsed.state || "",
-                        location: parsed.location || (parsed.city && parsed.state ? `${parsed.city}, ${parsed.state}` : "São Paulo, SP"),
-                        bio: parsed.bio || "Comerciante inovando com a Susanoo."
-                    }));
-                } catch (e) {}
-            }
-        }
-
-        // Set original data for dirty tracking after a small delay to ensure states settled
-        setTimeout(() => {
-           setOriginalData((prev: any) => prev || { ...formData, skills: [] }); // Simplification for demo
-        }, 500);
-
-        // Buscar do banco de dados (Projetos do usuário, curtidas e privacidade de curtidas)
         try {
             const { data: { session } } = await supabase.auth.getSession();
-            if (session?.user?.id) {
-                // Projetos do usuário
-                const { data: projs } = await supabase
-                    .from('projects')
+            const user = session?.user;
+            const meta = user?.user_metadata || {};
+
+            // 1. Busca dados da tabela profiles no banco
+            let dbProfile: any = null;
+            if (user?.id) {
+                const { data } = await supabase
+                    .from('profiles')
                     .select('*')
-                    .eq('client_id', session.user.id);
+                    .eq('id', user.id)
+                    .single();
+                dbProfile = data;
+            }
+
+            // 2. Busca cache local
+            const storageKey = type === "Desenvolvedor" ? "dev-profile" : "client-profile";
+            const localDataStr = localStorage.getItem(await getAccountStorageKey(storageKey));
+            const localData = localDataStr ? JSON.parse(localDataStr) : {};
+
+            // 3. Mesclagem inteligente com prioridade persistente
+            const mergedName = dbProfile?.name || meta.name || meta.full_name || localData.name || user?.email?.split('@')[0] || "";
+            const mergedEmail = dbProfile?.email || user?.email || meta.email || localData.email || "";
+            const mergedAvatar = dbProfile?.avatar_url || meta.avatar_url || localData.avatar_url || "";
+            const mergedBanner = meta.banner_url || localData.banner_url || "";
+            const mergedBio = dbProfile?.bio || meta.bio || localData.bio || (type === "Desenvolvedor" ? "Desenvolvedor de soluções na Susanoo." : "Comerciante inovando com a Susanoo.");
+            const mergedLocation = dbProfile?.location || meta.location || localData.location || (meta.city && meta.state ? `${meta.city}, ${meta.state}` : (localData.city && localData.state ? `${localData.city}, ${localData.state}` : "São Paulo, SP"));
+            const mergedSkills = dbProfile?.skills || meta.skills || localData.specialties || localData.skills || [];
+
+            setFormData({
+                name: mergedName,
+                email: mergedEmail,
+                avatar_url: mergedAvatar,
+                banner_url: mergedBanner,
+                bio: mergedBio,
+                location: mergedLocation,
+                website: meta.website || localData.website || "",
+                github: meta.github || localData.github || "",
+                twitter: meta.twitter || localData.twitter || "",
+                phone: meta.phone || localData.phone || "",
+                cnpj: meta.cnpj || localData.cnpj || "",
+                storeName: meta.storeName || localData.storeName || "",
+                segment: meta.segment || localData.segment || "",
+                cep: meta.cep || localData.cep || "",
+                address: meta.address || localData.address || "",
+                neighborhood: meta.neighborhood || localData.neighborhood || "",
+                city: meta.city || localData.city || "",
+                state: meta.state || localData.state || "",
+                linkedin: meta.linkedin || localData.linkedin || "",
+                portfolio: meta.portfolio || localData.portfolio || "",
+                experience: meta.experience || localData.experience || ""
+            });
+
+            if (mergedSkills && mergedSkills.length > 0) {
+                setSkills(mergedSkills);
+            }
+
+            if (dbProfile) {
+                setLikesPrivate(dbProfile.likes_private || false);
+            }
+
+            // Buscar projetos e curtidas
+            if (user?.id) {
+                const { data: projs } = await supabase.from('projects').select('*').eq('client_id', user.id);
                 setMyProjects(projs || []);
 
-                // Curtidas privadas
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('likes_private')
-                    .eq('id', session.user.id)
-                    .single();
-                if (profile) {
-                    setLikesPrivate(profile.likes_private || false);
-                }
-
-                // Curtidas reais
                 const { data: dbLikes } = await supabase
                     .from('likes')
                     .select('project_id, projects(id, name, cover_url, deploy_url)')
-                    .eq('user_id', session.user.id);
+                    .eq('user_id', user.id);
                 if (dbLikes) {
                     const mappedLikes = dbLikes
                         .filter((l: any) => l.projects)
@@ -190,19 +224,22 @@ export default function ProfilePage() {
                             deploy_url: l.projects.deploy_url
                         }));
                     setLikedProjects(mappedLikes);
-                    return;
                 }
             }
         } catch (err) {
-            console.error("Erro ao buscar dados do Supabase para o perfil:", err);
+            console.error("Erro ao carregar perfil:", err);
+        } finally {
+            setLoading(false);
         }
-        };
+    };
+
+    useEffect(() => {
         loadProfile();
     }, []);
 
     useEffect(() => {
         if (originalData) {
-            setIsDirty(true); // Simplified tracking, any change sets it to true
+            setIsDirty(true);
         }
     }, [formData, skills]);
 
@@ -257,87 +294,145 @@ export default function ProfilePage() {
         if (!file) return;
         setLoading(true);
         try {
-            const fileExt = file.name.split('.').pop();
-            const fileName = `${Math.random()}.${fileExt}`;
-            const filePath = `${type}s/${fileName}`;
+            const maxWidth = type === 'avatar' ? 400 : 1200;
+            const maxHeight = type === 'avatar' ? 400 : 450;
+            const processedDataUrl = await processImageFile(file, maxWidth, maxHeight, 0.85);
 
-            const { error: uploadError } = await supabase.storage
-                .from('project_files')
-                .upload(filePath, file);
+            let finalUrl = processedDataUrl;
 
-            if (uploadError) throw uploadError;
+            // Tenta upload no Storage se disponível
+            try {
+                const fileExt = file.name.split('.').pop() || 'jpg';
+                const fileName = `${type}_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+                const filePath = `profiles/${fileName}`;
 
-            const { data: { publicUrl } } = supabase.storage
-                .from('project_files')
-                .getPublicUrl(filePath);
+                const { error: uploadError } = await supabase.storage
+                    .from('project_files')
+                    .upload(filePath, file);
 
+                if (!uploadError) {
+                    const { data: { publicUrl } } = supabase.storage
+                        .from('project_files')
+                        .getPublicUrl(filePath);
+                    if (publicUrl) {
+                        finalUrl = publicUrl;
+                    }
+                }
+            } catch (storageErr) {
+                // Fallback automático para o dataUrl otimizado
+            }
+
+            const fieldKey = type === 'avatar' ? 'avatar_url' : 'banner_url';
             setFormData(prev => ({
                 ...prev,
-                [type === 'avatar' ? 'avatar_url' : 'banner_url']: publicUrl
+                [fieldKey]: finalUrl
             }));
-            
+
+            // Auto-salva permanentemente na conta e na tabela profiles
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user?.id) {
+                await supabase.auth.updateUser({
+                    data: { [fieldKey]: finalUrl }
+                });
+                if (type === 'avatar') {
+                    await supabase.from('profiles').update({ avatar_url: finalUrl }).eq('id', session.user.id);
+                }
+            }
+
             showToast(`${type === 'avatar' ? 'Foto de perfil' : 'Banner'} atualizado com sucesso!`);
         } catch (error) {
-            showToast("Erro ao fazer upload da imagem.");
+            console.error("Erro no processamento da imagem:", error);
+            showToast("Erro ao processar imagem.");
         } finally {
             setLoading(false);
         }
     };
 
+    const handleRemoveBanner = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setFormData(prev => ({ ...prev, banner_url: "" }));
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.id) {
+            await supabase.auth.updateUser({
+                data: { banner_url: "" }
+            });
+        }
+        showToast("Banner restaurado para o padrão.");
+    };
+
     const handleSaveProfile = async () => {
         setLoading(true);
         try {
-            await new Promise(r => setTimeout(r, 800));
+            const { data: { session } } = await supabase.auth.getSession();
+            const userId = session?.user?.id;
 
+            const isClient = profileType !== "Desenvolvedor";
+            const isComplete = isClient 
+                ? !!(formData.name && formData.storeName && formData.cep && formData.address && formData.city)
+                : !!(formData.name && formData.bio);
+
+            const profilePayload = {
+                name: formData.name,
+                email: formData.email,
+                avatar_url: formData.avatar_url,
+                banner_url: formData.banner_url,
+                bio: formData.bio,
+                location: formData.location,
+                phone: formData.phone,
+                website: formData.website,
+                github: formData.github,
+                twitter: formData.twitter,
+                cnpj: formData.cnpj,
+                storeName: formData.storeName,
+                segment: formData.segment,
+                cep: formData.cep,
+                address: formData.address,
+                neighborhood: formData.neighborhood,
+                city: formData.city,
+                state: formData.state,
+                linkedin: formData.linkedin,
+                portfolio: formData.portfolio,
+                experience: formData.experience,
+                skills,
+                completed: isComplete,
+                likes_private: likesPrivate
+            };
+
+            // 1. Salva nos metadados permanentes da conta no Supabase Auth
+            if (userId) {
+                await supabase.auth.updateUser({
+                    data: profilePayload
+                });
+
+                // 2. Salva na tabela public.profiles da Susanoo
+                await supabase
+                    .from('profiles')
+                    .update({
+                        name: formData.name || null,
+                        bio: formData.bio || null,
+                        location: formData.location || null,
+                        avatar_url: formData.avatar_url || null,
+                        skills: skills || [],
+                        likes_private: likesPrivate
+                    })
+                    .eq('id', userId);
+            }
+
+            // 3. Salva no localStorage como cache local
             if (profileType === "Desenvolvedor") {
-                localStorage.setItem(await getAccountStorageKey("dev-profile"), JSON.stringify({
-                    name: formData.name,
-                    email: formData.email,
-                    github: formData.github,
-                    linkedin: formData.linkedin,
-                    portfolio: formData.portfolio,
-                    experience: formData.experience,
-                    specialties: skills,
-                    location: formData.location,
-                    bio: formData.bio
-                }));
+                localStorage.setItem(await getAccountStorageKey("dev-profile"), JSON.stringify(profilePayload));
             } else {
-                // Check completeness
-                const isComplete = !!(formData.name && formData.storeName && formData.cep && formData.address && formData.city);
-                
-                localStorage.setItem(await getAccountStorageKey("client-profile"), JSON.stringify({
-                    name: formData.name,
-                    email: formData.email,
-                    storeName: formData.storeName,
-                    segment: formData.segment,
-                    cnpj: formData.cnpj,
-                    cep: formData.cep,
-                    address: formData.address,
-                    neighborhood: formData.neighborhood,
-                    city: formData.city,
-                    state: formData.state,
-                    location: formData.location,
-                    bio: formData.bio,
-                    completed: isComplete
-                }));
-
+                localStorage.setItem(await getAccountStorageKey("client-profile"), JSON.stringify(profilePayload));
                 localStorage.setItem("susanoo_store_profile_completed", isComplete ? "true" : "false");
                 localStorage.setItem(await getAccountStorageKey("store-profile-completed"), isComplete ? "true" : "false");
                 window.dispatchEvent(new Event("profileCompletedChanged"));
             }
 
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.user?.id) {
-                await supabase
-                    .from('profiles')
-                    .update({ likes_private: likesPrivate })
-                    .eq('id', session.user.id);
-            }
-
-            showToast("Perfil salvo com sucesso!");
+            showToast("Perfil salvo com sucesso no banco de dados!");
             setIsDirty(false);
             setOriginalData({ ...formData, skills });
-        } catch (error) {
+        } catch (error: any) {
+            console.error("Erro ao salvar perfil:", error);
             showToast("Erro ao salvar o perfil.");
         } finally {
             setLoading(false);
@@ -359,12 +454,24 @@ export default function ProfilePage() {
                 <div className="absolute inset-0 bg-black/40 pointer-events-none" />
 
                 <input type="file" ref={bannerInputRef} hidden accept="image/*" onChange={(e) => handleImageUpload(e, 'banner')} />
-                <button 
-                    onClick={() => bannerInputRef.current?.click()}
-                    className="absolute top-6 right-6 bg-black/50 backdrop-blur-md rounded-xl px-4 py-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 text-white text-xs font-bold shadow-lg z-20 hover:scale-105 active:scale-95"
-                >
-                    <Camera className="w-4 h-4"/> Alterar Banner
-                </button>
+                
+                <div className="absolute top-6 right-6 flex items-center gap-2 z-20">
+                    {formData.banner_url && (
+                        <button 
+                            onClick={handleRemoveBanner}
+                            className="bg-black/50 backdrop-blur-md rounded-xl px-3.5 py-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 text-white/80 hover:text-red-400 text-xs font-bold shadow-lg hover:scale-105 active:scale-95"
+                            title="Remover banner personalizado"
+                        >
+                            <Trash2 className="w-3.5 h-3.5"/> Remover
+                        </button>
+                    )}
+                    <button 
+                        onClick={() => bannerInputRef.current?.click()}
+                        className="bg-black/50 backdrop-blur-md rounded-xl px-4 py-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 text-white text-xs font-bold shadow-lg hover:scale-105 active:scale-95"
+                    >
+                        <Camera className="w-4 h-4"/> Alterar Banner
+                    </button>
+                </div>
                 
                 <div className="relative z-10 flex flex-col sm:flex-row items-center gap-6 w-full max-w-5xl mx-auto translate-y-16 bg-surface/35 backdrop-blur-xl border border-surface-border/50 p-6 rounded-3xl shadow-2xl">
                     <div className="relative group cursor-pointer" onClick={() => avatarInputRef.current?.click()}>
@@ -409,7 +516,7 @@ export default function ProfilePage() {
                 <div className="flex items-center gap-4 border-b border-surface-border pb-4">
                     <button 
                         onClick={() => setActiveTab("Informações")}
-                        className={`text-sm font-black uppercase tracking-widest px-4 py-2 transition-colors relative ${activeTab === "Informações" ? "text-foreground" : "text-foreground/40 hover:text-foreground/80"}`}
+                        className={`text-sm font-black uppercase tracking-widest px-4 py-2 transition-colors relative cursor-pointer ${activeTab === "Informações" ? "text-foreground" : "text-foreground/40 hover:text-foreground/80"}`}
                     >
                         Informações
                         {activeTab === "Informações" && (
@@ -418,7 +525,7 @@ export default function ProfilePage() {
                     </button>
                     <button 
                         onClick={() => setActiveTab("Curtidos")}
-                        className={`text-sm font-black uppercase tracking-widest px-4 py-2 transition-colors relative ${activeTab === "Curtidos" ? "text-foreground" : "text-foreground/40 hover:text-foreground/80"}`}
+                        className={`text-sm font-black uppercase tracking-widest px-4 py-2 transition-colors relative cursor-pointer ${activeTab === "Curtidos" ? "text-foreground" : "text-foreground/40 hover:text-foreground/80"}`}
                     >
                         Curtidos
                         {activeTab === "Curtidos" && (
@@ -426,11 +533,11 @@ export default function ProfilePage() {
                         )}
                     </button>
                     <button 
-                        onClick={() => setActiveTab("Meus Projetos")}
-                        className={`text-sm font-black uppercase tracking-widest px-4 py-2 transition-colors relative ${activeTab === "Meus Projetos" ? "text-foreground" : "text-foreground/40 hover:text-foreground/80"}`}
+                        onClick={() => setActiveTab("Minhas Compras")}
+                        className={`text-sm font-black uppercase tracking-widest px-4 py-2 transition-colors relative cursor-pointer ${activeTab === "Minhas Compras" ? "text-foreground" : "text-foreground/40 hover:text-foreground/80"}`}
                     >
-                        Meus Projetos
-                        {activeTab === "Meus Projetos" && (
+                        Minhas Compras
+                        {activeTab === "Minhas Compras" && (
                             <motion.div layoutId="profile-tab" className="absolute bottom-[-17px] left-0 right-0 h-0.5 bg-accent" />
                         )}
                     </button>
@@ -648,47 +755,39 @@ export default function ProfilePage() {
                             <div className="mb-6 flex items-center justify-between bg-surface border border-surface-border p-4 rounded-2xl">
                                 <div className="flex items-center gap-2 text-sm font-bold text-foreground">
                                     <Lock className="w-4 h-4 text-accent" />
-                                    <span>Privacidade das Curtidas</span>
+                                    <span>Tornar curtidas privadas para outros usuários</span>
                                 </div>
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={likesPrivate} 
-                                        onChange={(e) => { setLikesPrivate(e.target.checked); setIsDirty(true); }}
-                                        className="sr-only peer" 
-                                    />
-                                    <div className="w-11 h-6 bg-surface-border rounded-full peer peer-focus:ring-2 peer-focus:ring-accent peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
-                                    <span className="ml-3 text-xs font-bold text-foreground">{likesPrivate ? "Privado" : "Público"}</span>
-                                </label>
+                                <input 
+                                    type="checkbox" 
+                                    checked={likesPrivate} 
+                                    onChange={async (e) => {
+                                        setLikesPrivate(e.target.checked);
+                                        const { data: { session } } = await supabase.auth.getSession();
+                                        if (session?.user?.id) {
+                                            await supabase
+                                                .from('profiles')
+                                                .update({ likes_private: e.target.checked })
+                                                .eq('id', session.user.id);
+                                        }
+                                        showToast(e.target.checked ? "Curtidas agora são privadas." : "Curtidas agora são públicas.");
+                                    }}
+                                    className="w-4 h-4 accent-purple-600 rounded cursor-pointer"
+                                />
                             </div>
+
                             {likedProjects.length > 0 ? (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                     {likedProjects.map((proj) => (
-                                        <div key={proj.id} onClick={() => router.push(`/dashboard?productId=${proj.id}`)} className="group flex flex-col cursor-pointer">
-                                            <div className="aspect-[4/3] w-full rounded-[24px] bg-[#050505] mb-4 overflow-hidden relative shadow-3xl transition-all duration-500 group-hover:-translate-y-1 border border-surface-border group-hover:border-accent/30">
+                                        <div key={proj.id} className="bg-surface border border-surface-border rounded-3xl p-5 shadow-sm relative overflow-hidden group">
+                                            <div className="w-full aspect-video bg-background border border-surface-border rounded-xl mb-4 flex items-center justify-center relative overflow-hidden">
                                                 {proj.cover_url ? (
-                                                    <img src={proj.cover_url} className="absolute inset-0 w-full h-full object-cover grayscale-[0.5] group-hover:grayscale-0 transition-all duration-700" alt={proj.name}/>
+                                                    <img src={proj.cover_url} alt="" className="w-full h-full object-cover" />
                                                 ) : (
-                                                    <div className="absolute inset-0 flex items-center justify-center text-4xl font-black text-foreground/5 opacity-20 uppercase tracking-tighter italic">
-                                                        {(proj.name || "PRJ").substring(0,3)}
-                                                    </div>
+                                                    <h3 className="text-3xl font-black text-foreground/5 uppercase tracking-tighter">{proj.name.substring(0,3)}</h3>
                                                 )}
-                                                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-80 group-hover:opacity-60 transition-opacity z-10" />
-                                                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 z-20 gap-4 scale-90 group-hover:scale-100">
-                                                    <button onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        router.push(`/dashboard?productId=${proj.id}`);
-                                                    }} className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-black hover:scale-110 active:scale-90 transition-transform shadow-2xl">
-                                                        <ExternalLink className="w-4 h-4" />
-                                                    </button>
-                                                </div>
-                                                <div className="absolute top-3 right-3 bg-black/50 backdrop-blur-md px-2 py-1 rounded-full flex items-center gap-1.5 z-20 shadow-lg">
-                                                    <Heart className="w-3.5 h-3.5 fill-red-500 text-red-500" />
-                                                </div>
                                             </div>
-                                            <div className="px-2">
-                                                <h4 className="text-sm font-bold text-foreground tracking-tight truncate">{proj.name}</h4>
-                                            </div>
+                                            <h4 className="font-bold text-sm text-foreground truncate">{proj.name}</h4>
+                                            <span className="text-accent text-xs font-black mt-1 block">R$ {proj.price.toFixed(2)}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -703,21 +802,28 @@ export default function ProfilePage() {
                             )}
                         </motion.div>
                     )}
-                    {activeTab === "Meus Projetos" && (
-                        <motion.div key="meus-projetos" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="w-full space-y-6">
+                    {activeTab === "Minhas Compras" && (
+                        <motion.div key="minhas-compras" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="w-full space-y-6">
                             <div className="bg-surface/50 border border-surface-border p-5 rounded-2xl flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <Lock className="w-4 h-4 text-accent" />
-                                    <span className="text-xs font-bold text-foreground/70">🔒 Esta aba é privada e visível apenas para você.</span>
+                                    <ShoppingBag className="w-4 h-4 text-accent" />
+                                    <span className="text-xs font-bold text-foreground/70">Sites e templates adquiridos por você.</span>
                                 </div>
+                                <button onClick={() => router.push('/dashboard/projects')} className="text-xs font-bold text-accent hover:underline flex items-center gap-1 cursor-pointer">
+                                    Abrir Painel Completo <ExternalLink className="w-3.5 h-3.5" />
+                                </button>
                             </div>
 
                             {myProjects.length > 0 ? (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                     {myProjects.map((proj) => (
-                                        <div key={proj.id} className="bg-surface border border-surface-border rounded-3xl p-5 shadow-sm relative overflow-hidden group">
+                                        <div key={proj.id} onClick={() => router.push(`/dashboard/timeline?project=${proj.id}`)} className="bg-surface border border-surface-border rounded-3xl p-5 shadow-sm relative overflow-hidden group cursor-pointer hover:border-accent/40 transition-all">
                                             <div className="w-full aspect-video bg-background border border-surface-border rounded-xl mb-4 flex items-center justify-center relative overflow-hidden">
-                                                <h3 className="text-3xl font-black text-foreground/5 uppercase tracking-tighter">{proj.name.substring(0,3)}</h3>
+                                                {proj.cover_url ? (
+                                                    <img src={proj.cover_url} alt="" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <h3 className="text-3xl font-black text-foreground/5 uppercase tracking-tighter">{proj.name.substring(0,3)}</h3>
+                                                )}
                                                 <div className="absolute top-2 left-2 flex items-center gap-1 bg-background/80 backdrop-blur-md px-2 py-1 rounded-md border border-surface-border text-[10px] font-bold text-foreground">
                                                     {proj.manual_progress || 0}%
                                                 </div>
@@ -732,8 +838,8 @@ export default function ProfilePage() {
                                     <div className="w-20 h-20 bg-surface rounded-full flex items-center justify-center mb-6">
                                         <Building className="w-8 h-8 text-foreground/20" />
                                     </div>
-                                    <h3 className="text-2xl font-black italic tracking-tighter text-foreground mb-2">Nenhum projeto ativo</h3>
-                                    <p className="text-foreground/40 font-medium">Acompanhe seus projetos adquiridos ou fale com um consultor.</p>
+                                    <h3 className="text-2xl font-black italic tracking-tighter text-foreground mb-2">Nenhum site comprado</h3>
+                                    <p className="text-foreground/40 font-medium">Acompanhe seus sites adquiridos ou fale com um consultor.</p>
                                 </div>
                             )}
                         </motion.div>
@@ -741,37 +847,16 @@ export default function ProfilePage() {
                 </AnimatePresence>
             </div>
 
-            {/* Unsaved Changes Banner */}
-            <AnimatePresence>
-                {isDirty && (
-                    <motion.div 
-                        initial={{ opacity: 0, y: 100 }} 
-                        animate={{ opacity: 1, y: 0 }} 
-                        exit={{ opacity: 0, y: 100 }}
-                        className="fixed bottom-0 left-0 right-0 z-[9000] bg-accent text-white py-4 px-6 flex flex-col md:flex-row items-center justify-between gap-4 shadow-[0_-10px_40px_rgba(0,0,0,0.2)] md:ml-[280px]"
-                    >
-                        <div className="flex items-center gap-3 font-bold text-sm">
-                            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                            Você tem alterações não salvas. Salve para não perdê-las.
-                        </div>
-                        <button onClick={handleSaveProfile} disabled={loading} className="bg-white text-accent hover:bg-white/90 font-black px-6 py-2.5 rounded-xl transition-all shadow-lg flex items-center gap-2 cursor-pointer text-xs uppercase tracking-wider">
-                            {loading ? <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" /> : <Save className="w-4 h-4" />}
-                            Salvar Perfil
-                        </button>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Custom Toast Notification */}
+            {/* Toast */}
             <AnimatePresence>
                 {toastMessage && (
                     <motion.div 
-                        initial={{ opacity: 0, y: 50, scale: 0.9 }} 
+                        initial={{ opacity: 0, y: 50, scale: 0.95 }} 
                         animate={{ opacity: 1, y: 0, scale: 1 }} 
-                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                        exit={{ opacity: 0, scale: 0.95, y: 20 }}
                         className="fixed bottom-6 right-6 z-[9999] bg-surface border border-surface-border shadow-2xl px-6 py-4 rounded-2xl flex items-center gap-3 max-w-sm border-accent/20"
                     >
-                        <div className="w-8 h-8 bg-accent/15 text-accent rounded-full flex items-center justify-center shrink-0">
+                        <div className="w-8 h-8 bg-accent/10 text-accent rounded-full flex items-center justify-center shrink-0">
                             <ShieldCheck className="w-4 h-4" />
                         </div>
                         <p className="text-sm font-bold text-foreground">{toastMessage}</p>

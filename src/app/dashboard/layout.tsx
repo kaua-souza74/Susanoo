@@ -1,7 +1,7 @@
 "use client";
 import { ReactNode, useState, useEffect } from "react";
 import Link from "next/link";
-import { Zap, Grid, MessageSquareText, Calendar, Settings, LogOut, Sparkles, User, Plus, ShoppingCart, Bell, Check } from "lucide-react";
+import { Zap, Grid, MessageSquareText, Calendar, Settings, LogOut, Sparkles, User, Plus, ShoppingCart, Bell, Check, ShoppingBag } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useRouter, usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -210,13 +210,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                  <>
                    <NavItem icon={<Sparkles className="w-5 h-5"/>} label="Marketplace" active={mounted ? pathname === '/dashboard' : false} href="/dashboard" />
                    <NavItem icon={<User className="w-5 h-5"/>} label="Desenvolvedores" active={mounted ? pathname?.includes('/developers') : false} href="/dashboard/developers" />
-                   <NavItem icon={<Grid className="w-5 h-5"/>} label="Meus Projetos" active={mounted ? pathname?.includes('/projects') || pathname?.includes('/kanban') : false} href="/dashboard/projects" />
+                   <NavItem icon={<ShoppingBag className="w-5 h-5"/>} label="Minhas Compras" active={mounted ? pathname?.includes('/projects') : false} href="/dashboard/projects" />
+                   <NavItem icon={<Calendar className="w-5 h-5"/>} label="Progresso Integrado" active={mounted ? pathname?.includes('/timeline') || pathname?.includes('/kanban') : false} href="/dashboard/timeline" />
                    <NavItem icon={<MessageSquareText className="w-5 h-5"/>} label="Chat com a Equipe" active={mounted ? pathname?.includes('/chat') : false} href="/dashboard/chat" />
-                   <NavItem icon={<Calendar className="w-5 h-5"/>} label="Cronograma" active={mounted ? pathname?.includes('/timeline') : false} href="/dashboard/timeline" />
                  </>
                )}
                
-               <div className="my-2 border-t border-surface-border" /> {/* Separator */}
+               <div className="my-2 border-t border-surface-border" />
                
                <NavItem icon={<User className="w-5 h-5"/>} label="Meu Perfil" active={mounted ? pathname?.includes('/profile') : false} href="/dashboard/profile" warning={!storeProfileCompleted} />
                <NavItem icon={<Settings className="w-5 h-5"/>} label="Configurações" active={mounted ? pathname?.includes('/settings') : false} href="/dashboard/settings" />

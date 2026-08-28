@@ -20,7 +20,9 @@ import {
   MessageCircle,
   FileText,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Calendar,
+  CheckCircle2
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
@@ -46,50 +48,98 @@ function DiscoverHomeContent() {
    const [liked, setLiked] = useState(false);
    const [activeTab, setActiveTab] = useState<"detalhes" | "especificacoes" | "comentarios">("detalhes");
    const [likedProjectIds, setLikedProjectIds] = useState<string[]>([]);
+   const [purchasedProjects, setPurchasedProjects] = useState<any[]>([]);
 
-   // Checklist & Onboarding states
-   const [storeProfileCompleted, setStoreProfileCompleted] = useState(false);
+   // Checklist & Onboarding states (inicializados como ocultos para evitar flash de renderização antes de carregar o estado da conta)
+   const [accountLoaded, setAccountLoaded] = useState(false);
+   const [storeProfileCompleted, setStoreProfileCompleted] = useState(true);
    const [hasProjects, setHasProjects] = useState(false);
    const [hasExploredDevelopers, setHasExploredDevelopers] = useState(false);
    const [hasChat, setHasChat] = useState(false);
    const [hasReview, setHasReview] = useState(false);
-   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
-   const [showProgressCard, setShowProgressCard] = useState(true);
+   const [onboardingDismissed, setOnboardingDismissed] = useState(true);
+   const [showProgressCard, setShowProgressCard] = useState(false);
 
    const { addToCart, items, setIsCartOpen } = useCart();
 
+   const isPurchased = (proj: any) => {
+     if (!proj) return false;
+     return purchasedProjects.some(p => 
+       (p.id === proj.id) || 
+       (p.name && proj.name && p.name.trim().toLowerCase() === proj.name.trim().toLowerCase())
+     );
+   };
+
    useEffect(() => {
      const loadAccount = async () => {
-       setUserType(await getAuthenticatedAccountType());
-       const { data: { session } } = await supabase.auth.getSession();
-       const userId = session?.user?.id;
+       try {
+         setUserType(await getAuthenticatedAccountType());
+         const { data: { session } } = await supabase.auth.getSession();
+         const userId = session?.user?.id;
 
-       const [profileKey, projectKey, developersKey, chatKey, reviewKey, onboardingKey, likeKey, progressKey] = await Promise.all([
-         getAccountStorageKey("store-profile-completed"), getAccountStorageKey("first-project"), getAccountStorageKey("explored-developers"), getAccountStorageKey("first-chat"), getAccountStorageKey("first-review"), getAccountStorageKey("onboarding-dismissed"), getAccountStorageKey("liked_projects"), getAccountStorageKey("progress-card-dismissed")
-       ]);
-       setStoreProfileCompleted(localStorage.getItem(profileKey) === "true" || localStorage.getItem("susanoo_store_profile_completed") === "true");
-       setHasProjects(localStorage.getItem(projectKey) === "true");
-       setHasExploredDevelopers(localStorage.getItem(developersKey) === "true");
-       setHasChat(localStorage.getItem(chatKey) === "true");
-       setHasReview(localStorage.getItem(reviewKey) === "true");
-       setOnboardingDismissed(localStorage.getItem(onboardingKey) === "true");
-       setShowProgressCard(localStorage.getItem(progressKey) !== "true");
-       
-       if (userId) {
-         try {
-           const { data: dbLikes } = await supabase.from('likes').select('project_id').eq('user_id', userId);
-           if (dbLikes && dbLikes.length > 0) {
-             setLikedProjectIds(dbLikes.map((l: any) => l.project_id));
-             return;
+         let userPurchasesList: any[] = [];
+         if (userId) {
+           try {
+             const { data: userPurchases } = await supabase
+               .from('projects')
+               .select('id, name')
+               .eq('client_id', userId);
+             userPurchasesList = userPurchases || [];
+             setPurchasedProjects(userPurchasesList);
+             if (userPurchasesList.length > 0) {
+               setHasProjects(true);
+             }
+           } catch (e) {
+             console.error("Erro ao carregar compras do usuário:", e);
            }
-         } catch (e) {
-           console.error("Erro ao carregar curtidas do banco:", e);
          }
-       }
 
-       // Curtidas vinculadas por conta — chave única por user.id
-       const storedLikes = JSON.parse(localStorage.getItem(likeKey) || '[]');
-       setLikedProjectIds(storedLikes.map((p: any) => p.id));
+         const [profileKey, projectKey, developersKey, chatKey, reviewKey, onboardingKey, likeKey, progressKey] = await Promise.all([
+           getAccountStorageKey("store-profile-completed"), 
+           getAccountStorageKey("first-project"), 
+           getAccountStorageKey("explored-developers"), 
+           getAccountStorageKey("first-chat"), 
+           getAccountStorageKey("first-review"), 
+           getAccountStorageKey("onboarding-dismissed"), 
+           getAccountStorageKey("liked_projects"), 
+           getAccountStorageKey("progress-card-dismissed")
+         ]);
+
+         const isProfileDone = localStorage.getItem(profileKey) === "true" || localStorage.getItem("susanoo_store_profile_completed") === "true";
+         const isProjDone = localStorage.getItem(projectKey) === "true" || userPurchasesList.length > 0;
+         const isDevDone = localStorage.getItem(developersKey) === "true";
+         const isChatDone = localStorage.getItem(chatKey) === "true";
+         const isReviewDone = localStorage.getItem(reviewKey) === "true";
+         const isOnboardDismissed = localStorage.getItem(onboardingKey) === "true";
+         const isProgressDismissed = localStorage.getItem(progressKey) === "true";
+
+         setStoreProfileCompleted(isProfileDone);
+         setHasProjects(isProjDone);
+         setHasExploredDevelopers(isDevDone);
+         setHasChat(isChatDone);
+         setHasReview(isReviewDone);
+         setOnboardingDismissed(isOnboardDismissed);
+         setShowProgressCard(!isProgressDismissed);
+         
+         if (userId) {
+           try {
+             const { data: dbLikes } = await supabase.from('likes').select('project_id').eq('user_id', userId);
+             if (dbLikes && dbLikes.length > 0) {
+               setLikedProjectIds(dbLikes.map((l: any) => l.project_id));
+               setAccountLoaded(true);
+               return;
+             }
+           } catch (e) {
+             console.error("Erro ao carregar curtidas do banco:", e);
+           }
+         }
+
+         // Curtidas vinculadas por conta — chave única por user.id
+         const storedLikes = JSON.parse(localStorage.getItem(likeKey) || '[]');
+         setLikedProjectIds(storedLikes.map((p: any) => p.id));
+       } finally {
+         setAccountLoaded(true);
+       }
      };
      loadAccount();
 
@@ -321,7 +371,7 @@ function DiscoverHomeContent() {
 
            <div className="w-full max-w-[1600px] mx-auto py-10 px-6 space-y-8">
                {/* 1. Onboarding Natural de Primeiro Acesso (Passo 1, 2, 3) */}
-               {(!onboardingDismissed && !(storeProfileCompleted && hasExploredDevelopers && hasProjects)) && (
+               {accountLoaded && !onboardingDismissed && !(storeProfileCompleted && hasExploredDevelopers && hasProjects) && (
                  <motion.div 
                    initial={{ opacity: 0, y: -10 }}
                    animate={{ opacity: 1, y: 0 }}
@@ -374,7 +424,7 @@ function DiscoverHomeContent() {
                )}
 
                {/* 2. Checklist Progressiva para incentivar o cliente */}
-               {showProgressCard && (
+               {accountLoaded && showProgressCard && (
                  <div className="bg-surface border border-surface-border rounded-3xl p-6 shadow-sm relative">
                    <button 
                      onClick={handleDismissProgressCard} 
@@ -409,18 +459,18 @@ function DiscoverHomeContent() {
                {hasProjects && (
                  <div className="bg-gradient-to-r from-accent/10 to-transparent border border-accent/20 rounded-3xl p-6">
                    <h3 className="text-lg font-black mb-2 flex items-center gap-2">
-                     <Sparkles className="w-5 h-5 text-accent" /> Projeto Ativo Detectado!
+                     <Sparkles className="w-5 h-5 text-accent" /> Site Ativo Detectado!
                    </h3>
                    <p className="text-sm text-foreground/60 mb-4 max-w-2xl">Use nossas ferramentas de acompanhamento para ver o andamento do seu site e se comunicar com o seu desenvolvedor.</p>
                    <div className="flex flex-wrap gap-3">
-                     <button onClick={() => router.push("/dashboard/projects")} className="px-4 py-2 bg-foreground text-background font-bold text-xs rounded-xl uppercase tracking-wider hover:opacity-90">
-                       Acompanhar seu projeto
+                     <button onClick={() => router.push("/dashboard/projects")} className="px-4 py-2 bg-foreground text-background font-bold text-xs rounded-xl uppercase tracking-wider hover:opacity-90 flex items-center gap-1.5 cursor-pointer">
+                       <ShoppingBag className="w-3.5 h-3.5" /> Ver Minhas Compras
                      </button>
-                     <button onClick={() => router.push("/dashboard/chat")} className="px-4 py-2 bg-surface border border-surface-border font-bold text-xs rounded-xl uppercase tracking-wider text-foreground hover:border-accent/40">
-                       Converse no Chat
+                     <button onClick={() => router.push("/dashboard/timeline")} className="px-4 py-2 bg-surface border border-surface-border font-bold text-xs rounded-xl uppercase tracking-wider text-foreground hover:border-accent/40 flex items-center gap-1.5 cursor-pointer">
+                       <Calendar className="w-3.5 h-3.5 text-accent" /> Acompanhar Progresso
                      </button>
-                     <button onClick={() => router.push("/dashboard/timeline")} className="px-4 py-2 bg-surface border border-surface-border font-bold text-xs rounded-xl uppercase tracking-wider text-foreground hover:border-accent/40">
-                       Veja o Cronograma
+                     <button onClick={() => router.push("/dashboard/chat")} className="px-4 py-2 bg-surface border border-surface-border font-bold text-xs rounded-xl uppercase tracking-wider text-foreground hover:border-accent/40 flex items-center gap-1.5 cursor-pointer">
+                       <MessageCircle className="w-3.5 h-3.5 text-accent" /> Converse no Chat
                      </button>
                    </div>
                  </div>
@@ -451,16 +501,17 @@ function DiscoverHomeContent() {
                    ))}
                </div>
 
-               {/* Grade de produtos (4 a 5 por linha no desktop) */}
+               {/* Grade de produtos (4 sites por linha com cards mais largos e elegantes) */}
                {loading ? (
                  <div className="flex items-center justify-center py-20">
                    <div className="w-8 h-8 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
                  </div>
                ) : (
-               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-7">
                    <AnimatePresence mode="popLayout">
                    {filtered.length > 0 ? filtered.map((proj, i) => {
                         const isTemplate = proj.category?.toLowerCase().includes("template") || !proj.category;
+                        const bought = isPurchased(proj);
                         return (
                         <motion.div 
                             key={proj.id}
@@ -468,7 +519,7 @@ function DiscoverHomeContent() {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0 }}
                             transition={{ delay: i * 0.04 }}
-                            className="group bg-surface border border-surface-border rounded-2xl overflow-hidden hover:border-accent/30 hover:shadow-xl transition-all duration-300 flex flex-col"
+                            className={`group bg-surface border rounded-3xl overflow-hidden hover:shadow-2xl transition-all duration-300 flex flex-col ${bought ? 'border-emerald-500/30 shadow-emerald-500/5' : 'border-surface-border hover:border-accent/40 shadow-sm'}`}
                         >
                             {/* Imagem com botão de hover (apenas Ver Site) */}
                             <div
@@ -490,39 +541,60 @@ function DiscoverHomeContent() {
                             </div>
                             
                             {/* Info do card */}
-                            <div className="p-4 flex flex-col flex-1 justify-between">
+                            <div className="p-5 flex flex-col flex-1 justify-between gap-4">
                                <div>
-                                   <div className="flex items-center gap-1.5 mb-2">
-                                       <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${isTemplate ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'}`}>
+                                   <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                                       <span className={`text-[9px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-lg ${isTemplate ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : 'bg-accent/10 text-accent border border-accent/20'}`}>
                                          {isTemplate ? 'Template' : 'Site Pronto'}
                                        </span>
+                                       {bought && (
+                                         <span className="text-[9px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                                           <Check className="w-3 h-3" /> Site já comprado
+                                         </span>
+                                       )}
                                    </div>
-                                   <h4 className="font-bold text-sm md:text-base text-foreground truncate cursor-pointer" onClick={() => openProduct(proj)}>{proj.name}</h4>
+                                   <h4 className="font-bold text-base text-foreground truncate cursor-pointer hover:text-accent transition-colors" onClick={() => openProduct(proj)}>{proj.name}</h4>
                                    <p className="text-xs text-foreground/50 mt-0.5">{mainMode === "Susanoo" ? "Por Susanoo" : "Dev Independente"}</p>
                                </div>
                                
-                               <div className="mt-4">
-                                   <div className="flex items-center justify-between mb-3">
-                                       <span className="text-accent font-black text-sm">R$ {(proj.price || 49.90).toFixed(2)}</span>
-                                       <div className="flex gap-2 z-10">
+                               <div>
+                                   <div className="flex items-center justify-between mb-3.5">
+                                       <span className="text-accent font-black text-base">R$ {(proj.price || 49.90).toFixed(2).replace('.', ',')}</span>
+                                       <div className="flex items-center gap-2 z-10">
                                            <button 
                                                 onClick={(e) => { e.stopPropagation(); toggleFavorite(proj); }}
-                                                className="px-2 py-1 rounded-full text-[10px] font-black flex items-center gap-1 hover:text-red-500 transition-colors"
+                                                className="p-1.5 rounded-xl bg-background border border-surface-border text-[10px] font-black flex items-center gap-1 hover:text-red-500 hover:border-red-500/30 transition-all cursor-pointer"
+                                                title="Favoritar"
                                            >
                                                <Heart className={`w-3.5 h-3.5 ${likedProjectIds.includes(proj.id) ? 'fill-red-500 text-red-500' : 'text-foreground/40'}`} />
                                            </button>
-                                           <div className="flex items-center gap-1">
+                                           <div className="flex items-center gap-1 bg-background border border-surface-border px-2 py-1 rounded-xl">
                                                <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                                               <span className="text-xs text-foreground/40 font-bold">5.0</span>
+                                               <span className="text-xs text-foreground/70 font-bold">5.0</span>
                                            </div>
                                        </div>
                                    </div>
-                                   <button
-                                     onClick={(e) => handleAddToCart(proj, e)}
-                                     className={`w-full py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${isInCart(proj.id) ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/30' : 'bg-accent text-white hover:bg-accent/90'}`}
-                                   >
-                                     {isInCart(proj.id) ? "✓ No Carrinho" : "Adicionar"}
-                                   </button>
+                                   
+                                   {bought ? (
+                                     <button
+                                       onClick={(e) => { e.stopPropagation(); router.push('/dashboard/projects'); }}
+                                       className="w-full py-3 px-3 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 flex items-center justify-center gap-2 whitespace-nowrap"
+                                     >
+                                       <Check className="w-4 h-4" /> Site já comprado
+                                     </button>
+                                   ) : (
+                                     <button
+                                        onClick={(e) => handleAddToCart(proj, e)}
+                                        className={`w-full py-3 px-3 rounded-2xl font-black text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap ${
+                                          isInCart(proj.id) 
+                                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30' 
+                                            : 'bg-accent text-white hover:bg-accent/90 shadow-lg shadow-accent/20 hover:scale-[1.02] active:scale-[0.98]'
+                                        }`}
+                                      >
+                                        <ShoppingCart className="w-4 h-4 shrink-0" />
+                                        <span>{isInCart(proj.id) ? "No Carrinho" : "Adicionar ao Carrinho"}</span>
+                                      </button>
+                                   )}
                                </div>
                             </div>
                         </motion.div>
@@ -675,19 +747,48 @@ function DiscoverHomeContent() {
                                             </div>
                                        </div>
 
+                                       {isPurchased(activeProduct) && (
+                                         <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex items-start gap-3 text-emerald-600 dark:text-emerald-400">
+                                           <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-500 mt-0.5" />
+                                           <div>
+                                             <p className="font-black text-sm text-foreground">Você já possui este site!</p>
+                                             <p className="text-xs text-foreground/60 font-medium mt-0.5">Acesse Minhas Compras para acompanhar o desenvolvimento e cronograma.</p>
+                                           </div>
+                                         </div>
+                                       )}
+
                                        <div className="flex flex-col gap-3 mt-8 lg:mt-0 pt-6 border-t border-surface-border">
-                                            <button 
-                                                onClick={() => { handleAddToCart(activeProduct); setActiveProduct(null); }}
-                                                className="w-full py-4.5 bg-accent text-white font-black rounded-xl hover:bg-accent/90 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-accent/20 flex items-center justify-center gap-2 text-sm uppercase tracking-wider"
-                                            >
-                                                <ShoppingBag className="w-5 h-5" /> Adquirir Agora
-                                            </button>
-                                            <button 
-                                                onClick={(e) => handleAddToCart(activeProduct, e)}
-                                                className={`w-full py-4.5 font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 border text-sm uppercase tracking-wider ${isInCart(activeProduct.id) ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600' : 'bg-surface border-surface-border text-foreground hover:border-accent/40 hover:bg-surface-border/50'}`}
-                                            >
-                                                {isInCart(activeProduct.id) ? <><Check className="w-4 h-4" /> No Carrinho</> : <><ShoppingCart className="w-4 h-4" /> Adicionar ao Carrinho</>}
-                                            </button>
+                                            {isPurchased(activeProduct) ? (
+                                              <>
+                                                <button 
+                                                    onClick={() => { setActiveProduct(null); router.push('/dashboard/projects'); }}
+                                                    className="w-full py-4.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-emerald-600/20 flex items-center justify-center gap-2 text-sm uppercase tracking-wider cursor-pointer"
+                                                >
+                                                    <ShoppingBag className="w-5 h-5" /> Ver em Minhas Compras
+                                                </button>
+                                                <button 
+                                                    onClick={() => { setActiveProduct(null); router.push('/dashboard/timeline'); }}
+                                                    className="w-full py-4.5 bg-surface border border-surface-border hover:border-accent/40 text-foreground font-black rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider cursor-pointer"
+                                                >
+                                                    <Calendar className="w-5 h-5 text-accent" /> Acompanhar Progresso
+                                                </button>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <button 
+                                                    onClick={() => { handleAddToCart(activeProduct); setActiveProduct(null); }}
+                                                    className="w-full py-4.5 bg-accent text-white font-black rounded-xl hover:bg-accent/90 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-accent/20 flex items-center justify-center gap-2 text-sm uppercase tracking-wider"
+                                                >
+                                                    <ShoppingBag className="w-5 h-5" /> Adquirir Agora
+                                                </button>
+                                                <button 
+                                                    onClick={(e) => handleAddToCart(activeProduct, e)}
+                                                    className={`w-full py-4.5 font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 border text-sm uppercase tracking-wider ${isInCart(activeProduct.id) ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600' : 'bg-surface border-surface-border text-foreground hover:border-accent/40 hover:bg-surface-border/50'}`}
+                                                >
+                                                    {isInCart(activeProduct.id) ? <><Check className="w-4 h-4" /> No Carrinho</> : <><ShoppingCart className="w-4 h-4" /> Adicionar ao Carrinho</>}
+                                                </button>
+                                              </>
+                                            )}
                                             <button 
                                                 onClick={() => router.push(`/preview/${activeProduct.id}`)}
                                                 className="w-full py-4.5 bg-surface border border-surface-border hover:border-foreground/20 text-foreground font-black rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider cursor-pointer"
