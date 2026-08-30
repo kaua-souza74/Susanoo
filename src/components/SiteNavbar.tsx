@@ -24,7 +24,6 @@ export function SiteNavbar() {
           <Link href="/faq" className="text-[13px] font-bold opacity-60 hover:opacity-100 transition-opacity uppercase tracking-widest">FAQ</Link>
         </div>
         <div className="flex items-center gap-3 md:gap-4">
-          <ThemeToggle />
           <button
             onClick={() => router.push('/login')}
             className="bg-foreground text-background font-black text-[10px] md:text-[12px] px-4 py-2 md:px-6 md:py-2.5 rounded-xl md:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-xl shadow-foreground/10"

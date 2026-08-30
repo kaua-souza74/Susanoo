@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 
 export default function AdminOverview() {
     const [stats, setStats] = useState({ clients: 0, activeProjects: 0, pendingTasks: 0 });
+    const [clientInterests, setClientInterests] = useState<any[]>([]);
     const router = useRouter();
 
     useEffect(() => {
@@ -23,10 +24,19 @@ export default function AdminOverview() {
             }
 
             setStats({
-                clients: clientsCount || 3,
-                activeProjects: projs?.length || 5,
-                pendingTasks: pTasks || 42
+                clients: clientsCount || 0,
+                activeProjects: projs?.length || 0,
+                pendingTasks: pTasks || 0
             });
+
+            // Carrega pesquisas de interesses reais do banco
+            const { data: interests } = await supabase
+                .from('client_interests')
+                .select('*')
+                .order('created_at', { ascending: false });
+            if (interests) {
+                setClientInterests(interests);
+            }
         };
         load();
     }, []);
@@ -82,6 +92,48 @@ export default function AdminOverview() {
                         <Clock className="w-6 h-6 text-red-500" />
                     </div>
                 </div>
+            </motion.div>
+
+            {/* Seção de Inteligência de Mercado & Segmentos Procurados */}
+            <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} transition={{delay:0.15}} className="mb-16">
+                <div className="flex items-center justify-between mb-6">
+                    <div>
+                        <h2 className="text-2xl font-bold text-foreground tracking-tight">Segmentos Mais Procurados Pelos Clientes</h2>
+                        <p className="text-foreground/50 text-sm mt-0.5">Preferências capturadas através de pesquisas no marketplace</p>
+                    </div>
+                    <span className="text-xs font-bold px-3 py-1 bg-surface border border-surface-border rounded-xl text-foreground/60">
+                        {clientInterests.length} {clientInterests.length === 1 ? 'pesquisa' : 'pesquisas'}
+                    </span>
+                </div>
+
+                {clientInterests.length === 0 ? (
+                    <div className="bg-surface border border-dashed border-surface-border rounded-3xl p-8 text-center flex flex-col items-center justify-center gap-2">
+                        <h4 className="font-bold text-sm text-foreground">Nenhuma pesquisa de cliente registrada ainda</h4>
+                        <p className="text-xs text-foreground/50 max-w-md leading-relaxed">
+                            Assim que os clientes responderem ao questionário de preferências na vitrine (Agro, Barbearia, Confeitaria, etc.), a distribuição de nichos e dados reais aparecerá aqui em tempo real.
+                        </p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+                        {(() => {
+                            const counts: Record<string, number> = {};
+                            clientInterests.forEach(ci => {
+                                if (ci.segment) counts[ci.segment] = (counts[ci.segment] || 0) + 1;
+                            });
+                            const total = clientInterests.length;
+                            return Object.entries(counts).map(([seg, count], idx) => {
+                                const pct = Math.round((count / total) * 100);
+                                return (
+                                    <div key={idx} className="p-5 rounded-2xl border border-surface-border bg-surface flex flex-col justify-between shadow-sm">
+                                        <span className="text-[10px] font-black uppercase tracking-wider block mb-1 text-accent">{pct}% do total</span>
+                                        <h4 className="font-bold text-sm text-foreground mb-2 leading-tight">{seg}</h4>
+                                        <span className="text-xs font-semibold text-foreground/50">{count} {count === 1 ? 'busca' : 'buscas'}</span>
+                                    </div>
+                                );
+                            });
+                        })()}
+                    </div>
+                )}
             </motion.div>
 
             <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} transition={{delay:0.2}} className="mb-8">

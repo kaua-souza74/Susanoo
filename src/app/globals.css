@@ -3,34 +3,34 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  /* Light mode colors - Refined Premium Palette */
-  --background: #fdfdfd;
-  --foreground: #09090b;
+  /* Light mode colors - Ultra Premium Slate / Clean Palette */
+  --background: #f8fafc;
+  --foreground: #0f172a;
   
   --card: #ffffff;
-  --card-foreground: #09090b;
+  --card-foreground: #0f172a;
   
   --popover: #ffffff;
-  --popover-foreground: #09090b;
+  --popover-foreground: #0f172a;
   
-  --primary: #8b5cf6; /* Violet 500 */
+  --primary: #7c3aed; /* Violet 600 */
   --primary-foreground: #ffffff;
   
-  --secondary: #f4f4f5;
-  --secondary-foreground: #18181b;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
   
-  --muted: #f4f4f5;
-  --muted-foreground: #71717a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
   
-  --accent: #8b5cf6;
+  --accent: #7c3aed;
   --accent-foreground: #ffffff;
   
   --destructive: #ef4444;
   --destructive-foreground: #fafafa;
 
-  --border: #e4e4e7;
-  --input: #e4e4e7;
-  --ring: #8b5cf6;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #7c3aed;
 
   --surface: #ffffff;
   --surface-border: #e2e8f0;
@@ -39,8 +39,8 @@
 }
 
 .dark {
-  /* Dark mode colors - Deep Premium Palette */
-  --background: #050505; /* Near black */
+  /* Dark mode colors - Deep Premium OLED Palette */
+  --background: #050505;
   --foreground: #fafafa;
   
   --card: #0c0c0e;
@@ -132,3 +132,66 @@ input[type="submit"],
   box-shadow: none;
 }
 
+/* Scrollbars modernas personalizadas e adaptativas ao tema */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
+}
+
+.dark * {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}

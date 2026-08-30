@@ -82,6 +82,8 @@ export default function AdminTeamsChat() {
    const [editingMessage, setEditingMessage] = useState<Message | null>(null);
    const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
    const [pinnedChannelIds, setPinnedChannelIds] = useState<string[]>([]);
+   const [profilesMapState, setProfilesMapState] = useState<Record<string, any>>({});
+   const [lastActivityMapState, setLastActivityMapState] = useState<Record<string, number>>({});
    
    // Group CRUD State
    const [isModalOpen, setIsModalOpen] = useState(false);
@@ -157,11 +159,11 @@ export default function AdminTeamsChat() {
                 const matchingChannel = currentChannels.find(c => c.id === targetChannelId);
                 if (!matchingChannel) return;
 
-                // Se a mensagem foi enviada pelo próprio usuário, ignoramos
-                if (newMsg.user_id === user.id) return;
+                // Atualiza última atividade da conversa
+                setLastActivityMapState(prev => ({ ...prev, [targetChannelId]: Date.now() }));
 
-                // Fixar conversa: move o canal para o topo adicionando o ID na lista de fixados
-                setPinnedChannelIds(prev => [targetChannelId, ...prev.filter(id => id !== targetChannelId)]);
+                // Se a mensagem foi enviada pelo próprio usuário, ignoramos o alerta/contador
+                if (newMsg.user_id === user.id) return;
 
                 const isActive = currentActive && currentActive.id === targetChannelId;
                 const isAlertEnabled = localStorage.getItem("susanoo_chat_alerts") !== "false";
@@ -219,10 +221,31 @@ export default function AdminTeamsChat() {
         return () => { supabase.removeChannel(channel); }
     }, [activeChannel?.id, user]);
 
+   const togglePinChannel = (channelId: string) => {
+       setPinnedChannelIds(prev => {
+           const next = prev.includes(channelId)
+               ? prev.filter(id => id !== channelId)
+               : [channelId, ...prev];
+           if (typeof window !== "undefined" && user?.id) {
+               localStorage.setItem(`susanoo_pinned_chats_${user.id}`, JSON.stringify(next));
+           }
+           return next;
+       });
+   };
+
    const fetchData = async () => {
        const { data: { session } } = await supabase.auth.getSession();
        if (session) {
            setUser(session.user);
+
+           // Carregar fixados persistidos do usuário
+           if (typeof window !== "undefined") {
+               const saved = localStorage.getItem(`susanoo_pinned_chats_${session.user.id}`);
+               if (saved) {
+                   try { setPinnedChannelIds(JSON.parse(saved)); } catch(e) {}
+               }
+           }
+
            // Buscar perfil do admin para ter o nome certo
            const { data: prof } = await supabase
                .from('profiles')
@@ -270,7 +293,7 @@ export default function AdminTeamsChat() {
            return c.type === 'group' || c.type === 'support';
        });
 
-       // Buscar perfis das pessoas associadas aos chats para mostrar o nome real
+       // Buscar perfis das pessoas associadas aos chats com suas fotos de perfil (avatar_url)
        const userIdsToFetch = new Set<string>();
        filteredCustChats.forEach(c => {
            if (c.user_id) userIdsToFetch.add(c.user_id);
@@ -281,15 +304,22 @@ export default function AdminTeamsChat() {
 
        let profilesMap: Record<string, any> = {};
        if (userIdsToFetch.size > 0) {
-           const { data: profiles } = await supabase.from('profiles').select('id, name, email, role').in('id', Array.from(userIdsToFetch));
+           const { data: profiles } = await supabase.from('profiles').select('id, name, email, role, avatar_url').in('id', Array.from(userIdsToFetch));
            (profiles || []).forEach(p => { profilesMap[p.id] = p; });
        }
+       setProfilesMapState(profilesMap);
        
        const all = [
-           ...(projs || []).map(p => ({ ...p, isProject: true, name: p.name })),
+           ...(projs || []).map(p => ({ 
+               ...p, 
+               isProject: true, 
+               name: p.name,
+               avatar_url: p.image_url || p.logo_url || null
+           })),
            ...filteredCustChats.map(c => {
                let name = c.name;
                let sub = 'Grupo HQ';
+               let avatar_url = null;
                
                if (c.type === 'support') {
                    const clientProfile = c.user_id ? profilesMap[c.user_id] : null;
@@ -297,12 +327,14 @@ export default function AdminTeamsChat() {
                    const clientRole = clientProfile?.role === 'developer' ? 'Dev' : 'Cliente';
                    name = `${clientName} (Suporte ${clientRole})`;
                    sub = 'Atendimento Suporte';
+                   avatar_url = clientProfile?.avatar_url || null;
                } else if (c.type === 'dm') {
                    const otherId = c.participants?.find((pid: string) => pid !== myUserId);
                    const otherProf = otherId ? profilesMap[otherId] : null;
                    name = otherProf?.name || otherProf?.email?.split('@')[0] || c.name || 'Chat Privado';
                    const otherRole = otherProf?.role === 'developer' ? 'Desenvolvedor' : (otherProf?.role === 'admin' ? 'Administrador' : 'Cliente');
                    sub = `DM com ${otherRole}`;
+                   avatar_url = otherProf?.avatar_url || null;
                } else if (c.type === 'group') {
                    name = c.name;
                    sub = 'Grupo Staff';
@@ -312,13 +344,44 @@ export default function AdminTeamsChat() {
                    ...c,
                    isProject: false,
                    name,
-                   sub
+                   sub,
+                   avatar_url
                };
            })
        ];
-       setChannels(all);
-       if (all.length > 0 && !activeChannel) setActiveChannel(all[0]);
-   };
+
+        // Buscar última atividade de cada canal para já vir ordenado por última mensagem/interação
+        const channelIds = all.map(c => c.id);
+        let lastActivityMap: Record<string, number> = {};
+        if (channelIds.length > 0) {
+            const { data: recentMsgs } = await supabase
+                .from('messages')
+                .select('chat_id, project_id, created_at')
+                .or(`chat_id.in.(${channelIds.join(',')}),project_id.in.(${channelIds.join(',')})`)
+                .order('created_at', { ascending: false });
+
+            if (recentMsgs) {
+                recentMsgs.forEach(m => {
+                    const cid = m.chat_id || m.project_id;
+                    if (cid && (!lastActivityMap[cid] || new Date(m.created_at).getTime() > lastActivityMap[cid])) {
+                        lastActivityMap[cid] = new Date(m.created_at).getTime();
+                    }
+                });
+            }
+        }
+        setLastActivityMapState(lastActivityMap);
+
+        // Ordenar canais pela última atividade/interação
+        all.sort((a, b) => {
+            const timeA = lastActivityMap[a.id] || 0;
+            const timeB = lastActivityMap[b.id] || 0;
+            return timeB - timeA;
+        });
+
+        setChannels(all);
+
+        if (all.length > 0 && !activeChannel) setActiveChannel(all[0]);
+    };
 
 
    const loadMessages = async (channel: any) => {
@@ -343,251 +406,310 @@ export default function AdminTeamsChat() {
         await loadMessages(channel);
     };
 
-   const handleCreateGroup = async () => {
-       if (!groupName.trim()) return;
-       
-       if (isEditingChat) {
-           const { error } = await supabase.from('chats').update({ name: groupName }).eq('id', isEditingChat.id);
-           if (!error) {
-               setChannels(prev => prev.map(c => c.id === isEditingChat.id ? { ...c, name: groupName } : c));
-               setIsEditingChat(null);
-           }
-       } else {
-           const { data, error } = await supabase.from('chats').insert([{ name: groupName, type: 'group' }]).select().single();
-           if (data) {
-               const newChat = { ...data, isProject: false };
-               setChannels(prev => [...prev, newChat]);
-               setActiveChannel(newChat);
-               loadMessages(newChat);
-           }
-       }
-       setGroupName("");
-       setIsModalOpen(false);
-   };
+    const handleCreateGroup = async () => {
+        if (!groupName.trim()) return;
+        
+        if (isEditingChat) {
+            const table = isEditingChat.isProject ? 'projects' : 'chats';
+            const { error } = await supabase.from(table).update({ name: groupName }).eq('id', isEditingChat.id);
+            if (!error) {
+                setChannels(prev => prev.map(c => c.id === isEditingChat.id ? { ...c, name: groupName } : c));
+                if (activeChannel?.id === isEditingChat.id) {
+                    setActiveChannel((prev: any) => ({ ...prev, name: groupName }));
+                }
+                setIsEditingChat(null);
+            }
+        } else {
+            const { data, error } = await supabase.from('chats').insert([{ name: groupName, type: 'group' }]).select().single();
+            if (data) {
+                const newChat = { ...data, isProject: false, name: groupName, sub: 'Grupo Staff' };
+                setChannels(prev => [newChat, ...prev]);
+                setPinnedChannelIds(prev => [newChat.id, ...prev]);
+                setActiveChannel(newChat);
+                loadMessages(newChat);
+            }
+        }
+        setGroupName("");
+        setIsModalOpen(false);
+    };
 
-   const handleDeleteChat = async (id: string) => {
-       if (!confirm("Deseja realmente excluir este grupo?")) return;
-       const { error } = await supabase.from('chats').delete().eq('id', id);
-       if (!error) {
-           setChannels(prev => prev.filter(c => c.id !== id));
-           if (activeChannel?.id === id) {
-               setActiveChannel(channels[0] || null);
-           }
-       }
-   };
+    const handleDeleteChat = async (id: string) => {
+        if (!confirm("Deseja realmente excluir este grupo?")) return;
+        const { error } = await supabase.from('chats').delete().eq('id', id);
+        if (!error) {
+            setChannels(prev => prev.filter(c => c.id !== id));
+            if (activeChannel?.id === id) {
+                setActiveChannel(channels[0] || null);
+            }
+        }
+    };
 
-   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-       const files = Array.from(e.target.files || []);
-       setStagedFiles(prev => [...prev, ...files]);
-       const newPreviews = files.map(file => file.type.startsWith('image/') ? URL.createObjectURL(file) : 'file');
-       setPreviews(prev => [...prev, ...newPreviews]);
-   };
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        setStagedFiles(prev => [...prev, ...files]);
+        const newPreviews = files.map(file => file.type.startsWith('image/') ? URL.createObjectURL(file) : 'file');
+        setPreviews(prev => [...prev, ...newPreviews]);
+    };
 
-   const removeStagedFile = (index: number) => {
-       setStagedFiles(prev => prev.filter((_, i) => i !== index));
-       setPreviews(prev => {
-           if (prev[index] !== 'file') URL.revokeObjectURL(prev[index]);
-           return prev.filter((_, i) => i !== index);
-       });
-   };
+    const removeStagedFile = (index: number) => {
+        setStagedFiles(prev => prev.filter((_, i) => i !== index));
+        setPreviews(prev => {
+            if (prev[index] !== 'file') URL.revokeObjectURL(prev[index]);
+            return prev.filter((_, i) => i !== index);
+        });
+    };
 
-   const handleSend = async (e: React.FormEvent) => {
-       e.preventDefault();
-       if ((!content.trim() && stagedFiles.length === 0) || !activeChannel) return;
-       
-       const temp = content;
-       const currentStaged = [...stagedFiles];
-       setContent("");
-       setStagedFiles([]);
-       setPreviews([]);
+    const handleSend = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if ((!content.trim() && stagedFiles.length === 0) || !activeChannel) return;
+        
+        const temp = content;
+        const currentStaged = [...stagedFiles];
+        setContent("");
+        setStagedFiles([]);
+        setPreviews([]);
 
-       // ✅ Capturar o nome ANTES do upload assíncrono, passando os valores atuais
-       // para evitar que o estado mude durante o processo
-       const currentUser = user;
-       const currentProfile = adminProfile;
-       const staffName = `[STAFF] ${getMyName(currentUser, currentProfile)}`;
+        // ✅ Capturar o nome ANTES do upload assíncrono, passando os valores atuais
+        // para evitar que o estado mude durante o processo
+        const currentUser = user;
+        const currentProfile = adminProfile;
+        const staffName = `[STAFF] ${getMyName(currentUser, currentProfile)}`;
 
-       // Upload de arquivos
-       const uploaded: { url: string; type: string; name: string }[] = [];
-       for (const file of currentStaged) {
-           const fname = `${Date.now()}_${file.name}`;
-           const { data, error } = await supabase.storage.from('teams_media').upload(fname, file);
-           if (data) {
-               const { data: { publicUrl } } = supabase.storage.from('teams_media').getPublicUrl(data.path);
-               uploaded.push({ url: publicUrl, type: file.type, name: file.name });
-           } else if (error) {
-               console.error('Upload falhou:', error.message);
-           }
-       }
+        // Upload de arquivos
+        const uploaded: { url: string; type: string; name: string }[] = [];
+        for (const file of currentStaged) {
+            const fname = `${Date.now()}_${file.name}`;
+            const { data, error } = await supabase.storage.from('teams_media').upload(fname, file);
+            if (data) {
+                const { data: { publicUrl } } = supabase.storage.from('teams_media').getPublicUrl(data.path);
+                uploaded.push({ url: publicUrl, type: file.type, name: file.name });
+            } else if (error) {
+                console.error('Upload falhou:', error.message);
+            }
+        }
 
-       if (editingMessage) {
-           const parsed = parseReply(editingMessage.content);
-           const newContent = parsed.isReply ? `[REPLY:${parsed.replyToName}|${parsed.replyToContent}]${temp}` : temp;
-           await supabase.from('messages').update({ content: newContent }).eq('id', editingMessage.id);
-           setEditingMessage(null);
-           if (chatChannelRef.current) chatChannelRef.current.send({ type: 'broadcast', event: 'sync', payload: {} });
-           loadMessages(activeChannel);
-           return;
-       }
+        if (editingMessage) {
+            const parsed = parseReply(editingMessage.content);
+            const newContent = parsed.isReply ? `[REPLY:${parsed.replyToName}|${parsed.replyToContent}]${temp}` : temp;
+            await supabase.from('messages').update({ content: newContent }).eq('id', editingMessage.id);
+            setEditingMessage(null);
+            if (chatChannelRef.current) chatChannelRef.current.send({ type: 'broadcast', event: 'sync', payload: {} });
+            loadMessages(activeChannel);
+            return;
+        }
 
-       let finalContent = temp;
-       if (replyingTo) {
-           const author = replyingTo.sender_name || 'Staff';
-           let snippet = parseReply(replyingTo.content).actualContent;
-           if (snippet.length > 50) snippet = snippet.substring(0, 50) + "...";
-           finalContent = `[REPLY:${author}|${snippet}]${temp}`;
-           setReplyingTo(null);
-       }
+        let finalContent = temp;
+        if (replyingTo) {
+            const author = replyingTo.sender_name || 'Staff';
+            let snippet = parseReply(replyingTo.content).actualContent;
+            if (snippet.length > 50) snippet = snippet.substring(0, 50) + "...";
+            finalContent = `[REPLY:${author}|${snippet}]${temp}`;
+            setReplyingTo(null);
+        }
 
-       const basePayload = activeChannel.isProject
-           ? { project_id: activeChannel.id }
-           : { chat_id: activeChannel.id };
-       const userId = user?.id || '00000000-0000-0000-0000-000000000000';
+        const basePayload = activeChannel.isProject
+            ? { project_id: activeChannel.id }
+            : { chat_id: activeChannel.id };
+        const userId = user?.id || '00000000-0000-0000-0000-000000000000';
 
-       const broadcastAndAdd = (nm: any) => {
-           if (!nm) return;
-           chatChannelRef.current?.send({ type: 'broadcast', event: 'sync', payload: { newMessage: nm } });
-           setMessages(prev => prev.find(m => m.id === nm.id) ? prev : [...prev, nm]);
-       };
+        const broadcastAndAdd = (nm: any) => {
+            if (!nm) return;
+            chatChannelRef.current?.send({ type: 'broadcast', event: 'sync', payload: { newMessage: nm } });
+            setMessages(prev => prev.find(m => m.id === nm.id) ? prev : [...prev, nm]);
+        };
 
-       if (uploaded.length > 0) {
-           // ✅ Inserir cada arquivo como mensagem separada (sem texto embutido)
-           for (const item of uploaded) {
-               const { data } = await supabase.from('messages').insert([{
-                   ...basePayload,
-                   user_id: userId,
-                   content: '',           // arquivo não precisa de conteúdo de texto
-                   file_url: item.url,
-                   file_type: item.type,
-                   sender_name: staffName
-               }]).select().single();
-               broadcastAndAdd(data);
-           }
+        if (uploaded.length > 0) {
+            // ✅ Inserir cada arquivo como mensagem separada (sem texto embutido)
+            for (const item of uploaded) {
+                const { data } = await supabase.from('messages').insert([{
+                    ...basePayload,
+                    user_id: userId,
+                    content: '',           // arquivo não precisa de conteúdo de texto
+                    file_url: item.url,
+                    file_type: item.type,
+                    sender_name: staffName
+                }]).select().single();
+                broadcastAndAdd(data);
+            }
 
-           // ✅ Se também havia texto, inserir como mensagem separada
-           if (finalContent.trim()) {
-               const { data } = await supabase.from('messages').insert([{
-                   ...basePayload,
-                   user_id: userId,
-                   content: finalContent,
-                   sender_name: staffName
-               }]).select().single();
-               broadcastAndAdd(data);
-           }
-       } else {
-           // Apenas texto
-           const { data } = await supabase.from('messages').insert([{
-               ...basePayload,
-               user_id: userId,
-               content: finalContent,
-               sender_name: staffName
-           }]).select().single();
-           if (data) {
-               broadcastAndAdd(data);
-           } else {
-               // Fallback: recarregar mensagens do DB
-               loadMessages(activeChannel);
-           }
-       }
-   };
+            // ✅ Se também havia texto, inserir como mensagem separada
+            if (finalContent.trim()) {
+                const { data } = await supabase.from('messages').insert([{
+                    ...basePayload,
+                    user_id: userId,
+                    content: finalContent,
+                    sender_name: staffName
+                }]).select().single();
+                broadcastAndAdd(data);
+            }
+        } else {
+            // Apenas texto
+            const { data } = await supabase.from('messages').insert([{
+                ...basePayload,
+                user_id: userId,
+                content: finalContent,
+                sender_name: staffName
+            }]).select().single();
+            if (data) {
+                broadcastAndAdd(data);
+            } else {
+                // Fallback: recarregar mensagens do DB
+                loadMessages(activeChannel);
+            }
+        }
 
-   return (
-       <div className="flex-1 flex overflow-hidden bg-[#050505] h-full font-sans relative text-white">
-           
-           <AnimatePresence>
-               {isModalOpen && (
-                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
-                        <div className="bg-[#0a0a0a] border border-[#222] p-8 rounded-[2rem] w-full max-w-sm">
-                            <h2 className="text-xl font-black mb-6">{isEditingChat ? 'Editar Grupo' : 'Novo Grupo Staff'}</h2>
-                            <input 
-                                type="text" value={groupName} onChange={e => setGroupName(e.target.value)}
-                                placeholder="Nome do grupo..." 
-                                className="w-full bg-[#111] border border-[#222] p-4 rounded-xl outline-none mb-6 focus:border-accent"
-                            />
-                            <div className="flex gap-3">
-                                <button onClick={() => setIsModalOpen(false)} className="flex-1 bg-[#111] border border-[#222] py-4 rounded-xl font-bold">Cancelar</button>
-                                <button onClick={handleCreateGroup} className="flex-1 bg-white text-black py-4 rounded-xl font-black">{isEditingChat ? 'SALVAR' : 'CRIAR'}</button>
-                            </div>
-                        </div>
-                   </motion.div>
-               )}
-           </AnimatePresence>
+        // Ao enviar mensagem, fixar a conversa no topo
+        if (activeChannel?.id) {
+            setPinnedChannelIds(prev => [activeChannel.id, ...prev.filter(id => id !== activeChannel.id)]);
+        }
+    };
 
-           {/* Sidebar */}
-           <div className="w-[300px] bg-[#0a0a0a] border-r border-[#222] flex flex-col h-full shrink-0">
-               <div className="p-6 border-b border-[#222]">
-                   <div className="flex justify-between items-center mb-5">
-                        <h2 className="text-xl font-black text-white tracking-tighter flex items-center gap-3">
-                            <Users className="w-5 h-5 text-accent"/> Equipes HQ
-                        </h2>
-                        <button onClick={() => { setIsEditingChat(null); setGroupName(""); setIsModalOpen(true); }} className="p-1 hover:bg-white/5 rounded-lg text-accent">
-                            <PlusSquare className="w-5 h-5"/>
-                        </button>
-                   </div>
-                   <div className="relative">
-                       <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#444]"/>
-                       <input 
-                           type="text" placeholder="Filtrar..." 
-                           value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-                           className="w-full bg-[#111] border border-[#222] text-xs p-2.5 pl-9 rounded-xl outline-none"
-                       />
-                   </div>
-               </div>
-               <div className="flex-1 overflow-y-auto p-4 space-y-1">
-                    {[...channels]
-                        .sort((a, b) => {
-                            const aIndex = pinnedChannelIds.indexOf(a.id);
-                            const bIndex = pinnedChannelIds.indexOf(b.id);
-                            if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
-                            if (aIndex !== -1) return -1;
-                            if (bIndex !== -1) return 1;
-                            return 0;
-                        })
-                        .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(c => {
-                            const unreadCount = unreadCounts[c.id] || 0;
-                            return (
-                                <div key={c.id} className="group relative flex items-center">
-                                     <button 
-                                         onClick={() => handleSelectChannel(c)}
-                                         className={`flex-1 flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] ${!c.isProject ? 'pr-16' : ''} ${activeChannel?.id === c.id ? 'bg-accent/10 border border-accent/20 shadow-sm' : 'hover:bg-[#111] hover:shadow-sm'}`}
-                                     >
-                                         <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-black text-sm transition-colors relative ${activeChannel?.id === c.id ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-[#222] text-[#888] group-hover:bg-accent/20 group-hover:text-accent'}`}>
-                                             {c.name.substring(0,2).toUpperCase()}
-                                             {pinnedChannelIds.includes(c.id) && (
-                                                 <span className="absolute -top-1 -right-1 w-2 h-2 bg-accent rounded-full border border-[#0a0a0a]" title="Fixada recentemente" />
-                                             )}
-                                         </div>
-                                         <div className="flex flex-col items-start overflow-hidden flex-1 min-w-0">
-                                              <span className="text-sm font-bold text-white truncate w-full flex items-center justify-between gap-1">
-                                                  <span className="truncate">{c.name}</span>
-                                                  {unreadCount > 0 && (
-                                                      <span className="text-[9px] bg-accent text-white px-1.5 py-0.5 rounded-md font-bold uppercase shrink-0 animate-pulse">
-                                                          {unreadCount} n.l.
-                                                      </span>
-                                                  )}
-                                              </span>
-                                              <span className="text-[10px] text-[#555] font-black uppercase">{c.isProject ? 'Software' : c.sub}</span>
-                                         </div>
-                                     </button>
-                                     {!c.isProject && (
-                                         <div className="absolute right-2 opacity-0 group-hover:opacity-100 flex gap-1 transition-all">
-                                             <button onClick={() => { setIsEditingChat(c); setGroupName(c.name); setIsModalOpen(true); }} className="p-2 hover:bg-white/10 rounded-lg text-[#555] hover:text-white"><Edit3 className="w-3.5 h-3.5"/></button>
-                                             <button onClick={() => handleDeleteChat(c.id)} className="p-2 hover:bg-red-500/10 rounded-lg text-[#555] hover:text-red-500"><Trash2 className="w-3.5 h-3.5"/></button>
-                                         </div>
-                                     )}
-                                </div>
-                            );
-                        })}
-               </div>
-           </div>
+    return (
+        <div className="flex-1 flex overflow-hidden bg-[#050505] h-full font-sans relative text-white">
+            
+            <AnimatePresence>
+                {isModalOpen && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
+                         <div className="bg-[#0a0a0a] border border-[#222] p-8 rounded-[2rem] w-full max-w-sm">
+                             <h2 className="text-xl font-black mb-6">{isEditingChat ? 'Editar Nome da Conversa' : 'Novo Grupo Staff'}</h2>
+                             <input 
+                                 type="text" value={groupName} onChange={e => setGroupName(e.target.value)}
+                                 placeholder="Nome do grupo ou conversa..." 
+                                 className="w-full bg-[#111] border border-[#222] p-4 rounded-xl outline-none mb-6 focus:border-accent"
+                             />
+                             <div className="flex gap-3">
+                                 <button onClick={() => setIsModalOpen(false)} className="flex-1 bg-[#111] border border-[#222] py-4 rounded-xl font-bold">Cancelar</button>
+                                 <button onClick={handleCreateGroup} className="flex-1 bg-white text-black py-4 rounded-xl font-black">{isEditingChat ? 'SALVAR' : 'CRIAR'}</button>
+                             </div>
+                         </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Sidebar */}
+            <div className="w-[300px] bg-[#0a0a0a] border-r border-[#222] flex flex-col h-full shrink-0">
+                <div className="p-6 border-b border-[#222]">
+                    <div className="flex justify-between items-center mb-5">
+                         <h2 className="text-xl font-black text-white tracking-tighter flex items-center gap-3">
+                             <Users className="w-5 h-5 text-accent"/> Equipes HQ
+                         </h2>
+                         <button onClick={() => { setIsEditingChat(null); setGroupName(""); setIsModalOpen(true); }} className="p-1 hover:bg-white/5 rounded-lg text-accent">
+                             <PlusSquare className="w-5 h-5"/>
+                         </button>
+                    </div>
+                    <div className="relative">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#444]"/>
+                        <input 
+                            type="text" placeholder="Filtrar..." 
+                            value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                            className="w-full bg-[#111] border border-[#222] text-xs p-2.5 pl-9 rounded-xl outline-none"
+                        />
+                    </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-1.5 custom-scrollbar">
+                     {[...channels]
+                         .sort((a, b) => {
+                             const aPinned = pinnedChannelIds.includes(a.id);
+                             const bPinned = pinnedChannelIds.includes(b.id);
+                             if (aPinned && !bPinned) return -1;
+                             if (!aPinned && bPinned) return 1;
+                             if (aPinned && bPinned) return pinnedChannelIds.indexOf(a.id) - pinnedChannelIds.indexOf(b.id);
+                             const timeA = lastActivityMapState[a.id] || 0;
+                             const timeB = lastActivityMapState[b.id] || 0;
+                             return timeB - timeA;
+                         })
+                         .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(c => {
+                             const unreadCount = unreadCounts[c.id] || 0;
+                             const isPinned = pinnedChannelIds.includes(c.id);
+                             return (
+                                 <div key={c.id} className="group relative flex items-center">
+                                      <button 
+                                          onClick={() => handleSelectChannel(c)}
+                                          className={`w-full flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] ${activeChannel?.id === c.id ? 'bg-accent/10 border border-accent/20 shadow-sm' : 'hover:bg-[#111] border border-transparent hover:shadow-sm'}`}
+                                      >
+                                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm transition-colors relative shrink-0 overflow-hidden ${activeChannel?.id === c.id ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-[#222] text-[#888] group-hover:bg-accent/20 group-hover:text-accent'}`}>
+                                              {c.avatar_url ? (
+                                                  <img src={c.avatar_url} alt={c.name} className="w-full h-full object-cover" />
+                                              ) : (
+                                                  c.name.substring(0,2).toUpperCase()
+                                              )}
+                                          </div>
+                                          <div className="flex flex-col items-start overflow-hidden flex-1 min-w-0 pr-14">
+                                               <span className="text-sm font-bold text-white truncate w-full flex items-center justify-between gap-1.5">
+                                                   <span className="truncate">{c.name}</span>
+                                                   {unreadCount > 0 ? (
+                                                       <span className="text-[10px] bg-red-600 text-white min-w-[20px] h-5 px-1.5 rounded-full font-black flex items-center justify-center shrink-0 shadow-md shadow-red-600/40 animate-pulse">
+                                                           {unreadCount > 99 ? '99+' : unreadCount}
+                                                       </span>
+                                                   ) : (
+                                                       isPinned && (
+                                                           <span className="text-[8px] bg-accent/20 text-accent px-1.5 py-0.5 rounded font-black uppercase shrink-0 flex items-center gap-1">
+                                                               <Pin className="w-2.5 h-2.5 fill-accent" /> Fixada
+                                                           </span>
+                                                       )
+                                                   )}
+                                               </span>
+                                               <span className="text-[10px] text-[#555] font-black uppercase truncate">{c.isProject ? 'Software' : c.sub}</span>
+                                          </div>
+                                      </button>
+                                      
+                                      {/* Ações de Fixar e Editar no Hover */}
+                                      <div className={`absolute right-2 ${isPinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} flex items-center gap-1 bg-[#141414]/90 backdrop-blur-md p-1 rounded-lg border border-white/10 shadow-xl transition-all duration-200`}>
+                                          <button 
+                                              onClick={(e) => { 
+                                                  e.stopPropagation(); 
+                                                  togglePinChannel(c.id);
+                                              }} 
+                                              className={`p-1.5 rounded-md transition-all cursor-pointer ${isPinned ? 'bg-accent/20 text-accent' : 'hover:bg-white/10 text-white/40 hover:text-white'}`}
+                                              title={isPinned ? "Desafixar conversa" : "Fixar conversa no topo"}
+                                          >
+                                              <Pin className={`w-3.5 h-3.5 ${isPinned ? 'fill-accent' : ''}`}/>
+                                          </button>
+                                          <button 
+                                              onClick={(e) => { 
+                                                  e.stopPropagation(); 
+                                                  setIsEditingChat(c); 
+                                                  setGroupName(c.name); 
+                                                  setIsModalOpen(true); 
+                                              }} 
+                                              className="p-1.5 hover:bg-white/10 rounded-md text-white/40 hover:text-white transition-colors cursor-pointer"
+                                              title="Editar nome"
+                                          >
+                                              <Edit3 className="w-3.5 h-3.5"/>
+                                          </button>
+                                      </div>
+                                 </div>
+                             );
+                         })}
+                </div>
+            </div>
 
            {/* Chat Main */}
            <div className="flex-1 flex flex-col h-full bg-[#050505]">
                {activeChannel ? (
                    <>
                        <div className="p-5 border-b border-[#222] flex justify-between items-center bg-[#0a0a0a]/80 backdrop-blur-xl">
-                           <h1 className="font-bold text-white flex items-center gap-2"># {activeChannel.name}</h1>
+                           <div className="flex items-center gap-3">
+                               <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#222] border border-[#333] flex items-center justify-center text-sm font-bold text-white shrink-0">
+                                   {activeChannel.avatar_url ? (
+                                       <img src={activeChannel.avatar_url} alt={activeChannel.name} className="w-full h-full object-cover" />
+                                   ) : (
+                                       activeChannel.name?.substring(0, 2).toUpperCase()
+                                   )}
+                               </div>
+                               <div>
+                                   <h1 className="font-bold text-white flex items-center gap-2">{activeChannel.name}</h1>
+                                   <p className="text-[10px] text-[#666] font-bold uppercase">{activeChannel.sub}</p>
+                               </div>
+                           </div>
                            <div className="flex gap-2">
+                               <button 
+                                   onClick={() => togglePinChannel(activeChannel.id)}
+                                   className={`p-2 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${pinnedChannelIds.includes(activeChannel.id) ? 'bg-accent/20 text-accent border-accent/30' : 'bg-[#111] text-white/60 hover:text-white border-[#222]'}`}
+                               >
+                                   <Pin className={`w-4 h-4 ${pinnedChannelIds.includes(activeChannel.id) ? 'fill-accent' : ''}`} />
+                                   {pinnedChannelIds.includes(activeChannel.id) ? 'Fixada' : 'Fixar'}
+                               </button>
                            </div>
                        </div>
 
@@ -596,11 +718,18 @@ export default function AdminTeamsChat() {
                                const isStaffFromTag = msg.sender_name?.startsWith('[STAFF]');
                                const parsed = parseReply(msg.content);
                                const displayName = msg.sender_name?.replace('[STAFF] ', '') || 'Cliente';
+                               const authorAvatar = profilesMapState[msg.user_id]?.avatar_url;
 
                                return (
                                    <div key={msg.id} className={`flex w-full gap-4 ${isStaffFromTag ? 'flex-row-reverse' : 'flex-row'}`}>
-                                       <div className={`w-10 h-10 rounded-full shrink-0 border flex items-center justify-center text-[10px] font-black uppercase ${isStaffFromTag ? 'bg-accent border-accent/30 text-white shadow-[0_0_15px_rgba(var(--accent-rgb),0.3)]' : 'bg-[#111] border-[#222] text-[#555]'}`}>
-                                           {isStaffFromTag ? 'HQ' : (displayName[0] || '?')}
+                                       <div className={`w-10 h-10 rounded-full shrink-0 border flex items-center justify-center text-[10px] font-black uppercase overflow-hidden ${isStaffFromTag ? 'bg-accent border-accent/30 text-white shadow-[0_0_15px_rgba(var(--accent-rgb),0.3)]' : 'bg-[#111] border-[#222] text-[#555]'}`}>
+                                           {isStaffFromTag ? (
+                                               'HQ'
+                                           ) : authorAvatar ? (
+                                               <img src={authorAvatar} alt={displayName} className="w-full h-full object-cover" />
+                                           ) : (
+                                               displayName[0] || '?'
+                                           )}
                                        </div>
 
                                        <div className={`max-w-[70%] flex flex-col ${isStaffFromTag ? 'items-end' : 'items-start'}`}>

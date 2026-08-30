@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Send, Paperclip, X, FileText, Download, UserRound, Loader2, Users, Search, Hash, ShieldAlert } from "lucide-react";
+import { Send, Paperclip, X, FileText, Download, UserRound, Loader2, Users, Search, Hash, ShieldAlert, Pin } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { playNotificationSound } from "@/lib/utils";
 
@@ -50,6 +50,8 @@ function ChatPageContent() {
     const [searchTerm, setSearchTerm] = useState("");
     const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
     const [pinnedChannelIds, setPinnedChannelIds] = useState<string[]>([]);
+    const [profilesMapState, setProfilesMapState] = useState<Record<string, any>>({});
+    const [lastActivityMapState, setLastActivityMapState] = useState<Record<string, number>>({});
     const [editingMessage, setEditingMessage] = useState<any | null>(null);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -73,6 +75,18 @@ function ChatPageContent() {
         activeChannelRef.current = activeChannel;
     }, [activeChannel]);
 
+    const togglePinChannel = (channelId: string) => {
+        setPinnedChannelIds(prev => {
+            const next = prev.includes(channelId)
+                ? prev.filter(id => id !== channelId)
+                : [channelId, ...prev];
+            if (typeof window !== "undefined" && user?.id) {
+                localStorage.setItem(`susanoo_pinned_chats_${user.id}`, JSON.stringify(next));
+            }
+            return next;
+        });
+    };
+
     useEffect(() => {
         let mounted = true;
         const init = async () => {
@@ -80,6 +94,14 @@ function ChatPageContent() {
             if (!session) { router.push("/login"); return; }
             if (!mounted) return;
             setUser(session.user);
+
+            // Carregar fixados do usuário do localStorage
+            if (typeof window !== "undefined") {
+                const saved = localStorage.getItem(`susanoo_pinned_chats_${session.user.id}`);
+                if (saved) {
+                    try { setPinnedChannelIds(JSON.parse(saved)); } catch(e) {}
+                }
+            }
 
             const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
             if (prof) {
@@ -169,14 +191,13 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                 }
             }
 
-            // Mapear perfis dos outros participantes de DMs
+            // Mapear perfis dos outros participantes de DMs e do suporte
             const allParticipantIds = new Set<string>();
             allChats.forEach(c => {
+                if (c.user_id) allParticipantIds.add(c.user_id);
                 if (c.participants && Array.isArray(c.participants)) {
                     c.participants.forEach((pid: string) => {
-                        if (pid !== session.user.id) {
-                            allParticipantIds.add(pid);
-                        }
+                        allParticipantIds.add(pid);
                     });
                 }
             });
@@ -185,18 +206,20 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
             if (allParticipantIds.size > 0) {
                 const { data: profs } = await supabase
                     .from('profiles')
-                    .select('id, name, email, role')
+                    .select('id, name, email, role, avatar_url')
                     .in('id', Array.from(allParticipantIds));
                 if (profs) {
                     profs.forEach(p => { profilesMap[p.id] = p; });
                 }
             }
+            setProfilesMapState(profilesMap);
 
-            // Formatar os canais do cliente com nomes reais
+            // Formatar os canais do cliente com nomes reais e avatares reais
             const loadedChats = allChats.map(c => {
                 let name = c.name;
                 let isStaff = false;
                 let sub = 'Rede Geral';
+                let avatar_url = null;
                 
                 if (c.type === 'support') {
                     name = 'Susanoo HQ';
@@ -208,6 +231,7 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                     if (otherProf) {
                         name = otherProf.name || otherProf.email?.split('@')[0] || 'Membro';
                         sub = otherProf.role === 'developer' ? 'Desenvolvedor' : (otherProf.role === 'admin' ? 'Administrador' : 'Cliente');
+                        avatar_url = otherProf.avatar_url || null;
                     } else {
                         name = c.name?.replace('Chat com ', '') || 'Conversa Privada';
                         sub = 'Direct Message';
@@ -219,8 +243,37 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                     isProject: false,
                     name,
                     isStaff,
-                    sub
+                    sub,
+                    avatar_url
                 };
+            });
+
+            // Buscar última atividade de cada canal para já vir ordenado por última mensagem/interação
+            const channelIds = loadedChats.map(c => c.id);
+            let lastActivityMap: Record<string, number> = {};
+            if (channelIds.length > 0) {
+                const { data: recentMsgs } = await supabase
+                    .from('messages')
+                    .select('chat_id, project_id, created_at')
+                    .or(`chat_id.in.(${channelIds.join(',')}),project_id.in.(${channelIds.join(',')})`)
+                    .order('created_at', { ascending: false });
+
+                if (recentMsgs) {
+                    recentMsgs.forEach(m => {
+                        const cid = m.chat_id || m.project_id;
+                        if (cid && (!lastActivityMap[cid] || new Date(m.created_at).getTime() > lastActivityMap[cid])) {
+                            lastActivityMap[cid] = new Date(m.created_at).getTime();
+                        }
+                    });
+                }
+            }
+            setLastActivityMapState(lastActivityMap);
+
+            // Ordenar canais pela última atividade/interação
+            loadedChats.sort((a, b) => {
+                const timeA = lastActivityMap[a.id] || 0;
+                const timeB = lastActivityMap[b.id] || 0;
+                return timeB - timeA;
             });
 
             setChannels(loadedChats);
@@ -272,11 +325,11 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                 const matchingChannel = currentChannels.find(c => c.id === targetChannelId);
                 if (!matchingChannel) return;
 
-                // Se a mensagem foi enviada pelo próprio usuário, ignoramos
-                if (newMsg.user_id === user.id) return;
-
-                // Fixar conversa: move o canal para o topo adicionando o ID na lista de fixados
+                // Fixar conversa: move o canal imediatamente para o topo com a nova interação/notificação
                 setPinnedChannelIds(prev => [targetChannelId, ...prev.filter(id => id !== targetChannelId)]);
+
+                // Se a mensagem foi enviada pelo próprio usuário, ignoramos o alerta/contador
+                if (newMsg.user_id === user.id) return;
 
                 const isActive = currentActive && currentActive.id === targetChannelId;
                 const isAlertEnabled = localStorage.getItem("susanoo_chat_alerts") !== "false";
@@ -430,6 +483,11 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                 setMessages(prev => prev.find(m => m.id === nm.id) ? prev : [...prev, nm]);
             }
         }
+
+        // Ao enviar mensagem, fixar a conversa no topo
+        if (activeChannel?.id) {
+            setPinnedChannelIds(prev => [activeChannel.id, ...prev.filter(id => id !== activeChannel.id)]);
+        }
     };
 
     return (
@@ -470,42 +528,69 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                         />
                     </div>
                 </div>
-                <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
                     {[...channels]
                         .sort((a, b) => {
-                            const aIndex = pinnedChannelIds.indexOf(a.id);
-                            const bIndex = pinnedChannelIds.indexOf(b.id);
-                            if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
-                            if (aIndex !== -1) return -1;
-                            if (bIndex !== -1) return 1;
-                            return 0;
+                            const aPinned = pinnedChannelIds.includes(a.id);
+                            const bPinned = pinnedChannelIds.includes(b.id);
+                            if (aPinned && !bPinned) return -1;
+                            if (!aPinned && bPinned) return 1;
+                            if (aPinned && bPinned) return pinnedChannelIds.indexOf(a.id) - pinnedChannelIds.indexOf(b.id);
+                            const timeA = lastActivityMapState[a.id] || 0;
+                            const timeB = lastActivityMapState[b.id] || 0;
+                            return timeB - timeA;
                         })
                         .filter(c => c.name?.toLowerCase().includes(searchTerm.toLowerCase())).map(c => {
                             const unreadCount = unreadCounts[c.id] || 0;
+                            const isPinned = pinnedChannelIds.includes(c.id);
                             return (
-                                <button 
-                                    key={c.id}
-                                    onClick={() => handleSelectChannel(c)}
-                                    className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${activeChannel?.id === c.id ? 'bg-accent/10 border border-accent/20 shadow-sm' : 'hover:bg-surface border border-transparent hover:shadow-sm'}`}
-                                >
-                                    <div className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center font-black text-sm uppercase transition-colors relative ${activeChannel?.id === c.id ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-surface-border text-foreground/50 group-hover:bg-accent/20 group-hover:text-accent'}`}>
-                                        {c.isStaff ? <ShieldAlert className="w-5 h-5"/> : c.name?.substring(0,2)}
-                                        {pinnedChannelIds.includes(c.id) && (
-                                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-accent rounded-full border border-background" title="Fixada recentemente" />
-                                        )}
-                                    </div>
-                                    <div className="flex flex-col items-start overflow-hidden flex-1 text-left">
-                                        <span className="text-sm font-bold text-foreground truncate w-full flex items-center justify-between gap-1">
-                                            {c.name}
-                                            {unreadCount > 0 && (
-                                                <span className="text-[9px] bg-accent text-white px-1.5 py-0.5 rounded-md font-bold uppercase shrink-0 animate-pulse">
-                                                    {unreadCount} não lida{unreadCount > 1 ? 's' : ''}
-                                                </span>
+                                <div key={c.id} className="group relative flex items-center">
+                                    <button 
+                                        onClick={() => handleSelectChannel(c)}
+                                        className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 cursor-pointer hover:scale-[1.01] active:scale-[0.99] ${activeChannel?.id === c.id ? 'bg-accent/10 border border-accent/20 shadow-sm' : 'hover:bg-surface border border-transparent hover:shadow-sm'}`}
+                                    >
+                                        <div className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center font-black text-sm uppercase transition-colors relative overflow-hidden ${activeChannel?.id === c.id ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-surface-border text-foreground/50 group-hover:bg-accent/20 group-hover:text-accent'}`}>
+                                            {c.isStaff ? (
+                                                <ShieldAlert className="w-5 h-5"/>
+                                            ) : c.avatar_url ? (
+                                                <img src={c.avatar_url} alt={c.name} className="w-full h-full object-cover" />
+                                            ) : (
+                                                c.name?.substring(0,2)
                                             )}
-                                        </span>
-                                        <span className="text-[10px] text-foreground/50 font-bold uppercase">{c.sub}</span>
+                                        </div>
+                                        <div className="flex flex-col items-start overflow-hidden flex-1 text-left min-w-0 pr-10">
+                                            <span className="text-sm font-bold text-foreground truncate w-full flex items-center justify-between gap-1.5">
+                                                <span className="truncate">{c.name}</span>
+                                                {unreadCount > 0 ? (
+                                                    <span className="text-[10px] bg-red-600 text-white min-w-[20px] h-5 px-1.5 rounded-full font-black flex items-center justify-center shrink-0 shadow-md shadow-red-600/40 animate-pulse">
+                                                        {unreadCount > 99 ? '99+' : unreadCount}
+                                                    </span>
+                                                ) : (
+                                                    isPinned && (
+                                                        <span className="text-[8px] bg-accent/20 text-accent px-1.5 py-0.5 rounded font-black uppercase shrink-0 flex items-center gap-1">
+                                                            <Pin className="w-2.5 h-2.5 fill-accent" /> Fixada
+                                                        </span>
+                                                    )
+                                                )}
+                                            </span>
+                                            <span className="text-[10px] text-foreground/50 font-bold uppercase">{c.sub}</span>
+                                        </div>
+                                    </button>
+
+                                    {/* Botão de Fixar no Hover */}
+                                    <div className={`absolute right-2 ${isPinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} flex items-center gap-1 bg-surface/90 backdrop-blur-md p-1 rounded-lg border border-surface-border shadow-xl transition-all duration-200`}>
+                                        <button 
+                                            onClick={(e) => { 
+                                                e.stopPropagation(); 
+                                                togglePinChannel(c.id);
+                                            }} 
+                                            className={`p-1.5 rounded-md transition-all cursor-pointer ${isPinned ? 'bg-accent/20 text-accent' : 'hover:bg-foreground/5 text-foreground/40 hover:text-foreground'}`}
+                                            title={isPinned ? "Desafixar conversa" : "Fixar conversa no topo"}
+                                        >
+                                            <Pin className={`w-3.5 h-3.5 ${isPinned ? 'fill-accent' : ''}`}/>
+                                        </button>
                                     </div>
-                                </button>
+                                </div>
                             );
                         })}
                 </div>
@@ -517,8 +602,14 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                     <>
                         <div className="px-8 py-5 border-b border-surface-border flex justify-between items-center bg-background/60 backdrop-blur-md z-50">
                             <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">
-                                    {activeChannel.isStaff ? <ShieldAlert className="w-5 h-5" /> : <UserRound className="w-5 h-5" />}
+                                <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent overflow-hidden">
+                                    {activeChannel.isStaff ? (
+                                        <ShieldAlert className="w-5 h-5" />
+                                    ) : activeChannel.avatar_url ? (
+                                        <img src={activeChannel.avatar_url} alt={activeChannel.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <UserRound className="w-5 h-5" />
+                                    )}
                                 </div>
                                 <div>
                                     <h1 className="font-bold text-foreground flex items-center gap-2">
@@ -529,6 +620,15 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                                         {activeChannel.sub}
                                     </p>
                                 </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={() => togglePinChannel(activeChannel.id)}
+                                    className={`p-2 px-3 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${pinnedChannelIds.includes(activeChannel.id) ? 'bg-accent/20 text-accent border-accent/30' : 'bg-surface text-foreground/60 hover:text-foreground border-surface-border'}`}
+                                >
+                                    <Pin className={`w-4 h-4 ${pinnedChannelIds.includes(activeChannel.id) ? 'fill-accent' : ''}`} />
+                                    {pinnedChannelIds.includes(activeChannel.id) ? 'Fixada' : 'Fixar'}
+                                </button>
                             </div>
                         </div>
 
@@ -550,6 +650,7 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                                 const isMe = msg.user_id === user?.id;
                                 const isStaff = msg.sender_name?.startsWith('[STAFF]');
                                 const displayName = isStaff ? msg.sender_name!.replace('[STAFF] ', '') : (msg.sender_name || 'Desconhecido');
+                                const authorAvatar = isMe ? profile?.avatar_url : profilesMapState[msg.user_id]?.avatar_url;
                                 const { text, inlineImages } = parseMessageContent(msg.content || '');
                                 const isDirectImageUrl = !msg.file_url && msg.content?.match(/^https?:\/\/.+\.(png|jpg|jpeg|gif|webp)/i);
 
@@ -563,8 +664,12 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                                                 HQ
                                             </div>
                                         ) : (
-                                            <div className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-[12px] font-black uppercase bg-surface border border-surface-border text-foreground/50">
-                                                {displayName.charAt(0)}
+                                            <div className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-[12px] font-black uppercase bg-surface border border-surface-border text-foreground/50 overflow-hidden">
+                                                {authorAvatar ? (
+                                                    <img src={authorAvatar} alt={displayName} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    displayName.charAt(0)
+                                                )}
                                             </div>
                                         )}
 

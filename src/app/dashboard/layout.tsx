@@ -21,6 +21,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [hasExploredDevelopers, setHasExploredDevelopers] = useState(false);
   const [hasProjects, setHasProjects] = useState(false);
   const [dbNotifications, setDbNotifications] = useState<any[]>([]);
+  const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
 
   const checkProfileCompletion = () => {
     const type = localStorage.getItem("susanoo_profile_type");
@@ -62,9 +63,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+     if (pathname?.includes('/dashboard/chat')) {
+       setUnreadChatCount(0);
+     }
+  }, [pathname]);
+
+  useEffect(() => {
      setMounted(true);
      let active = true;
      let notifChannel: any = null;
+     let msgChannel: any = null;
      
      const checkType = async () => {
          const type = await getAuthenticatedAccountType();
@@ -100,6 +108,18 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
              });
              
            notifChannel.subscribe();
+
+           // Escutar mensagens não lidas para o usuário no dashboard
+           msgChannel = supabase.channel(`user-chat-counter-${uid}`)
+             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload: any) => {
+                 const newMsg = payload.new;
+                 if (newMsg && newMsg.user_id !== uid) {
+                     if (!window.location.pathname.includes('/dashboard/chat')) {
+                         setUnreadChatCount(prev => prev + 1);
+                     }
+                 }
+             })
+             .subscribe();
          }
       };
       loadOnboardingAndNotifications();
@@ -111,6 +131,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
        window.removeEventListener("profileTypeChanged", checkType);
        window.removeEventListener("profileCompletedChanged", checkProfileCompletion);
        if (notifChannel) supabase.removeChannel(notifChannel);
+       if (msgChannel) supabase.removeChannel(msgChannel);
      };
   }, []);
 
@@ -204,7 +225,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                    <NavItem icon={<Sparkles className="w-5 h-5"/>} label="Painel Dev" active={mounted ? pathname === '/dashboard' : false} href="/dashboard" />
                    <NavItem icon={<Grid className="w-5 h-5"/>} label="Projetos Criados" active={mounted ? pathname?.includes('/projects') : false} href="/dashboard/projects" />
                    <NavItem icon={<Plus className="w-5 h-5"/>} label="Adicionar Site" active={mounted ? pathname?.includes('/add-site') : false} href="/dashboard/add-site" />
-                   <NavItem icon={<MessageSquareText className="w-5 h-5"/>} label="Chat com Clientes" active={mounted ? pathname?.includes('/chat') : false} href="/dashboard/chat" />
+                   <NavItem badge={unreadChatCount} icon={<MessageSquareText className="w-5 h-5"/>} label="Chat com Clientes" active={mounted ? pathname?.includes('/chat') : false} href="/dashboard/chat" />
                  </>
                ) : (
                  <>
@@ -212,7 +233,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                    <NavItem icon={<User className="w-5 h-5"/>} label="Desenvolvedores" active={mounted ? pathname?.includes('/developers') : false} href="/dashboard/developers" />
                    <NavItem icon={<ShoppingBag className="w-5 h-5"/>} label="Minhas Compras" active={mounted ? pathname?.includes('/projects') : false} href="/dashboard/projects" />
                    <NavItem icon={<Calendar className="w-5 h-5"/>} label="Progresso Integrado" active={mounted ? pathname?.includes('/timeline') || pathname?.includes('/kanban') : false} href="/dashboard/timeline" />
-                   <NavItem icon={<MessageSquareText className="w-5 h-5"/>} label="Chat com a Equipe" active={mounted ? pathname?.includes('/chat') : false} href="/dashboard/chat" />
+                   <NavItem badge={unreadChatCount} icon={<MessageSquareText className="w-5 h-5"/>} label="Chat com a Equipe" active={mounted ? pathname?.includes('/chat') : false} href="/dashboard/chat" />
                  </>
                )}
                
@@ -243,16 +264,25 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 }
 
 // Componente para tornar o NavLink inteligente (Aba Ativa)
-function NavItem({ icon, label, active = false, href, warning = false }: { icon: ReactNode, label: string, active?: boolean, href: string, warning?: boolean }) {
+function NavItem({ icon, label, active = false, href, warning = false, badge = 0 }: { icon: ReactNode, label: string, active?: boolean, href: string, warning?: boolean, badge?: number }) {
     return (
         <Link href={href} className={`flex items-center justify-between px-4 py-3.5 rounded-xl text-[15px] transition-all duration-200 cursor-pointer ${active ? 'bg-foreground/5 text-foreground font-bold border border-surface-border shadow-sm' : 'text-foreground/60 font-medium hover:bg-foreground/5 hover:text-foreground border border-transparent'}`}>
             <div className="flex items-center gap-3">
-                {icon}
-                {label}
+                <div className="flex items-center justify-center text-foreground/60">
+                    {icon}
+                </div>
+                <span>{label}</span>
             </div>
-            {warning && (
-                <span className="bg-red-500 text-white text-[10px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center animate-pulse">!</span>
-            )}
+            <div className="flex items-center gap-2">
+                {badge > 0 && !warning && (
+                    <span className="bg-red-600 text-white text-[10px] font-black min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shadow-md shadow-red-600/40 animate-pulse">
+                        {badge > 99 ? '99+' : badge}
+                    </span>
+                )}
+                {warning && (
+                    <span className="bg-red-500 text-white text-[10px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center animate-pulse">!</span>
+                )}
+            </div>
         </Link>
     )
 }

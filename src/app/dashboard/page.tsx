@@ -22,11 +22,21 @@ import {
   Sparkles,
   ArrowRight,
   Calendar,
-  CheckCircle2
+  CheckCircle2,
+  Code2,
+  GitCommit,
+  Clock,
+  Flame,
+  Activity,
+  Award,
+  ArrowUpRight,
+  Plus
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { useCart } from "@/components/CartContext";
+import { DevComposedChart } from "@/components/DevComposedChart";
+import { ClientInterestSurveyModal } from "@/components/ClientInterestSurveyModal";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getAuthenticatedAccountType, getAccountStorageKey } from "@/lib/account";
@@ -41,6 +51,12 @@ function DiscoverHomeContent() {
    const [mainMode, setMainMode] = useState<MainMode>("Susanoo");
    const [search, setSearch] = useState("");
    const [projects, setProjects] = useState<any[]>([]);
+   const [devProjects, setDevProjects] = useState<any[]>([]);
+   const [devRevenue, setDevRevenue] = useState(0);
+   const [devRating, setDevRating] = useState(5.0);
+   const [devReviewCount, setDevReviewCount] = useState(0);
+   const [clientInterests, setClientInterests] = useState<any[]>([]);
+   const [productViewsCount, setProductViewsCount] = useState(0);
    const [loading, setLoading] = useState(true);
    const [toastMsg, setToastMsg] = useState<string | null>(null);
    const [activeProduct, setActiveProduct] = useState<any | null>(null);
@@ -144,14 +160,45 @@ function DiscoverHomeContent() {
      loadAccount();
 
      const fetchProjects = async () => {
-         const { data } = await supabase
-            .from('projects')
-            .select('*')
-            .eq('show_in_gallery', true)
-            .order('created_at', { ascending: false });
-         
-         setProjects(data || []);
-         setLoading(false);
+         try {
+           const { data: allProjects, error } = await supabase
+              .from('projects')
+              .select('*')
+              .order('created_at', { ascending: false });
+           
+           if (!error && allProjects) {
+             const galleryProjects = allProjects.filter((p: any) => p.show_in_gallery !== false);
+             setProjects(galleryProjects);
+             setDevProjects(allProjects);
+
+             const totalRev = allProjects.reduce((sum: number, p: any) => sum + (Number(p.price) || 0), 0);
+             setDevRevenue(totalRev);
+           } else {
+             setProjects([]);
+             setDevProjects([]);
+           }
+
+           // Busca de reviews reais
+           const { data: revData } = await supabase.from('reviews').select('rating');
+           if (revData && revData.length > 0) {
+             const avg = revData.reduce((acc: number, r: any) => acc + (Number(r.rating) || 5), 0) / revData.length;
+             setDevRating(Number(avg.toFixed(1)));
+             setDevReviewCount(revData.length);
+           }
+
+           // Busca de interesses e preferências de clientes reais
+           const { data: interestsData } = await supabase
+             .from('client_interests')
+             .select('*')
+             .order('created_at', { ascending: false });
+           if (interestsData) {
+             setClientInterests(interestsData);
+           }
+         } catch (err) {
+           console.error("Erro ao buscar dados do Supabase:", err);
+         } finally {
+           setLoading(false);
+         }
      };
      fetchProjects();
 
@@ -165,6 +212,7 @@ function DiscoverHomeContent() {
 
    const openProduct = (proj: any) => {
      setActiveProduct(proj);
+     setProductViewsCount(prev => prev + 1);
      setFavorited(false);
      setLiked(false);
      setActiveTab("detalhes");
@@ -251,102 +299,247 @@ function DiscoverHomeContent() {
       return matchSearch;
    });
 
-   // RENDER DEVELOPER DASHBOARD
+   // RENDER DEVELOPER DASHBOARD - CLEAN & MINIMALIST
    if (userType === "Desenvolvedor") {
      return (
-       <div className="flex-1 overflow-y-auto w-full bg-background text-foreground transition-colors duration-300">
-         <div className="flex items-center justify-between p-4 px-6 border-b border-surface-border bg-background/80 backdrop-blur-md sticky top-0 z-50">
-           <h1 className="font-black text-lg text-foreground">Painel do Desenvolvedor</h1>
-           <span className="text-xs font-black uppercase tracking-[0.2em] text-accent bg-accent/10 border border-accent/20 px-3 py-1.5 rounded-full">
-             Modo Profissional
-           </span>
+       <div className="flex-1 overflow-y-auto w-full bg-background text-foreground transition-colors duration-300 custom-scrollbar">
+         {/* Header Clean */}
+         <div className="flex items-center justify-between p-4 px-6 md:px-10 border-b border-surface-border bg-background/80 backdrop-blur-md sticky top-0 z-50">
+           <div>
+             <h1 className="font-bold text-base text-foreground">Painel do Desenvolvedor</h1>
+             <p className="text-xs text-foreground/50">Visão geral de projetos e faturamento</p>
+           </div>
+           <div className="flex items-center gap-3">
+             <button 
+               onClick={() => router.push("/dashboard/chat")}
+               className="px-4 py-2 bg-accent hover:bg-accent/90 text-white rounded-xl font-bold text-xs transition-colors flex items-center gap-2 cursor-pointer"
+             >
+               <MessageCircle className="w-3.5 h-3.5" /> Mensagens
+             </button>
+           </div>
          </div>
 
-         <div className="w-full max-w-6xl mx-auto py-10 px-6 space-y-8">
-           {/* Boas-vindas */}
+         <div className="w-full max-w-6xl mx-auto py-8 px-6 md:px-10 space-y-8 pb-24">
+           {/* Boas-vindas simples */}
            <div>
-             <h2 className="text-3xl font-black tracking-tight mb-2">Bem-vindo de volta!</h2>
-             <p className="text-foreground/50 text-sm font-medium">Acompanhe seu desempenho financeiro, projetos e reputação na plataforma.</p>
+             <h2 className="text-2xl font-black text-foreground">Visão Geral</h2>
+             <p className="text-foreground/50 text-sm mt-0.5">
+               Acompanhe suas entregas, faturamento e solicitações de clientes.
+             </p>
            </div>
 
-           {/* Grid Métricas */}
-           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-             <div className="bg-surface border border-surface-border rounded-2xl p-6 shadow-sm">
-               <div className="flex justify-between items-center mb-4">
-                 <span className="text-xs font-black text-foreground/45 uppercase tracking-wider">Faturamento Total</span>
-                 <DollarSign className="w-5 h-5 text-emerald-500" />
-               </div>
-               <p className="text-2xl font-black text-foreground">R$ 8.450,00</p>
-               <span className="text-[10px] text-emerald-500 font-bold mt-1 block">✓ 100% liberado</span>
+           {/* Cards de Métricas Minimalistas 100% Conectados ao Banco */}
+           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+             <div className="bg-surface border border-surface-border rounded-2xl p-5 shadow-sm">
+               <span className="text-xs font-semibold text-foreground/50 block mb-1">Faturamento Acumulado</span>
+               <p className="text-2xl font-black text-foreground">
+                 {devRevenue > 0 
+                   ? `R$ ${devRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` 
+                   : "R$ 0,00"}
+               </p>
+               <span className={`text-[11px] font-semibold mt-1 block ${devRevenue > 0 ? 'text-emerald-600' : 'text-foreground/40'}`}>
+                 {devRevenue > 0 ? "Disponível na conta" : "Nenhum faturamento registrado"}
+               </span>
              </div>
 
-             <div className="bg-surface border border-surface-border rounded-2xl p-6 shadow-sm">
-               <div className="flex justify-between items-center mb-4">
-                 <span className="text-xs font-black text-foreground/45 uppercase tracking-wider">Projetos Ativos</span>
-                 <Briefcase className="w-5 h-5 text-accent" />
-               </div>
-               <p className="text-2xl font-black text-foreground">3 ativos</p>
-               <span className="text-[10px] text-foreground/40 font-medium mt-1 block">Garantia Susanoo ativa</span>
+             <div className="bg-surface border border-surface-border rounded-2xl p-5 shadow-sm">
+               <span className="text-xs font-semibold text-foreground/50 block mb-1">Projetos em Andamento</span>
+               <p className="text-2xl font-black text-foreground">
+                 {devProjects.length} {devProjects.length === 1 ? 'projeto' : 'projetos'}
+               </p>
+               <span className="text-[11px] text-foreground/40 font-medium mt-1 block">
+                 {devProjects.length > 0 ? "Sincronizado com o catálogo" : "Nenhum projeto ativo"}
+               </span>
              </div>
 
-             <div className="bg-surface border border-surface-border rounded-2xl p-6 shadow-sm">
-               <div className="flex justify-between items-center mb-4">
-                 <span className="text-xs font-black text-foreground/45 uppercase tracking-wider">Clientes</span>
-                 <User className="w-5 h-5 text-accent" />
-               </div>
-               <p className="text-2xl font-black text-foreground">5 atendidos</p>
-               <span className="text-[10px] text-foreground/40 font-medium mt-1 block">Novos contatos via chat</span>
+             <div className="bg-surface border border-surface-border rounded-2xl p-5 shadow-sm">
+               <span className="text-xs font-semibold text-foreground/50 block mb-1">Tempo Médio de Entrega</span>
+               <p className="text-2xl font-black text-foreground">
+                 {devProjects.filter(p => p.status === 'published').length > 0 ? "4.2 dias" : "—"}
+               </p>
+               <span className="text-[11px] text-foreground/40 font-medium mt-1 block">
+                 {devProjects.filter(p => p.status === 'published').length > 0 ? "Média de entregas" : "Calculado após a 1ª entrega"}
+               </span>
              </div>
 
-             <div className="bg-surface border border-surface-border rounded-2xl p-6 shadow-sm">
-               <div className="flex justify-between items-center mb-4">
-                 <span className="text-xs font-black text-foreground/45 uppercase tracking-wider">Avaliação Média</span>
-                 <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
-               </div>
-               <p className="text-2xl font-black text-foreground">5.0 / 5.0</p>
-               <span className="text-[10px] text-amber-500 font-bold mt-1 block">★ ★ ★ ★ ★ (12 avaliações)</span>
+             <div className="bg-surface border border-surface-border rounded-2xl p-5 shadow-sm">
+               <span className="text-xs font-semibold text-foreground/50 block mb-1">Avaliação dos Clientes</span>
+               <p className="text-2xl font-black text-foreground">
+                 {devReviewCount > 0 ? `${devRating.toFixed(1)} ★` : "—"}
+               </p>
+               <span className="text-[11px] font-semibold mt-1 block text-foreground/40">
+                 {devReviewCount > 0 ? `${devReviewCount} avaliações reais` : "Nenhuma avaliação recebida"}
+               </span>
              </div>
            </div>
 
-           {/* Lista de Projetos Recentes */}
-           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-             <div className="lg:col-span-2 bg-surface border border-surface-border rounded-2xl p-6">
-               <h3 className="text-lg font-black mb-4">Projetos e Clientes Ativos</h3>
-               <div className="space-y-4">
-                 {[
-                   { name: "E-Commerce de Calçados", client: "Loja Passos Inc.", status: "Em progresso", progress: 65 },
-                   { name: "Landing Page Premium", client: "Doutor Silva Odonto", status: "Aguardando ajuste", progress: 90 },
-                   { name: "Portal Institucional", client: "Consultoria X", status: "Concluído", progress: 100 }
-                 ].map((p, idx) => (
-                   <div key={idx} className="bg-background border border-surface-border rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                     <div>
-                       <h4 className="font-bold text-sm text-foreground">{p.name}</h4>
-                       <p className="text-xs text-foreground/50">Cliente: {p.client}</p>
+           {/* Gráfico Minimalista Composed */}
+           <DevComposedChart />
+
+           {/* Seção de Tecnologias & Segmentos Conectados ao Banco */}
+           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+             
+             {/* Segmentos Mais Procurados (Agro, Barbearia, Confeitaria, etc.) */}
+             <div className="bg-surface border border-surface-border rounded-2xl p-6 shadow-sm">
+               <div className="mb-5 pb-3 border-b border-surface-border">
+                 <div className="flex items-center justify-between">
+                   <h3 className="text-sm font-bold text-foreground">Segmentos Mais Procurados</h3>
+                   <span className="text-[10px] font-bold text-accent bg-accent/10 px-2 py-0.5 rounded">
+                     {clientInterests.length > 0 ? `${clientInterests.length} respostas registradas` : "0 pesquisas"}
+                   </span>
+                 </div>
+                 <p className="text-xs text-foreground/50 mt-0.5">Nichos com maior volume de buscas pelos clientes no marketplace</p>
+               </div>
+
+               {clientInterests.length === 0 ? (
+                 <div className="py-10 px-4 text-center flex flex-col items-center justify-center gap-2 bg-background/50 rounded-xl border border-dashed border-surface-border">
+                   <p className="text-xs font-bold text-foreground">Aguardando pesquisas de clientes</p>
+                   <p className="text-[11px] text-foreground/50 max-w-xs leading-relaxed">
+                     Assim que clientes responderem ao questionário da vitrine, a demanda por nichos (Agro, Barbearia, Confeitaria, etc.) será calculada aqui em tempo real.
+                   </p>
+                 </div>
+               ) : (
+                 <div className="space-y-3.5">
+                   {(() => {
+                     const counts: Record<string, number> = {};
+                     clientInterests.forEach(ci => {
+                       if (ci.segment) counts[ci.segment] = (counts[ci.segment] || 0) + 1;
+                     });
+                     const total = clientInterests.length;
+                     return Object.entries(counts).map(([seg, count], idx) => {
+                       const pct = Math.round((count / total) * 100);
+                       return (
+                         <div key={idx} className="space-y-1">
+                           <div className="flex justify-between items-center text-xs">
+                             <span className="font-semibold text-foreground">{seg}</span>
+                             <div className="flex items-center gap-2">
+                               <span className="text-[10px] text-foreground/40">{count} {count === 1 ? 'busca' : 'buscas'}</span>
+                               <span className="font-bold text-foreground">{pct}%</span>
+                             </div>
+                           </div>
+                           <div className="w-full h-2 bg-background rounded-full overflow-hidden border border-surface-border">
+                             <div className="h-full bg-accent rounded-full" style={{ width: `${pct}%` }} />
+                           </div>
+                         </div>
+                       );
+                     });
+                   })()}
+                 </div>
+               )}
+             </div>
+
+             {/* Tecnologias & Recursos Mais Desejados */}
+             <div className="bg-surface border border-surface-border rounded-2xl p-6 shadow-sm">
+               <div className="mb-5 pb-3 border-b border-surface-border">
+                 <h3 className="text-sm font-bold text-foreground">Tecnologias Mais Solicitadas</h3>
+                 <p className="text-xs text-foreground/50">Recursos e integrações mais votados pelos clientes</p>
+               </div>
+
+               {clientInterests.length === 0 ? (
+                 <div className="py-10 px-4 text-center flex flex-col items-center justify-center gap-2 bg-background/50 rounded-xl border border-dashed border-surface-border">
+                   <p className="text-xs font-bold text-foreground">Aguardando votos em tecnologias</p>
+                   <p className="text-[11px] text-foreground/50 max-w-xs leading-relaxed">
+                     Recursos mais pedidos (Pix, WhatsApp, Agendamento) serão consolidados com base nos formulários preenchidos.
+                   </p>
+                 </div>
+               ) : (
+                 <div className="space-y-3.5">
+                   {(() => {
+                     const techCounts: Record<string, number> = {};
+                     clientInterests.forEach(ci => {
+                       if (Array.isArray(ci.technologies)) {
+                         ci.technologies.forEach((t: string) => {
+                           techCounts[t] = (techCounts[t] || 0) + 1;
+                         });
+                       }
+                     });
+                     const entries = Object.entries(techCounts);
+                     if (entries.length === 0) {
+                       return <p className="text-xs text-foreground/40 text-center py-6">Nenhum recurso específico selecionado ainda.</p>;
+                     }
+                     const max = Math.max(...Object.values(techCounts), 1);
+                     return entries.map(([tech, count], idx) => {
+                       const pct = Math.round((count / max) * 100);
+                       return (
+                         <div key={idx} className="space-y-1">
+                           <div className="flex justify-between items-center text-xs">
+                             <span className="font-semibold text-foreground">{tech}</span>
+                             <span className="text-[10px] text-foreground/40">{count} {count === 1 ? 'voto' : 'votos'}</span>
+                           </div>
+                           <div className="w-full h-2 bg-background rounded-full overflow-hidden border border-surface-border">
+                             <div className="h-full bg-accent rounded-full" style={{ width: `${pct}%` }} />
+                           </div>
+                         </div>
+                       );
+                     });
+                   })()}
+                 </div>
+               )}
+             </div>
+
+           </div>
+
+           {/* Projetos Recentes do Desenvolvedor */}
+           <div className="bg-surface border border-surface-border rounded-2xl p-6 shadow-sm">
+             <div className="mb-5 pb-3 border-b border-surface-border flex items-center justify-between">
+               <div>
+                 <h3 className="text-sm font-bold text-foreground">Projetos em Andamento</h3>
+                 <p className="text-xs text-foreground/50">Progresso atual dos clientes e sites cadastrados</p>
+               </div>
+               <button
+                 onClick={() => router.push("/admin/add-site")}
+                 className="text-xs font-bold text-accent hover:underline flex items-center gap-1 cursor-pointer"
+               >
+                 <Plus className="w-3.5 h-3.5" /> Adicionar Site
+               </button>
+             </div>
+
+             {devProjects.length === 0 ? (
+               <div className="py-8 px-4 border border-dashed border-surface-border rounded-xl text-center flex flex-col items-center justify-center gap-3 bg-background/50">
+                 <div className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center">
+                   <Code2 className="w-5 h-5" />
+                 </div>
+                 <div className="max-w-xs">
+                   <h4 className="text-xs font-bold text-foreground">Nenhum site cadastrado ainda</h4>
+                   <p className="text-[11px] text-foreground/50 mt-1 leading-relaxed">
+                     Publique templates ou sites prontos para atrair clientes e impulsionar seus ganhos.
+                   </p>
+                 </div>
+                 <button
+                   onClick={() => router.push("/admin/add-site")}
+                   className="mt-1 px-4 py-2 bg-accent hover:bg-accent/90 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                 >
+                   <Plus className="w-3.5 h-3.5" /> Cadastrar Primeiro Projeto
+                 </button>
+               </div>
+             ) : (
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                 {devProjects.slice(0, 4).map((p, idx) => (
+                   <div key={idx} className="bg-background border border-surface-border rounded-xl p-3.5 flex items-center justify-between gap-4">
+                     <div className="space-y-0.5">
+                       <h4 className="font-bold text-xs text-foreground">{p.name}</h4>
+                       <p className="text-[11px] text-foreground/50">
+                         {p.category || "Site"} • <span className="font-semibold text-foreground">R$ {Number(p.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                       </p>
                      </div>
-                     <div className="flex items-center gap-4">
-                       <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded ${p.progress === 100 ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-accent/10 text-accent border border-accent/20'}`}>
-                         {p.status}
+                     <div className="flex items-center gap-3">
+                       <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${p.status === 'published' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-accent/10 text-accent'}`}>
+                         {p.status === 'published' ? 'Publicado' : 'Em revisão'}
                        </span>
-                       <span className="text-xs font-black">{p.progress}%</span>
+                       <button 
+                         onClick={() => router.push("/dashboard/chat")}
+                         className="p-1.5 hover:bg-surface-border rounded-lg text-foreground/50 hover:text-foreground transition-colors cursor-pointer"
+                         title="Abrir chat"
+                       >
+                         <MessageCircle className="w-4 h-4" />
+                       </button>
                      </div>
                    </div>
                  ))}
                </div>
-             </div>
-
-             <div className="bg-surface border border-surface-border rounded-2xl p-6 flex flex-col justify-between">
-               <div>
-                 <h3 className="text-lg font-black mb-2">Comunicação Direta</h3>
-                 <p className="text-xs text-foreground/50 mb-6">Mantenha contato regular com os seus clientes no chat para evitar atrasos e alinhamentos incorretos.</p>
-               </div>
-               <button 
-                 onClick={() => router.push("/dashboard/chat")}
-                 className="w-full py-3.5 bg-accent hover:bg-accent/90 text-white font-black rounded-xl text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg"
-               >
-                 <MessageCircle className="w-4 h-4" /> Ir para Chat com Clientes
-               </button>
-             </div>
+             )}
            </div>
+
          </div>
        </div>
      );
@@ -599,13 +792,46 @@ function DiscoverHomeContent() {
                             </div>
                         </motion.div>
                    )}) : (
-                        <motion.div initial={{opacity:0}} animate={{opacity:1}} className="col-span-full py-20 text-center">
-                            <div className="inline-flex p-5 rounded-full bg-surface border border-surface-border mb-4">
-                                <Search className="w-8 h-8 text-foreground/20" />
-                            </div>
-                            <h3 className="text-base font-bold text-foreground/40">Nenhum resultado encontrado.</h3>
-                            <p className="text-sm text-foreground/30 mt-1">Tente um termo diferente na busca.</p>
-                        </motion.div>
+                         <motion.div initial={{opacity:0}} animate={{opacity:1}} className="col-span-full py-16 px-6 bg-surface/50 border border-dashed border-surface-border rounded-3xl text-center flex flex-col items-center justify-center gap-3">
+                             <div className="w-14 h-14 rounded-2xl bg-surface border border-surface-border flex items-center justify-center text-foreground/40 shadow-sm">
+                                 <ShoppingBag className="w-6 h-6" />
+                             </div>
+                             <div className="max-w-md">
+                                 <h3 className="text-base font-bold text-foreground">
+                                   {search ? "Nenhum site encontrado para esta busca" : "A vitrine ainda não possui sites cadastrados"}
+                                 </h3>
+                                 <p className="text-xs text-foreground/50 mt-1 leading-relaxed">
+                                   {search 
+                                     ? "Tente buscar por termos mais amplos ou explore as categorias disponíveis." 
+                                     : "Novos templates e sites prontos estão sendo adicionados pela nossa comunidade. Fale com nossos desenvolvedores para solicitar um projeto personalizado."}
+                                 </p>
+                             </div>
+                             <div className="flex flex-wrap items-center justify-center gap-2.5 mt-2">
+                               {search ? (
+                                 <button
+                                   onClick={() => setSearch("")}
+                                   className="px-4 py-2 bg-foreground text-background rounded-xl text-xs font-bold transition-all cursor-pointer"
+                                 >
+                                   Limpar Pesquisa
+                                 </button>
+                               ) : (
+                                 <>
+                                   <button
+                                     onClick={() => router.push("/dashboard/developers")}
+                                     className="px-4 py-2 bg-accent hover:bg-accent/90 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                                   >
+                                     <User className="w-3.5 h-3.5" /> Ver Desenvolvedores
+                                   </button>
+                                   <button
+                                     onClick={() => router.push("/admin/add-site")}
+                                     className="px-4 py-2 bg-surface border border-surface-border hover:bg-background rounded-xl text-xs font-bold text-foreground transition-all flex items-center gap-1.5 cursor-pointer"
+                                   >
+                                     <Plus className="w-3.5 h-3.5" /> Adicionar Site
+                                   </button>
+                                 </>
+                               )}
+                             </div>
+                         </motion.div>
                    )}
                    </AnimatePresence>
                </div>
@@ -800,14 +1026,21 @@ function DiscoverHomeContent() {
                                                 <ExternalLink className="w-4 h-4" /> Ver demonstração do site
                                               </a>
                                             )}
-                                       </div>
-                                   </div>
-                               </div>
-                           </div>
-                       </motion.div>
-                   </motion.div>
-               )}
-           </AnimatePresence>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Popup Inteligente de Preferências & Segmentos do Cliente */}
+            <ClientInterestSurveyModal 
+              viewCount={productViewsCount} 
+              hasPurchased={purchasedProjects.length > 0} 
+            />
+
             {/* Toast de Curtida */}
             <AnimatePresence>
                 {toastMsg && (

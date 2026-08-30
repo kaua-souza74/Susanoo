@@ -1,7 +1,6 @@
 import { ReactNode } from "react";
 import Link from "next/link";
 import { Logo } from "@/components/logo";
-import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
@@ -35,9 +34,6 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         <Link href="/" aria-label="Voltar para a página inicial" className="absolute left-6 top-6 z-30 flex cursor-pointer items-center rounded-lg outline-none transition-transform hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-accent lg:hidden">
           <Logo size="sm" className="pointer-events-none" />
         </Link>
-        <div className="absolute top-6 right-6">
-          <ThemeToggle />
-        </div>
         <div className="w-full max-w-[420px]">
           {children}
         </div>

@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { Upload, X, Save, Plus, ShieldCheck, CheckSquare, Square, DollarSign, List, Monitor } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-export function AddSiteForm({ isAdmin = false }: { isAdmin?: boolean }) {
+export function AddSiteForm({ isAdmin = false, onSuccess }: { isAdmin?: boolean; onSuccess?: () => void }) {
     const [loading, setLoading] = useState(false);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -124,6 +124,7 @@ export function AddSiteForm({ isAdmin = false }: { isAdmin?: boolean }) {
             if (error) throw error;
 
             showToast("Site cadastrado com sucesso!");
+            if (onSuccess) onSuccess();
             
             // Clear form
             setFormData({ name: "", description: "", price: "", installments: false, category: "Landing Page", product_type: "ready_made", deploy_url: "" });
