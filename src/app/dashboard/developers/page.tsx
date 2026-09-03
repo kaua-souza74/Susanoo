@@ -5,110 +5,30 @@ import { Search, MapPin, Star, ShieldCheck, Mail, GraduationCap } from "lucide-r
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 
-const MOCK_DEVS = [
-    {
-      id: 1,
-      name: "Kaua Souza",
-      role: "Desenvolvedor Fullstack",
-      bio: "Especialista em React, Next.js e E-commerce com foco em performance e conversão.",
-      location: "Campinas, SP",
-      rating: 5.0,
-      reviews: 18,
-      verified: true,
-      education: "Tecnólogo em Análise e Des. de Sistemas — UNICAMP",
-      avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80",
-      skills: ["React", "Next.js", "TailwindCSS", "Supabase"]
-    },
-    {
-      id: 2,
-      name: "Lucas Dev",
-      role: "Desenvolvedor Backend",
-      bio: "Especialista em automações, integrações de API e arquitetura de microsserviços.",
-      location: "São Paulo, SP",
-      rating: 4.8,
-      reviews: 11,
-      verified: true,
-      education: "Bacharel em Ciência da Computação — USP",
-      avatar: "https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=150&q=80",
-      skills: ["Node.js", "Python", "APIs REST", "Docker"]
-    },
-    {
-      id: 3,
-      name: "Mariana UI/UX",
-      role: "Designer & Desenvolvedor Frontend",
-      bio: "Design focado em conversão e experiências digitais para pequenos e médios negócios.",
-      location: "Rio de Janeiro, RJ",
-      rating: 4.9,
-      reviews: 23,
-      verified: false,
-      education: "Bacharel em Design Digital — ESPM RJ",
-      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80",
-      skills: ["Figma", "UI/UX", "Webflow", "Framer"]
-    },
-    {
-      id: 4,
-      name: "Agência Digital X",
-      role: "Agência",
-      bio: "Acelerando o crescimento digital de comércios com sites institucionais e SEO avançado.",
-      location: "Belo Horizonte, MG",
-      rating: 4.7,
-      reviews: 34,
-      verified: true,
-      education: "Equipe com formação em Marketing Digital e Engenharia de Software",
-      avatar: "https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=150&q=80",
-      skills: ["WordPress", "SEO", "Marketing", "Google Ads"]
-    },
-    {
-      id: 5,
-      name: "Felipe Mobile",
-      role: "Desenvolvedor Mobile",
-      bio: "Especialista em aplicativos iOS e Android com Flutter. Entrega em média em 30 dias.",
-      location: "Curitiba, PR",
-      rating: 4.9,
-      reviews: 9,
-      verified: true,
-      education: "Bacharel em Sistemas de Informação — PUCPR",
-      avatar: "https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=150&q=80",
-      skills: ["Flutter", "Dart", "Firebase", "iOS"]
-    },
-    {
-      id: 6,
-      name: "Juliana Fullstack",
-      role: "Desenvolvedor Fullstack",
-      bio: "Soluções completas, do banco de dados ao front-end. Prefiro trabalhar com startups em fase inicial.",
-      location: "Florianópolis, SC",
-      rating: 5.0,
-      reviews: 15,
-      verified: true,
-      education: "Mestra em Computação Aplicada — UFSC",
-      avatar: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=150&q=80",
-      skills: ["Vue.js", "Laravel", "MySQL", "AWS"]
-    }
-];
-
 export default function DevelopersPage() {
     const [search, setSearch] = useState("");
-    const [developers, setDevelopers] = useState<any[]>(MOCK_DEVS);
+    const [developers, setDevelopers] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
 
     useEffect(() => {
         const fetchDevs = async () => {
             try {
-                // Tenta buscar desenvolvedores reais no banco de dados
+                // Busca desenvolvedores reais cadastrados na tabela profiles do Supabase
                 const { data, error } = await supabase
                     .from('profiles')
                     .select('*')
-                    .eq('role', 'developer');
+                    .or('role.eq.developer,role.eq.Desenvolvedor,account_type.eq.Desenvolvedor')
+                    .order('created_at', { ascending: false });
 
-                if (!error && data && data.length > 0) {
+                if (!error && data) {
                     setDevelopers(data);
                 } else {
-                    // Fallback para mock data
-                    setDevelopers(MOCK_DEVS);
+                    setDevelopers([]);
                 }
             } catch (error) {
-                setDevelopers(MOCK_DEVS);
+                console.error("Erro ao buscar desenvolvedores:", error);
+                setDevelopers([]);
             } finally {
                 setLoading(false);
             }

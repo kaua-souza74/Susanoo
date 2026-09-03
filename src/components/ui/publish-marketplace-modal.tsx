@@ -8,21 +8,19 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
+import { COMMERCE_CATEGORIES } from "@/lib/commerceCategories";
+
 interface PublishMarketplaceModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
 const CATEGORIES = [
-  "E-commerce / Loja",
-  "Restaurante / Food",
+  ...COMMERCE_CATEGORIES.map(c => c.label),
   "Landing Page",
   "Portfólio",
   "SaaS / Dashboard",
   "Blog / Notícias",
-  "Imóveis",
-  "Saúde / Clínica",
-  "Educação",
   "Outro",
 ];
 

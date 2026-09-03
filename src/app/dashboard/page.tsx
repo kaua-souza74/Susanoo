@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, useRef, useMemo, Suspense } from "react";
 import { 
   Search, 
   ExternalLink, 
@@ -30,12 +30,15 @@ import {
   Activity,
   Award,
   ArrowUpRight,
-  Plus
+  Plus,
+  ChevronDown,
+  SlidersHorizontal
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { useCart } from "@/components/CartContext";
 import { DevComposedChart } from "@/components/DevComposedChart";
+import { ALL_COMMERCE_TYPES, matchProjectCommerceType } from "@/lib/commerceCategories";
 import { ClientInterestSurveyModal } from "@/components/ClientInterestSurveyModal";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -49,6 +52,11 @@ function DiscoverHomeContent() {
    const searchParams = useSearchParams();
    const [userType, setUserType] = useState<"Comércio" | "Desenvolvedor">("Comércio");
    const [mainMode, setMainMode] = useState<MainMode>("Susanoo");
+   const [selectedType, setSelectedType] = useState<string>("all");
+   const [selectedOrigin, setSelectedOrigin] = useState<string>("all");
+   const [isTypeMenuOpen, setIsTypeMenuOpen] = useState(false);
+   const [typeSearch, setTypeSearch] = useState("");
+   const typeMenuRef = useRef<HTMLDivElement>(null);
    const [search, setSearch] = useState("");
    const [projects, setProjects] = useState<any[]>([]);
    const [devProjects, setDevProjects] = useState<any[]>([]);
@@ -160,31 +168,40 @@ function DiscoverHomeContent() {
      loadAccount();
 
      const fetchProjects = async () => {
-         try {
-           const { data: allProjects, error } = await supabase
-              .from('projects')
-              .select('*')
-              .order('created_at', { ascending: false });
-           
-           if (!error && allProjects) {
-             const galleryProjects = allProjects.filter((p: any) => p.show_in_gallery !== false);
-             setProjects(galleryProjects);
-             setDevProjects(allProjects);
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const currentUserId = session?.user?.id;
 
-             const totalRev = allProjects.reduce((sum: number, p: any) => sum + (Number(p.price) || 0), 0);
-             setDevRevenue(totalRev);
-           } else {
-             setProjects([]);
-             setDevProjects([]);
-           }
+            const { data: allProjects, error } = await supabase
+               .from('projects')
+               .select('*')
+               .order('created_at', { ascending: false });
+            
+            if (!error && allProjects) {
+              const galleryProjects = allProjects.filter((p: any) => p.show_in_gallery !== false);
+              setProjects(galleryProjects);
 
-           // Busca de reviews reais
-           const { data: revData } = await supabase.from('reviews').select('rating');
-           if (revData && revData.length > 0) {
-             const avg = revData.reduce((acc: number, r: any) => acc + (Number(r.rating) || 5), 0) / revData.length;
-             setDevRating(Number(avg.toFixed(1)));
-             setDevReviewCount(revData.length);
-           }
+              // Para o desenvolvedor: se houver projetos atribuídos a ele, filtra por developer_id
+              const myDevProjects = currentUserId 
+                ? allProjects.filter((p: any) => p.developer_id === currentUserId)
+                : [];
+              const finalDevProjects = myDevProjects.length > 0 ? myDevProjects : allProjects;
+              setDevProjects(finalDevProjects);
+
+              const totalRev = finalDevProjects.reduce((sum: number, p: any) => sum + (Number(p.price) || 0), 0);
+              setDevRevenue(totalRev);
+            } else {
+              setProjects([]);
+              setDevProjects([]);
+            }
+
+            // Busca de reviews reais
+            const { data: revData } = await supabase.from('reviews').select('rating');
+            if (revData && revData.length > 0) {
+              const avg = revData.reduce((acc: number, r: any) => acc + (Number(r.rating) || 5), 0) / revData.length;
+              setDevRating(Number(avg.toFixed(1)));
+              setDevReviewCount(revData.length);
+            }
 
            // Busca de interesses e preferências de clientes reais
            const { data: interestsData } = await supabase
@@ -202,12 +219,22 @@ function DiscoverHomeContent() {
      };
      fetchProjects();
 
+     // Escuta em tempo real para novos sites adicionados/publicados no banco
+     const channel = supabase.channel('marketplace-projects-realtime')
+       .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => {
+         fetchProjects();
+       })
+       .subscribe();
+
      // Listen to layout completion updates
      const handleProfileComplete = () => {
        getAccountStorageKey("store-profile-completed").then(key => setStoreProfileCompleted(localStorage.getItem(key) === "true" || localStorage.getItem("susanoo_store_profile_completed") === "true"));
      };
      window.addEventListener("profileCompletedChanged", handleProfileComplete);
-     return () => window.removeEventListener("profileCompletedChanged", handleProfileComplete);
+     return () => {
+       supabase.removeChannel(channel);
+       window.removeEventListener("profileCompletedChanged", handleProfileComplete);
+     };
    }, []);
 
    const openProduct = (proj: any) => {
@@ -294,10 +321,107 @@ function DiscoverHomeContent() {
      setHasProjects(true);
    };
 
-   const filtered = projects.filter(proj => {
-      const matchSearch = (proj.name || "").toLowerCase().includes(search.toLowerCase());
-      return matchSearch;
-   });
+    // Fechar menu de tipos ao clicar fora
+    useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+        if (typeMenuRef.current && !typeMenuRef.current.contains(event.target as Node)) {
+          setIsTypeMenuOpen(false);
+        }
+      };
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const calculateAvgDeliveryDays = (projs: any[]) => {
+      const delivered = projs.filter(p => p.status === 'published' && p.created_at && p.updated_at);
+      if (delivered.length === 0) return null;
+      let totalDays = 0;
+      delivered.forEach(p => {
+        const start = new Date(p.created_at).getTime();
+        const end = new Date(p.updated_at).getTime();
+        const days = Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)));
+        totalDays += days;
+      });
+      const avg = totalDays / delivered.length;
+      return `${avg.toFixed(1)} dias`;
+    };
+
+    const devChartData = useMemo(() => {
+      if (!devProjects || devProjects.length === 0) return undefined;
+      const today = new Date();
+      const points: any[] = [];
+      for (let i = 14; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        const dStr = d.toISOString().split("T")[0];
+        const dayStr = d.getDate().toString().padStart(2, "0");
+        const monthStr = d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
+        
+        const dayProjs = devProjects.filter(p => p.created_at && p.created_at.startsWith(dStr));
+        const dayRev = dayProjs.reduce((sum, p) => sum + (Number(p.price) || 0), 0);
+        
+        points.push({
+          date: dStr,
+          label: `${dayStr} ${monthStr}`,
+          units: dayProjs.length,
+          revenue: dayRev,
+          runRate: dayRev * 1.15,
+        });
+      }
+      return points;
+    }, [devProjects]);
+
+    const getTypeCount = (typeKey: string) => {
+      if (typeKey === "all") return projects.length;
+      return projects.filter(p => matchProjectCommerceType(p, typeKey)).length;
+    };
+
+    const getOriginCount = (originKey: string) => {
+      if (originKey === "all") return projects.length;
+      return projects.filter(p => {
+        const isSusanoo = p.is_official === true || p.created_by_susanoo === true || !p.developer_id;
+        if (originKey === "susanoo") return isSusanoo;
+        if (originKey === "comunidade") return !isSusanoo;
+        return true;
+      }).length;
+    };
+
+    const getProjectTags = (proj: any) => {
+      if (Array.isArray(proj.technologies) && proj.technologies.length > 0) {
+        return proj.technologies.slice(0, 3).map((t: string) => t.toLowerCase());
+      }
+      const tags: string[] = [];
+      const cat = (proj.category || "").toLowerCase();
+      const name = (proj.name || "").toLowerCase();
+      const full = `${name} ${cat}`;
+      
+      if (full.includes("barb")) tags.push("barbearia", "agendamento");
+      else if (full.includes("confeit") || full.includes("doce")) tags.push("confeitaria", "cardápio");
+      else if (full.includes("hamburg") || full.includes("burger")) tags.push("hamburgueria", "delivery");
+      else if (full.includes("pizza")) tags.push("pizzaria", "pedidos");
+      else if (full.includes("restauran")) tags.push("restaurante", "reservas");
+      else if (full.includes("estétic") || full.includes("beleza")) tags.push("estética", "horários");
+      else if (full.includes("loja") || full.includes("comércio")) tags.push("e-commerce", "produtos");
+      else tags.push("comércio local", "site pronto");
+      
+      tags.push("mobile");
+      return tags.slice(0, 3);
+    };
+
+    const filtered = projects.filter(proj => {
+       const matchSearch = !search || 
+         (proj.name || "").toLowerCase().includes(search.toLowerCase()) ||
+         (proj.category || "").toLowerCase().includes(search.toLowerCase());
+       
+       const isSusanoo = proj.is_official === true || proj.created_by_susanoo === true || !proj.developer_id;
+       let matchOrigin = true;
+       if (selectedOrigin === "susanoo") matchOrigin = isSusanoo;
+       if (selectedOrigin === "comunidade") matchOrigin = !isSusanoo;
+
+       const matchType = matchProjectCommerceType(proj, selectedType);
+
+       return matchSearch && matchOrigin && matchType;
+    });
 
    // RENDER DEVELOPER DASHBOARD - CLEAN & MINIMALIST
    if (userType === "Desenvolvedor") {
@@ -353,28 +477,28 @@ function DiscoverHomeContent() {
              </div>
 
              <div className="bg-surface border border-surface-border rounded-2xl p-5 shadow-sm">
-               <span className="text-xs font-semibold text-foreground/50 block mb-1">Tempo Médio de Entrega</span>
-               <p className="text-2xl font-black text-foreground">
-                 {devProjects.filter(p => p.status === 'published').length > 0 ? "4.2 dias" : "—"}
-               </p>
-               <span className="text-[11px] text-foreground/40 font-medium mt-1 block">
-                 {devProjects.filter(p => p.status === 'published').length > 0 ? "Média de entregas" : "Calculado após a 1ª entrega"}
-               </span>
-             </div>
+                <span className="text-xs font-semibold text-foreground/50 block mb-1">Tempo Médio de Entrega</span>
+                <p className="text-2xl font-black text-foreground">
+                  {calculateAvgDeliveryDays(devProjects) || "—"}
+                </p>
+                <span className="text-[11px] text-foreground/40 font-medium mt-1 block">
+                  {calculateAvgDeliveryDays(devProjects) ? "Calculado a partir do histórico" : "Calculado após a 1ª entrega"}
+                </span>
+              </div>
 
-             <div className="bg-surface border border-surface-border rounded-2xl p-5 shadow-sm">
-               <span className="text-xs font-semibold text-foreground/50 block mb-1">Avaliação dos Clientes</span>
-               <p className="text-2xl font-black text-foreground">
-                 {devReviewCount > 0 ? `${devRating.toFixed(1)} ★` : "—"}
-               </p>
-               <span className="text-[11px] font-semibold mt-1 block text-foreground/40">
-                 {devReviewCount > 0 ? `${devReviewCount} avaliações reais` : "Nenhuma avaliação recebida"}
-               </span>
-             </div>
-           </div>
+              <div className="bg-surface border border-surface-border rounded-2xl p-5 shadow-sm">
+                <span className="text-xs font-semibold text-foreground/50 block mb-1">Avaliação dos Clientes</span>
+                <p className="text-2xl font-black text-foreground">
+                  {devReviewCount > 0 ? `${devRating.toFixed(1)} ★` : "—"}
+                </p>
+                <span className="text-[11px] font-semibold mt-1 block text-foreground/40">
+                  {devReviewCount > 0 ? `${devReviewCount} avaliações reais` : "Nenhuma avaliação recebida"}
+                </span>
+              </div>
+            </div>
 
-           {/* Gráfico Minimalista Composed */}
-           <DevComposedChart />
+            {/* Gráfico Minimalista Composed Conectado ao Banco */}
+            <DevComposedChart customData={devChartData} />
 
            {/* Seção de Tecnologias & Segmentos Conectados ao Banco */}
            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -660,7 +784,7 @@ function DiscoverHomeContent() {
                        <ShoppingBag className="w-3.5 h-3.5" /> Ver Minhas Compras
                      </button>
                      <button onClick={() => router.push("/dashboard/timeline")} className="px-4 py-2 bg-surface border border-surface-border font-bold text-xs rounded-xl uppercase tracking-wider text-foreground hover:border-accent/40 flex items-center gap-1.5 cursor-pointer">
-                       <Calendar className="w-3.5 h-3.5 text-accent" /> Acompanhar Progresso
+                           <Calendar className="w-3.5 h-3.5 text-accent" /> Acompanhar Progresso
                      </button>
                      <button onClick={() => router.push("/dashboard/chat")} className="px-4 py-2 bg-surface border border-surface-border font-bold text-xs rounded-xl uppercase tracking-wider text-foreground hover:border-accent/40 flex items-center gap-1.5 cursor-pointer">
                        <MessageCircle className="w-3.5 h-3.5 text-accent" /> Converse no Chat
@@ -669,129 +793,236 @@ function DiscoverHomeContent() {
                  </div>
                )}
 
-               {/* Barra de pesquisa */}
-               <div id="templates-grid" className="relative">
-                   <Search className="w-5 h-5 absolute left-5 top-1/2 -translate-y-1/2 text-foreground/30" />
-                   <input 
-                      type="text" 
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Buscar sites e templates..."
-                      className="w-full bg-surface border border-surface-border rounded-2xl py-4 pl-14 pr-6 text-[15px] font-medium text-foreground focus:border-accent/50 focus:outline-none transition-all placeholder:text-foreground/30"
-                   />
-               </div>
+                {/* Barra de pesquisa e Filtros Horizontais com Pills e Contadores (Estilo Referência) */}
+                <div id="templates-grid" className="space-y-4 pt-2">
+                    {/* Barra de Pesquisa */}
+                    <div className="relative max-w-xl">
+                        <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400" />
+                        <input 
+                           type="text" 
+                           value={search}
+                           onChange={(e) => setSearch(e.target.value)}
+                           placeholder="Buscar por nome, categoria ou tecnologia..."
+                           className="w-full bg-[#111114] border border-neutral-800 rounded-full py-2.5 pl-11 pr-4 text-xs md:text-sm text-foreground focus:border-neutral-700 outline-none transition-all placeholder:text-neutral-500 shadow-xs"
+                        />
+                    </div>
 
-               {/* Abas Por Susanoo / Comunidade */}
-               <div className="flex gap-2">
-                   {["Susanoo", "Geral"].map(mode => (
-                     <button
-                       key={mode}
-                       onClick={() => setMainMode(mode as MainMode)}
-                       className={`px-5 py-2 rounded-xl text-sm font-bold transition-all ${mainMode === mode ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-surface border border-surface-border text-foreground/60 hover:text-foreground'}`}
-                     >
-                       {mode === "Susanoo" ? "Por Susanoo" : "Comunidade"}
-                     </button>
-                   ))}
-               </div>
-
-               {/* Grade de produtos (4 sites por linha com cards mais largos e elegantes) */}
-               {loading ? (
-                 <div className="flex items-center justify-center py-20">
-                   <div className="w-8 h-8 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
-                 </div>
-               ) : (
-               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-7">
-                   <AnimatePresence mode="popLayout">
-                   {filtered.length > 0 ? filtered.map((proj, i) => {
-                        const isTemplate = proj.category?.toLowerCase().includes("template") || !proj.category;
-                        const bought = isPurchased(proj);
-                        return (
-                        <motion.div 
-                            key={proj.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0 }}
-                            transition={{ delay: i * 0.04 }}
-                            className={`group bg-surface border rounded-3xl overflow-hidden hover:shadow-2xl transition-all duration-300 flex flex-col ${bought ? 'border-emerald-500/30 shadow-emerald-500/5' : 'border-surface-border hover:border-accent/40 shadow-sm'}`}
-                        >
-                            {/* Imagem com botão de hover (apenas Ver Site) */}
-                            <div
-                              className="aspect-[16/10] w-full bg-background relative overflow-hidden cursor-pointer"
-                              onClick={() => openProduct(proj)}
-                            >
-                                {proj.cover_url ? (
-                                    <img src={proj.cover_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={proj.name} />
-                                ) : (
-                                    <div className="absolute inset-0 flex items-center justify-center text-4xl font-black text-foreground/10 uppercase tracking-tighter italic">
-                                       {(proj.name || "PRJ").substring(0,3)}
-                                    </div>
-                                )}
-                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center p-4">
-                                   <span className="bg-white text-black px-5 py-2.5 rounded-xl font-bold text-sm shadow-lg transform translate-y-2 group-hover:translate-y-0 transition-all duration-300">
-                                     Ver Site
-                                   </span>
-                                </div>
-                            </div>
+                    {/* Barra de Filtros - Tipos (Menu Customizado) e Origem Perfeitamente Visíveis */}
+                    <div className="flex flex-wrap items-center gap-4 py-2 text-xs">
+                        {/* Grupo TIPOS com Menu Dropdown Customizado */}
+                        <div className="flex items-center gap-2.5 shrink-0" ref={typeMenuRef}>
+                            <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest pl-1">TIPOS</span>
                             
-                            {/* Info do card */}
-                            <div className="p-5 flex flex-col flex-1 justify-between gap-4">
-                               <div>
-                                   <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                                       <span className={`text-[9px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-lg ${isTemplate ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : 'bg-accent/10 text-accent border border-accent/20'}`}>
-                                         {isTemplate ? 'Template' : 'Site Pronto'}
-                                       </span>
-                                       {bought && (
-                                         <span className="text-[9px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                                           <Check className="w-3 h-3" /> Site já comprado
-                                         </span>
-                                       )}
-                                   </div>
-                                   <h4 className="font-bold text-base text-foreground truncate cursor-pointer hover:text-accent transition-colors" onClick={() => openProduct(proj)}>{proj.name}</h4>
-                                   <p className="text-xs text-foreground/50 mt-0.5">{mainMode === "Susanoo" ? "Por Susanoo" : "Dev Independente"}</p>
-                               </div>
-                               
-                               <div>
-                                   <div className="flex items-center justify-between mb-3.5">
-                                       <span className="text-accent font-black text-base">R$ {(proj.price || 49.90).toFixed(2).replace('.', ',')}</span>
-                                       <div className="flex items-center gap-2 z-10">
-                                           <button 
-                                                onClick={(e) => { e.stopPropagation(); toggleFavorite(proj); }}
-                                                className="p-1.5 rounded-xl bg-background border border-surface-border text-[10px] font-black flex items-center gap-1 hover:text-red-500 hover:border-red-500/30 transition-all cursor-pointer"
-                                                title="Favoritar"
-                                           >
-                                               <Heart className={`w-3.5 h-3.5 ${likedProjectIds.includes(proj.id) ? 'fill-red-500 text-red-500' : 'text-foreground/40'}`} />
-                                           </button>
-                                           <div className="flex items-center gap-1 bg-background border border-surface-border px-2 py-1 rounded-xl">
-                                               <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                                               <span className="text-xs text-foreground/70 font-bold">5.0</span>
-                                           </div>
-                                       </div>
-                                   </div>
-                                   
-                                   {bought ? (
-                                     <button
-                                       onClick={(e) => { e.stopPropagation(); router.push('/dashboard/projects'); }}
-                                       className="w-full py-3 px-3 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 flex items-center justify-center gap-2 whitespace-nowrap"
-                                     >
-                                       <Check className="w-4 h-4" /> Site já comprado
-                                     </button>
-                                   ) : (
-                                     <button
-                                        onClick={(e) => handleAddToCart(proj, e)}
-                                        className={`w-full py-3 px-3 rounded-2xl font-black text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap ${
-                                          isInCart(proj.id) 
-                                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30' 
-                                            : 'bg-accent text-white hover:bg-accent/90 shadow-lg shadow-accent/20 hover:scale-[1.02] active:scale-[0.98]'
-                                        }`}
-                                      >
-                                        <ShoppingCart className="w-4 h-4 shrink-0" />
-                                        <span>{isInCart(proj.id) ? "No Carrinho" : "Adicionar ao Carrinho"}</span>
-                                      </button>
-                                   )}
-                               </div>
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsTypeMenuOpen(!isTypeMenuOpen)}
+                                    className={`px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer border shadow-sm ${
+                                        selectedType !== "all"
+                                            ? "bg-white text-black border-white shadow-neutral-900/40"
+                                            : "bg-[#141417] text-neutral-200 hover:text-white hover:bg-[#1a1a20] border-neutral-800 hover:border-neutral-700"
+                                    }`}
+                                >
+                                    <span>{ALL_COMMERCE_TYPES.find(t => t.key === selectedType)?.label || "Todos os Tipos"}</span>
+                                    <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${
+                                        selectedType !== "all" ? "bg-black/10 text-black font-bold" : "bg-neutral-800/80 text-neutral-400 font-normal"
+                                    }`}>
+                                        {getTypeCount(selectedType)}
+                                    </span>
+                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                                        selectedType !== "all" ? "text-black" : "text-neutral-400"
+                                    } ${isTypeMenuOpen ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {/* Popover Dropdown Customizado Flutuante */}
+                                <AnimatePresence>
+                                    {isTypeMenuOpen && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                                            transition={{ duration: 0.15 }}
+                                            className="absolute left-0 top-full mt-2 w-64 bg-[#121215] border border-neutral-800/90 rounded-2xl shadow-2xl p-2 z-[999] backdrop-blur-2xl"
+                                        >
+                                            {/* Campo de Pesquisa Rápida */}
+                                            <div className="relative mb-2 px-1">
+                                                <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500" />
+                                                <input
+                                                    type="text"
+                                                    value={typeSearch}
+                                                    onChange={(e) => setTypeSearch(e.target.value)}
+                                                    placeholder="Pesquisar tipo..."
+                                                    className="w-full bg-[#18181d] border border-neutral-800 rounded-xl py-1.5 pl-9 pr-3 text-xs text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-neutral-700"
+                                                    autoFocus
+                                                />
+                                            </div>
+
+                                            {/* Lista de Tipos de Comércio */}
+                                            <div className="max-h-64 overflow-y-auto space-y-0.5 custom-scrollbar pr-0.5">
+                                                {ALL_COMMERCE_TYPES.filter(t => 
+                                                    t.label.toLowerCase().includes(typeSearch.toLowerCase())
+                                                ).length > 0 ? (
+                                                    ALL_COMMERCE_TYPES.filter(t => 
+                                                        t.label.toLowerCase().includes(typeSearch.toLowerCase())
+                                                    ).map((t) => {
+                                                        const count = getTypeCount(t.key);
+                                                        const isSelected = selectedType === t.key;
+                                                        return (
+                                                            <button
+                                                                key={t.key}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setSelectedType(t.key);
+                                                                    setIsTypeMenuOpen(false);
+                                                                    setTypeSearch("");
+                                                                }}
+                                                                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors cursor-pointer text-left ${
+                                                                    isSelected
+                                                                        ? "bg-white text-black font-bold"
+                                                                        : "text-neutral-300 hover:bg-[#1a1a20] hover:text-white font-medium"
+                                                                }`}
+                                                            >
+                                                                <span className="truncate">{t.label}</span>
+                                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                                    <span className={`text-[11px] font-mono ${isSelected ? "text-neutral-600" : "text-neutral-500"}`}>
+                                                                        ({count})
+                                                                    </span>
+                                                                    {isSelected && <Check className="w-3.5 h-3.5 text-black" />}
+                                                                </div>
+                                                            </button>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <p className="text-center text-xs text-neutral-500 py-4">Nenhum tipo encontrado</p>
+                                                )}
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
-                        </motion.div>
-                   )}) : (
+                        </div>
+
+                        <div className="w-[1px] h-4 bg-neutral-800 shrink-0" />
+
+                        {/* Grupo ORIGEM */}
+                        <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">ORIGEM</span>
+                            {[
+                              { key: "all", label: "Todas", count: getOriginCount("all") },
+                              { key: "susanoo", label: "Por Susanoo", count: getOriginCount("susanoo") },
+                              { key: "comunidade", label: "Comunidade", count: getOriginCount("comunidade") },
+                            ].map((tab) => {
+                              const isActive = selectedOrigin === tab.key;
+                              return (
+                                <button
+                                  key={tab.key}
+                                  onClick={() => setSelectedOrigin(tab.key)}
+                                  className={`px-3.5 py-1.5 rounded-full text-xs transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                    isActive 
+                                      ? "bg-white text-black font-bold shadow-xs" 
+                                      : "bg-[#141417] text-neutral-300 hover:text-white hover:bg-[#1a1a1f] border border-neutral-800/80 font-medium"
+                                  }`}
+                                >
+                                  <span>{tab.label}</span>
+                                  <span className={`text-[11px] ${isActive ? "text-neutral-600 font-semibold" : "text-neutral-500 font-normal"}`}>
+                                    {tab.count}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Grade de produtos fiel à imagem de referência */}
+                {loading ? (
+                  <div className="flex items-center justify-center py-20">
+                    <div className="w-8 h-8 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
+                  </div>
+                ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-7 md:gap-8">
+                    <AnimatePresence mode="popLayout">
+                    {filtered.length > 0 ? filtered.map((proj, i) => {
+                         const bought = isPurchased(proj);
+                         const tags = getProjectTags(proj);
+                         
+                         return (
+                         <motion.div 
+                             key={proj.id}
+                             initial={{ opacity: 0, y: 12 }}
+                             animate={{ opacity: 1, y: 0 }}
+                             exit={{ opacity: 0 }}
+                             transition={{ delay: i * 0.03 }}
+                             className="flex flex-col group cursor-pointer"
+                             onClick={() => openProduct(proj)}
+                         >
+                             {/* Moldura da Tela / Viewport com Bezel Arredondado */}
+                             <div className="w-full aspect-[16/10] bg-[#09090b] rounded-2xl md:rounded-[1.25rem] border border-neutral-800/90 overflow-hidden relative shadow-xs group-hover:border-neutral-700 transition-all duration-300">
+                                 {proj.cover_url ? (
+                                     <img 
+                                        src={proj.cover_url} 
+                                        alt={proj.name} 
+                                        className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500" 
+                                     />
+                                 ) : (
+                                     <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-neutral-900 to-black text-neutral-600 font-bold text-2xl tracking-tighter">
+                                        {(proj.name || "PRJ").substring(0,3)}
+                                     </div>
+                                 )}
+
+                                 {/* Ring interno simulando bezel de display */}
+                                 <div className="absolute inset-0 ring-1 ring-inset ring-white/5 rounded-2xl md:rounded-[1.25rem] pointer-events-none" />
+
+                                 {/* Badge discreto se comprado */}
+                                 {bought && (
+                                   <div className="absolute top-3 left-3 bg-emerald-500/90 backdrop-blur-md text-white px-2.5 py-0.5 rounded-full text-[10px] font-semibold flex items-center gap-1 shadow-xs">
+                                     <Check className="w-3 h-3" /> Já Adquirido
+                                   </div>
+                                 )}
+
+                                 {/* Botão de curtir discreto */}
+                                 <button
+                                   onClick={(e) => { e.stopPropagation(); toggleFavorite(proj); }}
+                                   className={`absolute top-3 right-3 p-2 rounded-full backdrop-blur-md border transition-all ${
+                                     likedProjectIds.includes(proj.id) 
+                                       ? 'bg-red-500/20 border-red-500/40 text-red-500 opacity-100' 
+                                       : 'bg-black/50 border-white/10 text-white/70 hover:text-red-400 opacity-0 group-hover:opacity-100'
+                                   }`}
+                                   title="Favoritar"
+                                 >
+                                   <Heart className={`w-3.5 h-3.5 ${likedProjectIds.includes(proj.id) ? 'fill-red-500' : ''}`} />
+                                 </button>
+                             </div>
+
+                             {/* Linha de Título com Ícone ↗ e Preço */}
+                             <div className="mt-3.5 flex items-center justify-between gap-2 px-0.5">
+                                 <div className="flex items-center gap-1.5 min-w-0">
+                                     <span className="text-neutral-400 group-hover:text-foreground group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200 text-sm font-semibold">
+                                       ↗
+                                     </span>
+                                     <h3 className="font-semibold text-sm text-foreground truncate group-hover:text-accent transition-colors">
+                                       {proj.name}
+                                     </h3>
+                                 </div>
+
+                                 <span className="text-xs font-semibold text-neutral-400 shrink-0">
+                                   R$ {Number(proj.price || 49.90).toFixed(2).replace('.', ',')}
+                                 </span>
+                             </div>
+
+                             {/* Linha de Tags / Chips arredondados inferiores */}
+                             <div className="mt-2 flex flex-wrap items-center gap-1.5 px-0.5">
+                                 {tags.map((tag: string, tIdx: number) => (
+                                   <span 
+                                     key={tIdx} 
+                                     className="bg-[#141417] text-neutral-400 border border-neutral-800/80 text-[11px] px-2.5 py-0.5 rounded-full font-medium"
+                                   >
+                                     {tag}
+                                   </span>
+                                 ))}
+                             </div>
+                         </motion.div>
+                    )}) : (
                          <motion.div initial={{opacity:0}} animate={{opacity:1}} className="col-span-full py-16 px-6 bg-surface/50 border border-dashed border-surface-border rounded-3xl text-center flex flex-col items-center justify-center gap-3">
                              <div className="w-14 h-14 rounded-2xl bg-surface border border-surface-border flex items-center justify-center text-foreground/40 shadow-sm">
                                  <ShoppingBag className="w-6 h-6" />

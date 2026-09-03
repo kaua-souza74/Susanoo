@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { Camera, Save, MapPin, Globe, Code2, AtSign, Star, ShieldCheck, Mail, Phone, Plus, X, Heart, ExternalLink, Building, Lock, Pencil, Trash2, ShoppingBag } from "lucide-react";
+import { Camera, Save, MapPin, Globe, Code2, AtSign, Star, ShieldCheck, Mail, Phone, Plus, X, Heart, ExternalLink, Building, Lock, Pencil, Trash2, ShoppingBag, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { getAccountStorageKey, getAuthenticatedAccountType } from "@/lib/account";
@@ -89,12 +89,16 @@ const processImageFile = (file: File, maxWidth: number, maxHeight: number, quali
 export default function ProfilePage() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
+    const [initialLoading, setInitialLoading] = useState(true);
+    const userManuallyTypedCep = useRef(false);
     const [cepLoading, setCepLoading] = useState(false);
     const [profileType, setProfileType] = useState<"Comércio" | "Desenvolvedor">("Comércio");
     const [activeTab, setActiveTab] = useState<"Informações" | "Curtidos" | "Minhas Compras">("Informações");
     const [toastMessage, setToastMessage] = useState<string | null>(null);
-    const [isDirty, setIsDirty] = useState(false);
-    const [originalData, setOriginalData] = useState<any>(null);
+    const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+    const [pendingUrl, setPendingUrl] = useState<string | null>(null);
+    const [isSavingAndNavigating, setIsSavingAndNavigating] = useState(false);
+    const [originalData, setOriginalData] = useState<string | null>(null);
     const [likesPrivate, setLikesPrivate] = useState(false);
     const [myProjects, setMyProjects] = useState<any[]>([]);
     
@@ -172,7 +176,7 @@ export default function ProfilePage() {
             const mergedLocation = dbProfile?.location || meta.location || localData.location || (meta.city && meta.state ? `${meta.city}, ${meta.state}` : (localData.city && localData.state ? `${localData.city}, ${localData.state}` : "São Paulo, SP"));
             const mergedSkills = dbProfile?.skills || meta.skills || localData.specialties || localData.skills || [];
 
-            setFormData({
+            const initialFormData = {
                 name: mergedName,
                 email: mergedEmail,
                 avatar_url: mergedAvatar,
@@ -194,11 +198,13 @@ export default function ProfilePage() {
                 linkedin: meta.linkedin || localData.linkedin || "",
                 portfolio: meta.portfolio || localData.portfolio || "",
                 experience: meta.experience || localData.experience || ""
-            });
+            };
 
-            if (mergedSkills && mergedSkills.length > 0) {
-                setSkills(mergedSkills);
-            }
+            setFormData(initialFormData);
+
+            const initialSkills = (mergedSkills && mergedSkills.length > 0) ? mergedSkills : [];
+            setSkills(initialSkills);
+            setOriginalData(JSON.stringify({ formData: initialFormData, skills: initialSkills }));
 
             if (dbProfile) {
                 setLikesPrivate(dbProfile.likes_private || false);
@@ -230,6 +236,7 @@ export default function ProfilePage() {
             console.error("Erro ao carregar perfil:", err);
         } finally {
             setLoading(false);
+            setInitialLoading(false);
         }
     };
 
@@ -237,14 +244,34 @@ export default function ProfilePage() {
         loadProfile();
     }, []);
 
-    useEffect(() => {
-        if (originalData) {
-            setIsDirty(true);
-        }
-    }, [formData, skills]);
+    const isDirty = originalData !== null && JSON.stringify({ formData, skills }) !== originalData;
 
-    // ViaCEP fetch API when CEP is entered
+    // Intercepta navegação interna por links para exibir o modal de confirmação elegante da Susanoo
     useEffect(() => {
+        const handleLinkClick = (e: MouseEvent) => {
+            if (!isDirty) return;
+            const target = (e.target as HTMLElement).closest("a");
+            if (target && target.href) {
+                try {
+                    const url = new URL(target.href, window.location.href);
+                    if (url.origin === window.location.origin && url.pathname !== window.location.pathname) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setPendingUrl(target.href);
+                        setShowUnsavedModal(true);
+                    }
+                } catch (err) {
+                    // Ignora URLs inválidas
+                }
+            }
+        };
+        document.addEventListener("click", handleLinkClick, true);
+        return () => document.removeEventListener("click", handleLinkClick, true);
+    }, [isDirty]);
+
+    // ViaCEP fetch API - Somente executa se o usuário tiver digitado o CEP manualmente na tela
+    useEffect(() => {
+        if (!userManuallyTypedCep.current) return;
         const cleanCep = formData.cep.replace(/\D/g, "");
         if (cleanCep.length === 8) {
             const fetchAddress = async () => {
@@ -269,6 +296,7 @@ export default function ProfilePage() {
                     showToast("Erro ao buscar CEP.");
                 } finally {
                     setCepLoading(false);
+                    userManuallyTypedCep.current = false;
                 }
             };
             fetchAddress();
@@ -428,9 +456,8 @@ export default function ProfilePage() {
                 window.dispatchEvent(new Event("profileCompletedChanged"));
             }
 
-            showToast("Perfil salvo com sucesso no banco de dados!");
-            setIsDirty(false);
-            setOriginalData({ ...formData, skills });
+            showToast("Mudanças salvas com sucesso!");
+            setOriginalData(JSON.stringify({ formData, skills }));
         } catch (error: any) {
             console.error("Erro ao salvar perfil:", error);
             showToast("Erro ao salvar o perfil.");
@@ -438,6 +465,50 @@ export default function ProfilePage() {
             setLoading(false);
         }
     };
+
+    const navigateToPending = (targetUrl: string) => {
+        try {
+            const url = new URL(targetUrl, window.location.href);
+            if (url.origin === window.location.origin) {
+                router.push(url.pathname + url.search);
+                return;
+            }
+        } catch (e) {}
+        window.location.href = targetUrl;
+    };
+
+    const handleSaveAndNavigate = async () => {
+        setIsSavingAndNavigating(true);
+        await handleSaveProfile();
+        sessionStorage.setItem("susanoo_flash_toast", "Mudanças salvas com sucesso!");
+        setIsSavingAndNavigating(false);
+        setShowUnsavedModal(false);
+        if (pendingUrl) {
+            navigateToPending(pendingUrl);
+        }
+    };
+
+    const handleDiscardAndNavigate = () => {
+        if (originalData) {
+            try {
+                const parsed = JSON.parse(originalData);
+                if (parsed.formData) setFormData(parsed.formData);
+                if (parsed.skills) setSkills(parsed.skills);
+            } catch (e) {}
+        }
+        setShowUnsavedModal(false);
+        if (pendingUrl) {
+            navigateToPending(pendingUrl);
+        }
+    };
+
+    if (initialLoading) {
+        return (
+            <div className="flex-1 flex items-center justify-center bg-background min-h-[70vh]">
+                <div className="w-8 h-8 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
+            </div>
+        );
+    }
 
     return (
         <div className="flex-1 overflow-y-auto w-full bg-background text-foreground transition-colors duration-300 pb-20">
@@ -613,7 +684,10 @@ export default function ProfilePage() {
                                                             label="CEP"
                                                             value={formData.cep}
                                                             placeholder="00000-000"
-                                                            onChange={(val: string) => setFormData({...formData, cep: val})}
+                                                            onChange={(val: string) => {
+                                                                userManuallyTypedCep.current = true;
+                                                                setFormData({...formData, cep: val});
+                                                            }}
                                                         />
                                                         {cepLoading && (
                                                             <div className="absolute right-3 top-[38px] w-4 h-4 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
@@ -846,6 +920,105 @@ export default function ProfilePage() {
                     )}
                 </AnimatePresence>
             </div>
+
+            {/* Banner Flutuante de Alterações Não Salvas */}
+            <AnimatePresence>
+                {isDirty && !showUnsavedModal && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 30 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 30 }}
+                        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9990] bg-surface/95 backdrop-blur-md border border-amber-500/30 shadow-2xl rounded-2xl p-3 px-5 flex items-center gap-4 text-foreground max-w-xl w-[90%]"
+                    >
+                        <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
+                            <AlertTriangle className="w-5 h-5 animate-pulse" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-foreground">Alterações não salvas no perfil</p>
+                            <p className="text-[11px] text-foreground/50 truncate">Salve suas modificações para não perder nenhum dado ao sair.</p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button
+                                onClick={handleDiscardAndNavigate}
+                                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-foreground/60 hover:text-foreground hover:bg-surface-border transition-colors cursor-pointer"
+                            >
+                                Descartar
+                            </button>
+                            <button
+                                onClick={handleSaveProfile}
+                                disabled={loading}
+                                className="px-4 py-1.5 rounded-xl bg-accent hover:bg-accent/90 text-white font-bold text-xs shadow-md shadow-accent/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            >
+                                <Save className="w-3.5 h-3.5" /> Salvar
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Modal de Confirmação ao Tentar Sair da Página com Alterações */}
+            <AnimatePresence>
+                {showUnsavedModal && (
+                    <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 font-sans"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="bg-surface border border-surface-border rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl relative"
+                        >
+                            <button 
+                                onClick={() => setShowUnsavedModal(false)}
+                                className="absolute top-4 right-4 text-foreground/40 hover:text-foreground p-1 rounded-full transition-colors cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+
+                            <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center mb-5">
+                                <AlertTriangle className="w-7 h-7" />
+                            </div>
+
+                            <h3 className="text-xl font-black text-foreground mb-2">Salvar alterações não salvas?</h3>
+                            <p className="text-xs md:text-sm text-foreground/60 leading-relaxed mb-6 font-medium">
+                                Você fez alterações no seu perfil que ainda não foram salvas. Se sair agora sem salvar, essas mudanças serão perdidas.
+                            </p>
+
+                            <div className="flex flex-col gap-2.5">
+                                <button
+                                    onClick={handleSaveAndNavigate}
+                                    disabled={isSavingAndNavigating || loading}
+                                    className="w-full py-3.5 px-4 bg-accent hover:bg-accent/90 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-accent/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                                >
+                                    {isSavingAndNavigating ? (
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                        <Save className="w-4 h-4" />
+                                    )}
+                                    Salvar Alterações e Sair
+                                </button>
+
+                                <button
+                                    onClick={handleDiscardAndNavigate}
+                                    className="w-full py-3 px-4 bg-surface border border-surface-border hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/20 text-foreground/70 font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center cursor-pointer"
+                                >
+                                    Descartar e Sair
+                                </button>
+
+                                <button
+                                    onClick={() => setShowUnsavedModal(false)}
+                                    className="w-full py-2.5 px-4 text-foreground/50 hover:text-foreground font-semibold text-xs transition-colors text-center cursor-pointer"
+                                >
+                                    Continuar Editando
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Toast */}
             <AnimatePresence>

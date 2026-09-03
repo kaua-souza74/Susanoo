@@ -3,6 +3,7 @@ import { useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { Upload, X, Save, Plus, ShieldCheck, CheckSquare, Square, DollarSign, List, Monitor } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { COMMERCE_CATEGORIES } from "@/lib/commerceCategories";
 
 export function AddSiteForm({ isAdmin = false, onSuccess }: { isAdmin?: boolean; onSuccess?: () => void }) {
     const [loading, setLoading] = useState(false);
@@ -14,7 +15,7 @@ export function AddSiteForm({ isAdmin = false, onSuccess }: { isAdmin?: boolean;
         description: "",
         price: "",
         installments: false,
-        category: "Landing Page",
+        category: COMMERCE_CATEGORIES[0].label,
         product_type: "ready_made",
         deploy_url: "",
     });
@@ -112,6 +113,7 @@ export function AddSiteForm({ isAdmin = false, onSuccess }: { isAdmin?: boolean;
                 installments: formData.installments,
                 specifications: specsObj,
                 photos: uploadedUrls,
+                cover_url: uploadedUrls[0] || null,
                 category: formData.category,
                 product_type: formData.product_type,
                 deploy_url: formData.deploy_url,
@@ -127,7 +129,7 @@ export function AddSiteForm({ isAdmin = false, onSuccess }: { isAdmin?: boolean;
             if (onSuccess) onSuccess();
             
             // Clear form
-            setFormData({ name: "", description: "", price: "", installments: false, category: "Landing Page", product_type: "ready_made", deploy_url: "" });
+            setFormData({ name: "", description: "", price: "", installments: false, category: COMMERCE_CATEGORIES[0].label, product_type: "ready_made", deploy_url: "" });
             setPhotos([]);
             setPhotoUrls([]);
             setSpecs([{ key: "", value: "" }]);
@@ -188,13 +190,20 @@ export function AddSiteForm({ isAdmin = false, onSuccess }: { isAdmin?: boolean;
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="text-xs font-bold text-foreground/40 uppercase tracking-widest mb-2 block">Categoria</label>
+                                <label className="text-xs font-bold text-foreground/40 uppercase tracking-widest mb-2 block">Nicho de Comércio / Categoria</label>
                                 <select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent outline-none transition-colors">
-                                    <option>Landing Page</option>
-                                    <option>E-commerce</option>
-                                    <option>Dashboard / SaaS</option>
-                                    <option>Blog</option>
-                                    <option>Aplicativo Web</option>
+                                    <optgroup label="Pequenos Comércios">
+                                        {COMMERCE_CATEGORIES.map(c => (
+                                            <option key={c.key} value={c.label}>{c.label}</option>
+                                        ))}
+                                    </optgroup>
+                                    <optgroup label="Outros Formatos">
+                                        <option value="Landing Page">Landing Page Geral</option>
+                                        <option value="E-commerce">E-commerce / Loja Geral</option>
+                                        <option value="Dashboard / SaaS">Dashboard / SaaS</option>
+                                        <option value="Blog">Blog & Notícias</option>
+                                        <option value="Aplicativo Web">Aplicativo Web</option>
+                                    </optgroup>
                                 </select>
                             </div>
                             <div>

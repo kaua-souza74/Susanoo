@@ -74,20 +74,32 @@ ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS manual_progress INTEGER DEF
 
 ## 💎 Funcionalidades Principais
 
-### 1. Deploy HQ (Admin)
+### 1. Deploy HQ & Catálogo de Sites (Admin)
 - **Hospedagem Estática**: Upload direto de arquivos HTML/CSS para o Supabase Storage.
 - **Preview Seguro**: Rota de visualização interna que ignora restrições de sandbox.
 - **Vercel Engine**: Publicação mundial com um clique usando a API oficial da Vercel.
 - **Controle de Progresso**: Slider administrativo para definir a porcentagem de conclusão que o cliente vê.
+- **Gestão de Nichos de Comércio**: Cadastro e categorização de sites prontos com mais de 30 nichos de pequenos comércios brasileiros, publicação e visibilidade pública.
 
-### 2. War Room (Chat de Equipe)
+### 2. Marketplace & Catálogo de Pequenos Comércios
+- **Filtros por Nicho**: Seletor moderno de tipos com pesquisa integrada e contadores dinâmicos cobrindo barbearias, confeitarias, oficinas, clínicas, pet shops, academias, e muito mais.
+- **Filtro por Origem**: Separação clara entre criações oficiais Susanoo e templates da Comunidade.
+- **Atualização em Tempo Real (Supabase Realtime)**: Novos sites cadastrados e publicados aparecem na vitrine instantaneamente sem necessidade de refresh.
+
+### 3. Painel do Desenvolvedor & Gestão de Profissionais
+- **Métricas Reais**: Faturamento e projetos calculados com base no usuário autenticado no Supabase.
+- **Tempo Médio de Entrega**: Métrica calculada dinamicamente entre as datas de criação e conclusão dos projetos reais.
+- **Vitrine de Desenvolvedores**: Listagem e páginas detalhadas de perfis carregadas diretamente da tabela `profiles`.
+
+### 4. Gestão de Projetos, Minhas Compras e Timeline
+- **Progresso Integrado (`/dashboard/timeline`)**: Visual clean e profissional com acompanhamento de etapas e marcos.
+- **Minhas Compras (`/dashboard/projects`)**: Gestão de sites adquiridos, status de deploy e acesso rápido às instâncias.
+- **Kanban Realtime**: O cliente e a equipe acompanham cada tarefa com sincronização total com o banco de dados.
+- **Prevenção de Perda de Dados**: Notificação e modal de confirmação ao navegar com alterações não salvas no perfil.
+
+### 5. War Room (Chat de Equipe)
 - Sistema estilo WhatsApp com suporte a textos, imagens e múltiplos anexos.
 - Preview de mídia antes do envio.
-
-### 3. Dashboard do Cliente
-- **Meus Projetos**: Visualização premium do progresso do software.
-- **Kanban Realtime**: O cliente acompanha cada tarefa saindo da produção em tempo real.
-- **Tutorial Integrado**: Página de ajuda detalhando como a agência opera.
 
 ---
 

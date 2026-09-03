@@ -62,9 +62,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     }
   };
 
+  const [globalToast, setGlobalToast] = useState<string | null>(null);
+
   useEffect(() => {
      if (pathname?.includes('/dashboard/chat')) {
        setUnreadChatCount(0);
+     }
+     // Flash Toast entre trocas de páginas (ex: após salvar perfil)
+     const flash = sessionStorage.getItem("susanoo_flash_toast");
+     if (flash) {
+       sessionStorage.removeItem("susanoo_flash_toast");
+       setGlobalToast(flash);
+       const timer = setTimeout(() => setGlobalToast(null), 3500);
+       return () => clearTimeout(timer);
      }
   }, [pathname]);
 
@@ -256,9 +266,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
          {children}
       </main>
       
-      {/* Susanoo AI Floating Widget */}
-      <SusanooAIWidget />
+      {/* Susanoo AI Floating Widget (Ocultado temporariamente a pedido do usuário) */}
+      {/* <SusanooAIWidget /> */}
       <CartSidebar />
+
+      {/* Global Flash Toast (ex: após salvar perfil e mudar de página) */}
+      {globalToast && (
+        <div className="fixed bottom-6 right-6 z-[99999] bg-surface/95 backdrop-blur-md border border-emerald-500/30 shadow-2xl px-5 py-3.5 rounded-2xl flex items-center gap-3 max-w-sm">
+          <div className="w-8 h-8 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center shrink-0">
+            <Check className="w-4 h-4" />
+          </div>
+          <p className="text-xs md:text-sm font-bold text-foreground">{globalToast}</p>
+        </div>
+      )}
     </div>
   );
 }

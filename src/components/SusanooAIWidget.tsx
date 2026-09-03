@@ -10,7 +10,12 @@ type Message = {
     content: string;
 };
 
+// Flag para controle da IA da Susanoo (ocultada temporariamente a pedido do usuário para uso futuro)
+const IS_AI_ENABLED = false;
+
 export function SusanooAIWidget() {
+    if (!IS_AI_ENABLED) return null;
+
     const [isOpen, setIsOpen] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
     const [messages, setMessages] = useState<Message[]>([

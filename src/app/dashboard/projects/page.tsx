@@ -8,16 +8,16 @@ import {
   ShieldCheck, 
   Zap, 
   ShoppingBag, 
-  Monitor, 
   Calendar, 
   MessageSquareText, 
   Clock, 
   CheckCircle2,
   Sparkles,
   Search,
-  Package
+  Package,
+  ArrowUpRight
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 export default function MyPurchasesPage() {
     const [projects, setProjects] = useState<any[]>([]);
@@ -54,8 +54,8 @@ export default function MyPurchasesPage() {
     }, [router]);
 
     if (loading) return (
-        <div className="flex-1 h-full w-full bg-background flex items-center justify-center">
-            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }} className="w-10 h-10 border-[3px] border-surface-border border-t-accent rounded-full" />
+        <div className="flex-1 h-full w-full bg-background flex items-center justify-center min-h-[70vh]">
+            <div className="w-8 h-8 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
         </div>
     );
 
@@ -65,68 +65,64 @@ export default function MyPurchasesPage() {
 
     return (
         <div className="flex-1 overflow-y-auto w-full bg-background custom-scrollbar pb-24 p-6 md:p-10 text-foreground transition-colors duration-300">
-            <div className="w-full max-w-7xl mx-auto flex flex-col space-y-8">
+            <div className="w-full max-w-6xl mx-auto flex flex-col space-y-8">
                 
                 {/* Header da Página */}
-                <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-                    <div>
-                        <div className="flex items-center gap-2 mb-2">
-                            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-accent bg-accent/10 border border-accent/20 px-3 py-1 rounded-full flex items-center gap-1.5">
-                                <ShoppingBag className="w-3.5 h-3.5" /> Área do Comprador
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-surface-border">
+                    <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1.5">
+                                <ShoppingBag className="w-3.5 h-3.5" /> Painel de Compras
                             </span>
                         </div>
-                        <h1 className="text-3xl md:text-5xl font-black text-foreground tracking-tight">Minhas Compras</h1>
-                        <p className="text-foreground/50 text-sm font-medium mt-1">
-                            Acompanhe o desenvolvimento, progresso e publicação dos sites e templates adquiridos.
+                        <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">
+                            Minhas Compras
+                        </h1>
+                        <p className="text-xs md:text-sm text-foreground/50">
+                            Gerencie seus sites adquiridos, acompanhe o cronograma e converse com a equipe.
                         </p>
                     </div>
 
                     {projects.length > 0 && (
-                        <div className="flex items-center gap-3">
-                            <div className="bg-surface border border-surface-border px-4 py-2.5 rounded-2xl flex items-center gap-2 shadow-sm">
-                                <Package className="w-4 h-4 text-accent" />
-                                <span className="text-xs font-bold text-foreground">{projects.length} {projects.length === 1 ? 'Site Comprado' : 'Sites Comprados'}</span>
-                            </div>
-                            <button 
-                                onClick={() => router.push('/dashboard')}
-                                className="px-5 py-2.5 bg-accent hover:bg-accent/90 text-white rounded-2xl font-black text-xs uppercase tracking-wider transition-all shadow-lg shadow-accent/20 flex items-center gap-1.5 cursor-pointer"
-                            >
-                                <Sparkles className="w-3.5 h-3.5" /> Explorar Mais Sites
-                            </button>
-                        </div>
+                        <button 
+                            onClick={() => router.push('/dashboard')}
+                            className="self-start sm:self-center px-4 py-2.5 bg-accent hover:bg-accent/90 text-white rounded-xl font-semibold text-xs transition-all shadow-md shadow-accent/20 flex items-center gap-2 cursor-pointer"
+                        >
+                            <Sparkles className="w-3.5 h-3.5" /> Explorar Marketplace
+                        </button>
                     )}
-                </motion.div>
+                </div>
 
                 {/* Métricas Rápidas */}
                 {projects.length > 0 && (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="bg-surface border border-surface-border p-5 rounded-2xl flex items-center justify-between">
+                        <div className="bg-surface border border-surface-border p-4 rounded-2xl flex items-center justify-between shadow-xs">
                             <div>
-                                <span className="text-[10px] font-black text-foreground/40 uppercase tracking-widest block mb-1">Total Adquirido</span>
-                                <span className="text-2xl font-black text-foreground">{projects.length}</span>
+                                <span className="text-[11px] font-semibold text-foreground/50 uppercase tracking-wider block mb-1">Total de Sites</span>
+                                <span className="text-2xl font-bold text-foreground">{projects.length}</span>
                             </div>
-                            <div className="w-12 h-12 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">
-                                <ShoppingBag className="w-6 h-6" />
+                            <div className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center">
+                                <Package className="w-5 h-5" />
                             </div>
                         </div>
 
-                        <div className="bg-surface border border-surface-border p-5 rounded-2xl flex items-center justify-between">
+                        <div className="bg-surface border border-surface-border p-4 rounded-2xl flex items-center justify-between shadow-xs">
                             <div>
-                                <span className="text-[10px] font-black text-foreground/40 uppercase tracking-widest block mb-1">Em Desenvolvimento</span>
-                                <span className="text-2xl font-black text-accent">{inProgressCount}</span>
+                                <span className="text-[11px] font-semibold text-foreground/50 uppercase tracking-wider block mb-1">Em Desenvolvimento</span>
+                                <span className="text-2xl font-bold text-accent">{inProgressCount}</span>
                             </div>
-                            <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
-                                <Clock className="w-6 h-6" />
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                                <Clock className="w-5 h-5" />
                             </div>
                         </div>
 
-                        <div className="bg-surface border border-surface-border p-5 rounded-2xl flex items-center justify-between">
+                        <div className="bg-surface border border-surface-border p-4 rounded-2xl flex items-center justify-between shadow-xs">
                             <div>
-                                <span className="text-[10px] font-black text-foreground/40 uppercase tracking-widest block mb-1">Prontos / Publicados</span>
-                                <span className="text-2xl font-black text-emerald-500">{completedCount}</span>
+                                <span className="text-[11px] font-semibold text-foreground/50 uppercase tracking-wider block mb-1">Concluídos / Online</span>
+                                <span className="text-2xl font-bold text-emerald-500">{completedCount}</span>
                             </div>
-                            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500">
-                                <CheckCircle2 className="w-6 h-6" />
+                            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                                <CheckCircle2 className="w-5 h-5" />
                             </div>
                         </div>
                     </div>
@@ -134,14 +130,14 @@ export default function MyPurchasesPage() {
 
                 {/* Barra de Pesquisa */}
                 {projects.length > 0 && (
-                    <div className="relative max-w-md">
-                        <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-foreground/30" />
+                    <div className="relative max-w-sm">
+                        <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-foreground/35" />
                         <input 
                             type="text" 
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Buscar nas minhas compras..."
-                            className="w-full bg-surface border border-surface-border rounded-xl py-3 pl-11 pr-4 text-xs font-medium text-foreground focus:border-accent outline-none transition-all placeholder:text-foreground/30"
+                            placeholder="Buscar compras..."
+                            className="w-full bg-surface border border-surface-border rounded-xl py-2 pl-10 pr-4 text-xs font-medium text-foreground focus:border-accent outline-none transition-all placeholder:text-foreground/30 shadow-xs"
                         />
                     </div>
                 )}
@@ -149,24 +145,24 @@ export default function MyPurchasesPage() {
                 {/* Grid de Compras */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {projects.length === 0 ? (
-                        <motion.div initial={{opacity:0}} animate={{opacity:1}} className="col-span-full bg-surface border border-surface-border rounded-3xl p-16 text-center flex flex-col items-center shadow-sm">
-                            <div className="w-20 h-20 bg-accent/10 border border-accent/20 rounded-3xl flex items-center justify-center mb-6">
-                                <ShoppingBag className="w-10 h-10 text-accent" />
+                        <div className="col-span-full bg-surface border border-surface-border rounded-3xl p-12 text-center flex flex-col items-center shadow-xs">
+                            <div className="w-14 h-14 bg-accent/10 border border-accent/20 rounded-2xl flex items-center justify-center mb-4">
+                                <ShoppingBag className="w-7 h-7 text-accent" />
                             </div>
-                            <h3 className="text-2xl font-black text-foreground mb-2">Nenhum site comprado ainda</h3>
-                            <p className="text-foreground/50 text-sm max-w-md mb-8 font-medium">
-                                Você ainda não possui nenhum site ou template ativo na sua conta. Explore nosso Marketplace e garanta seu site pronto com suporte e garantia.
+                            <h3 className="text-lg font-bold text-foreground mb-1">Nenhum site comprado ainda</h3>
+                            <p className="text-foreground/50 text-xs md:text-sm max-w-sm mb-6 font-medium leading-relaxed">
+                                Você ainda não possui nenhum site ativo. Acesse o marketplace para conhecer as opções com garantia de entrega e suporte.
                             </p>
                             <button 
                                 onClick={() => router.push('/dashboard')} 
-                                className="px-8 py-4 bg-accent hover:bg-accent/90 text-white rounded-2xl font-black text-sm uppercase tracking-wider transition-all shadow-xl shadow-accent/25 flex items-center gap-2 cursor-pointer"
+                                className="px-6 py-3 bg-accent hover:bg-accent/90 text-white rounded-xl font-semibold text-xs uppercase tracking-wider transition-all shadow-md shadow-accent/20 flex items-center gap-2 cursor-pointer"
                             >
-                                <Sparkles className="w-4 h-4" /> Ir para o Marketplace
+                                <Sparkles className="w-4 h-4" /> Ver Catálogo de Sites
                             </button>
-                        </motion.div>
+                        </div>
                     ) : filtered.length === 0 ? (
-                        <div className="col-span-full py-16 text-center text-foreground/40 font-bold">
-                            Nenhuma compra encontrada com o termo pesquisado.
+                        <div className="col-span-full py-12 text-center text-foreground/40 text-xs font-semibold">
+                            Nenhum site encontrado para a busca &ldquo;{search}&rdquo;.
                         </div>
                     ) : filtered.map((proj, i) => {
                         const pct = proj.manual_progress || 0;
@@ -174,61 +170,59 @@ export default function MyPurchasesPage() {
                         
                         return (
                         <motion.div
-                            initial={{ opacity: 0, y: 15 }} 
+                            initial={{ opacity: 0, y: 10 }} 
                             animate={{ opacity: 1, y: 0 }} 
-                            transition={{ delay: i * 0.05 }}
+                            transition={{ delay: i * 0.04 }}
                             key={proj.id} 
-                            className="bg-surface border border-surface-border rounded-3xl p-6 shadow-sm hover:shadow-xl hover:border-accent/30 transition-all flex flex-col justify-between relative overflow-hidden group"
+                            className="bg-surface border border-surface-border rounded-2xl p-5 shadow-xs hover:border-accent/40 transition-all flex flex-col justify-between group"
                         >
                             <div>
-                                {/* Capa / Preview */}
-                                <div className="w-full aspect-video bg-background border border-surface-border rounded-2xl mb-5 relative overflow-hidden">
+                                {/* Capa / Preview Minimalista */}
+                                <div className="w-full aspect-[16/10] bg-background border border-surface-border rounded-xl mb-4 relative overflow-hidden">
                                    {proj.cover_url ? (
-                                       <img src={proj.cover_url} alt={proj.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                       <img src={proj.cover_url} alt={proj.name} className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300" />
                                    ) : (
                                        <div className="h-full w-full flex items-center justify-center">
-                                           <h3 className="text-5xl font-black text-foreground/10 uppercase tracking-tighter italic">{proj.name.substring(0,3)}</h3>
+                                           <span className="text-3xl font-black text-foreground/10 uppercase tracking-tight">
+                                               {proj.name.substring(0,3)}
+                                           </span>
                                        </div>
                                    )}
                                    
                                    {/* Status badge Overlay */}
-                                   <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-background/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-surface-border text-[11px] font-black text-foreground shadow-md">
-                                       <div className={`w-2 h-2 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-accent animate-pulse'}`} />
-                                       {isDone ? 'Site Publicado' : 'Em Desenvolvimento'}
+                                   <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 bg-background/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-surface-border text-[10px] font-semibold text-foreground shadow-xs">
+                                       <span className={`w-1.5 h-1.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-accent animate-pulse'}`} />
+                                       {isDone ? 'Concluído' : 'Em Produção'}
                                    </div>
 
-                                   <div className="absolute top-3 right-3 bg-accent text-white px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider shadow-sm">
-                                       Licença Ativa
+                                   <div className="absolute top-2.5 right-2.5 bg-black/60 backdrop-blur-md text-white px-2 py-0.5 rounded-md text-[9px] font-semibold">
+                                       {pct}%
                                    </div>
                                 </div>
 
                                 {/* Informações do Produto */}
-                                <div className="flex flex-col w-full mb-6">
-                                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                                        <h2 className="text-xl font-black text-foreground truncate" title={proj.name}>{proj.name}</h2>
-                                    </div>
+                                <div className="flex flex-col w-full mb-4">
+                                    <h2 className="text-base font-bold text-foreground truncate" title={proj.name}>
+                                        {proj.name}
+                                    </h2>
                                     
-                                    <div className="flex items-center justify-between text-xs text-foreground/45 mb-4">
-                                       <span className="flex items-center gap-1">
-                                         <ShieldCheck className="w-3.5 h-3.5 text-emerald-500"/> Pedido #{proj.id.substring(0,8)}
+                                    <div className="flex items-center justify-between text-[11px] text-foreground/45 mt-1 mb-3">
+                                       <span className="flex items-center gap-1 font-mono">
+                                         #{proj.id.substring(0, 8)}
                                        </span>
                                        <span>{new Date(proj.created_at || Date.now()).toLocaleDateString('pt-BR')}</span>
                                     </div>
 
-                                    {/* Barra de Progresso */}
-                                    <div className="bg-background border border-surface-border rounded-2xl p-4 mb-2">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-xs font-bold text-foreground/70 flex items-center gap-1.5">
-                                                <Zap className="w-3.5 h-3.5 text-accent" /> Progresso do Projeto
-                                            </span>
-                                            <span className="text-xs font-black text-accent">{pct}%</span>
+                                    {/* Barra de Progresso Fina e Clean */}
+                                    <div className="space-y-1.5">
+                                        <div className="flex justify-between items-center text-[11px]">
+                                            <span className="text-foreground/50 font-medium">Andamento</span>
+                                            <span className="font-semibold text-accent">{pct}%</span>
                                         </div>
-                                        <div className="w-full bg-surface border border-surface-border h-2.5 rounded-full overflow-hidden">
-                                            <motion.div 
-                                                initial={{ width: 0 }}
-                                                animate={{ width: `${pct}%` }}
-                                                transition={{ duration: 1 }}
-                                                className="bg-accent h-full rounded-full" 
+                                        <div className="w-full bg-background border border-surface-border h-1.5 rounded-full overflow-hidden">
+                                            <div 
+                                                className="bg-accent h-full rounded-full transition-all duration-500" 
+                                                style={{ width: `${pct}%` }}
                                             />
                                         </div>
                                     </div>
@@ -236,20 +230,20 @@ export default function MyPurchasesPage() {
                             </div>
 
                             {/* Ações */}
-                            <div className="flex flex-col gap-2.5 w-full pt-4 border-t border-surface-border">
+                            <div className="flex flex-col gap-2 pt-3 border-t border-surface-border/60">
                                 <button 
                                     onClick={() => router.push(`/dashboard/timeline?project=${proj.id}`)} 
-                                    className="w-full bg-accent hover:bg-accent/90 text-white font-black py-3 rounded-xl transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-md shadow-accent/20"
+                                    className="w-full bg-accent hover:bg-accent/90 text-white font-semibold py-2.5 rounded-xl transition-all cursor-pointer text-xs flex items-center justify-center gap-2 shadow-xs"
                                 >
-                                    <Calendar className="w-4 h-4" /> Acompanhar Progresso
+                                    <Calendar className="w-3.5 h-3.5" /> Acompanhar no Cronograma
                                 </button>
                                 
                                 <div className="flex items-center gap-2">
                                     <button 
                                         onClick={() => router.push('/dashboard/chat')} 
-                                        className="flex-1 bg-surface border border-surface-border hover:bg-surface-border/50 text-foreground font-bold py-2.5 rounded-xl transition-all cursor-pointer text-xs flex items-center justify-center gap-1.5"
+                                        className="flex-1 bg-surface border border-surface-border hover:border-foreground/20 text-foreground/80 font-medium py-2 rounded-xl transition-colors cursor-pointer text-xs flex items-center justify-center gap-1.5"
                                     >
-                                        <MessageSquareText className="w-3.5 h-3.5 text-accent" /> Chat com a Equipe
+                                        <MessageSquareText className="w-3.5 h-3.5 text-accent" /> Mensagens
                                     </button>
 
                                     {proj.deploy_url && (
@@ -259,7 +253,7 @@ export default function MyPurchasesPage() {
                                                 window.open(url, '_blank');
                                             }}
                                             title="Abrir site no ar"
-                                            className="px-3.5 py-2.5 bg-foreground text-background font-bold rounded-xl hover:opacity-90 transition-all cursor-pointer hover:scale-[1.05] active:scale-[0.95] text-xs flex items-center gap-1"
+                                            className="px-3 py-2 bg-surface border border-surface-border hover:border-accent/40 rounded-xl text-foreground font-semibold transition-colors cursor-pointer text-xs flex items-center gap-1"
                                         >
                                             <ExternalLink className="w-3.5 h-3.5" />
                                         </button>

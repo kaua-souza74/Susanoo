@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { AddSiteForm } from "@/components/AddSiteForm";
+import { COMMERCE_CATEGORIES } from "@/lib/commerceCategories";
 import { 
   Package, 
   Plus, 
@@ -622,17 +623,24 @@ export default function AdminAddSitePage() {
                                     </div>
 
                                     <div>
-                                        <label className="text-xs font-bold text-foreground/40 uppercase tracking-widest mb-1.5 block">Categoria</label>
+                                        <label className="text-xs font-bold text-foreground/40 uppercase tracking-widest mb-1.5 block">Nicho / Categoria</label>
                                         <select
                                             value={editForm.category}
                                             onChange={e => setEditForm({ ...editForm, category: e.target.value })}
                                             className="w-full bg-background border border-surface-border rounded-xl px-4 py-3 text-sm font-medium focus:border-accent outline-none"
                                         >
-                                            <option>Landing Page</option>
-                                            <option>E-commerce</option>
-                                            <option>Dashboard / SaaS</option>
-                                            <option>Blog</option>
-                                            <option>Aplicativo Web</option>
+                                            <optgroup label="Pequenos Comércios">
+                                                {COMMERCE_CATEGORIES.map(c => (
+                                                    <option key={c.key} value={c.label}>{c.label}</option>
+                                                ))}
+                                            </optgroup>
+                                            <optgroup label="Outros Formatos">
+                                                <option value="Landing Page">Landing Page Geral</option>
+                                                <option value="E-commerce">E-commerce / Loja Geral</option>
+                                                <option value="Dashboard / SaaS">Dashboard / SaaS</option>
+                                                <option value="Blog">Blog & Notícias</option>
+                                                <option value="Aplicativo Web">Aplicativo Web</option>
+                                            </optgroup>
                                         </select>
                                     </div>
                                 </div>

@@ -14,6 +14,7 @@ const TEAM = [
 export default function AdminTrello() {
    const [tasks, setTasks] = useState<any[]>([]);
    const [projects, setProjects] = useState<any[]>([]);
+   const [team, setTeam] = useState<any[]>(TEAM);
    
    // Trello Menu Customizado
    const [filterProject, setFilterProject] = useState<string>("all");
@@ -36,6 +37,22 @@ export default function AdminTrello() {
       
       const { data: allTasks } = await supabase.from('tasks').select('*, projects(*, profiles(email, name))').order('created_at', { ascending: false });
       setTasks(allTasks || []);
+
+      // Carrega membros reais de equipe cadastrados no banco
+      const { data: teamProfiles } = await supabase
+         .from('profiles')
+         .select('name, email')
+         .or('role.eq.developer,role.eq.Desenvolvedor,account_type.eq.Desenvolvedor,account_type.eq.Administrador');
+
+      if (teamProfiles && teamProfiles.length > 0) {
+         const colors = ['bg-emerald-600', 'bg-blue-600', 'bg-purple-600', 'bg-orange-600', 'bg-rose-600', 'bg-cyan-600'];
+         const loadedTeam = teamProfiles.map((p, idx) => ({
+            name: p.name || p.email?.split('@')[0] || `Membro ${idx + 1}`,
+            color: colors[idx % colors.length],
+            ring: `ring-${colors[idx % colors.length].replace('bg-', '')}/30`
+         }));
+         setTeam(loadedTeam);
+      }
    };
 
    useEffect(() => {
@@ -193,7 +210,7 @@ export default function AdminTrello() {
                            
                            <div className="flex-1 p-6 overflow-y-auto flex flex-col gap-6 custom-scrollbar">
                                {colTasks.map(task => {
-                                   const assigneeMode = TEAM.find(t => t.name === task.assignee) || TEAM[0];
+                                   const assigneeMode = team.find(t => t.name === task.assignee) || team[0];
                                    return (
                                    <div 
                                       key={task.id} 
@@ -267,7 +284,7 @@ export default function AdminTrello() {
                                <div>
                                    <label className="block text-[10px] font-black text-[#555] mb-3 uppercase tracking-[0.3em]">Executivo Agente</label>
                                    <select value={newTask.assignee} onChange={e => setNewTask({...newTask, assignee: e.target.value})} className="w-full bg-[#111] border border-[#222] p-5 text-white rounded-2xl outline-none focus:border-accent appearance-none cursor-pointer">
-                                       {TEAM.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                                       {team.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
                                    </select>
                                </div>
                            </div>

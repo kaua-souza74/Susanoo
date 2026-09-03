@@ -39,23 +39,7 @@ export default function EnhancedProjectProgressPage({ params }: { params: Promis
   const fetchData = async () => {
     if (!projectId) return;
 
-    if (projectId === 'mock-123') {
-      setProject({ id: 'mock-123', name: 'Módulo de E-Commerce (Demonstração)', manual_progress: 65 });
-      setTasks([
-        { id: '1', title: 'Aprovação do Design Base', status: 'done', created_at: new Date().toISOString() },
-        { id: '2', title: 'Integração do Banco (Supabase)', status: 'doing', created_at: new Date().toISOString() },
-        { id: '3', title: 'Configurar Regras de RLS', status: 'todo', created_at: new Date().toISOString() },
-      ]);
-      setSteps([
-        { id: 's1', title: 'Briefing e Escopo', date: 'Semana 1', status: 'completed', description: 'Definição de objetivos e paleta visual.' },
-        { id: 's2', title: 'Desenvolvimento Frontend', date: 'Semana 2', status: 'current', description: 'Construção da interface no Next.js.' },
-        { id: 's3', title: 'Publicação e Deploy', date: 'Semana 3', status: 'upcoming', description: 'Deploy em produção na Vercel.' }
-      ]);
-      setLoading(false);
-      return;
-    }
-
-    // Busca Projeto
+    // Busca Projeto Real no Supabase
     const { data: proj } = await supabase.from('projects').select('*').eq('id', projectId).single();
     if (proj) setProject(proj);
 
@@ -81,7 +65,7 @@ export default function EnhancedProjectProgressPage({ params }: { params: Promis
   useEffect(() => {
     fetchData();
 
-    if (projectId && projectId !== 'mock-123') {
+    if (projectId) {
       const channel = supabase.channel(`progress-${projectId}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `project_id=eq.${projectId}` }, () => {
           fetchData();
