@@ -39,14 +39,21 @@ export default function AdminTrello() {
       setTasks(allTasks || []);
 
       // Carrega membros reais de equipe cadastrados no banco
-      const { data: teamProfiles } = await supabase
+      const { data: teamProfiles, error: teamErr } = await supabase
          .from('profiles')
-         .select('name, email')
-         .or('role.eq.developer,role.eq.Desenvolvedor,account_type.eq.Desenvolvedor,account_type.eq.Administrador');
+         .select('name, email, role')
+         .or('role.eq.developer,role.eq.Desenvolvedor,role.eq.admin,role.eq.Administrador');
 
-      if (teamProfiles && teamProfiles.length > 0) {
+      let validTeam = teamProfiles;
+      if (teamErr || !validTeam) {
+         const { data: allP } = await supabase.from('profiles').select('name, email, role');
+         validTeam = (allP || []).filter((p: any) => 
+            ['developer', 'desenvolvedor', 'admin', 'administrador'].includes((p.role || '').toLowerCase())
+         );
+      }
+      if (validTeam && validTeam.length > 0) {
          const colors = ['bg-emerald-600', 'bg-blue-600', 'bg-purple-600', 'bg-orange-600', 'bg-rose-600', 'bg-cyan-600'];
-         const loadedTeam = teamProfiles.map((p, idx) => ({
+         const loadedTeam = validTeam.map((p: any, idx: number) => ({
             name: p.name || p.email?.split('@')[0] || `Membro ${idx + 1}`,
             color: colors[idx % colors.length],
             ring: `ring-${colors[idx % colors.length].replace('bg-', '')}/30`

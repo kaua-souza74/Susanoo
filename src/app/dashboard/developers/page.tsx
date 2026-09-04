@@ -18,17 +18,37 @@ export default function DevelopersPage() {
                 const { data, error } = await supabase
                     .from('profiles')
                     .select('*')
-                    .or('role.eq.developer,role.eq.Desenvolvedor,account_type.eq.Desenvolvedor')
+                    .or('role.eq.developer,role.eq.Desenvolvedor,role.ilike.developer')
                     .order('created_at', { ascending: false });
 
-                if (!error && data) {
+                if (error) {
+                    console.error("Erro na consulta de desenvolvedores:", error.message || error);
+                    // Fallback resiliente: busca perfis e filtra no cliente
+                    const { data: allProfiles } = await supabase.from('profiles').select('*');
+                    const devs = (allProfiles || []).filter((p: any) => 
+                        (p.role || "").toLowerCase() === 'developer' || 
+                        (p.role || "").toLowerCase() === 'desenvolvedor' ||
+                        (p.account_type || "").toLowerCase() === 'desenvolvedor'
+                    );
+                    setDevelopers(devs);
+                } else if (data) {
                     setDevelopers(data);
                 } else {
                     setDevelopers([]);
                 }
-            } catch (error) {
+            } catch (error: any) {
                 console.error("Erro ao buscar desenvolvedores:", error);
-                setDevelopers([]);
+                // Fallback adicional no catch
+                try {
+                    const { data: allProfiles } = await supabase.from('profiles').select('*');
+                    const devs = (allProfiles || []).filter((p: any) => 
+                        (p.role || "").toLowerCase() === 'developer' || 
+                        (p.role || "").toLowerCase() === 'desenvolvedor'
+                    );
+                    setDevelopers(devs);
+                } catch {
+                    setDevelopers([]);
+                }
             } finally {
                 setLoading(false);
             }

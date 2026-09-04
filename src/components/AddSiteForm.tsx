@@ -122,10 +122,37 @@ export function AddSiteForm({ isAdmin = false, onSuccess }: { isAdmin?: boolean;
             };
             if (session?.user?.id) newProject.client_id = session.user.id;
 
-            const { error } = await supabase.from('projects').insert([newProject]);
-            if (error) throw error;
+            let insertResult = await supabase.from('projects').insert([newProject]);
+            
+            // Se falhar devido a colunas não criadas no Supabase, tenta inserção com payload base
+            if (insertResult.error) {
+                const errText = insertResult.error.message || insertResult.error.details || "";
+                console.warn("Tentativa completa falhou:", errText);
 
-            showToast("Site cadastrado com sucesso!");
+                if (errText.includes("column") || insertResult.error.code === "PGRST204") {
+                    const fallbackProject: any = {
+                        name: formData.name,
+                        description: formData.description,
+                        cover_url: uploadedUrls[0] || null,
+                        product_type: formData.product_type,
+                        deploy_url: formData.deploy_url,
+                        status: isAdmin ? 'published' : 'pending_review',
+                        show_in_gallery: true,
+                    };
+                    if (session?.user?.id) fallbackProject.client_id = session.user.id;
+
+                    const fallbackResult = await supabase.from('projects').insert([fallbackProject]);
+                    if (fallbackResult.error) {
+                        throw fallbackResult.error;
+                    }
+                    showToast("Site cadastrado! Execute o script 'fix_projects_and_profiles_schema.sql' no Supabase para habilitar preços e fotos em alta.");
+                } else {
+                    throw insertResult.error;
+                }
+            } else {
+                showToast("Site cadastrado com sucesso!");
+            }
+
             if (onSuccess) onSuccess();
             
             // Clear form
@@ -134,8 +161,14 @@ export function AddSiteForm({ isAdmin = false, onSuccess }: { isAdmin?: boolean;
             setPhotoUrls([]);
             setSpecs([{ key: "", value: "" }]);
         } catch (error: any) {
-            console.error("Full error:", error);
-            showToast(error?.message || error?.details || "Erro ao cadastrar o site.");
+            const errorDetails = error?.message || error?.details || error?.hint || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+            console.error("Erro detalhado no cadastro:", errorDetails, error);
+            
+            if (errorDetails.includes("category") || errorDetails.includes("price") || errorDetails.includes("PGRST204")) {
+                showToast("Execute o script fix_projects_and_profiles_schema.sql no Supabase para atualizar a tabela 'projects'.");
+            } else {
+                showToast(error?.message || "Erro ao cadastrar o site.");
+            }
         } finally {
             setLoading(false);
         }
