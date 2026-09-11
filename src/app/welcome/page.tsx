@@ -98,7 +98,16 @@ export default function WelcomePage() {
       }
 
       const storageKey = `susanoo:${user.id}:welcome-completed`;
-      if (user.user_metadata?.onboarding_completed === true || localStorage.getItem(storageKey) === "true") {
+      const { data: accountProfile } = await supabase
+        .from("profiles")
+        .select("onboarding_completed")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (!active) return;
+
+      const completedInAccount = accountProfile?.onboarding_completed === true || user.user_metadata?.onboarding_completed === true;
+      if (completedInAccount || localStorage.getItem(storageKey) === "true") {
+        if (completedInAccount) localStorage.setItem(storageKey, "true");
         router.replace("/dashboard");
         return;
       }
@@ -120,8 +129,11 @@ export default function WelcomePage() {
       return;
     }
 
-    const { error } = await supabase.auth.updateUser({ data: { onboarding_completed: true } });
-    if (error) {
+    const [authResult, profileResult] = await Promise.all([
+      supabase.auth.updateUser({ data: { onboarding_completed: true } }),
+      supabase.from("profiles").update({ onboarding_completed: true }).eq("id", user.id),
+    ]);
+    if (authResult.error && profileResult.error) {
       setErrorMessage("Não foi possível salvar essa etapa. Tente novamente.");
       setFinishing(false);
       return;

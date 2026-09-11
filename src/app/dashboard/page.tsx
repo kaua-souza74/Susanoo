@@ -18,7 +18,9 @@ import {
   CheckCircle2,
   Code2,
   Plus,
-  ChevronDown
+  ChevronDown,
+  WandSparkles,
+  ArrowRight
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
@@ -30,6 +32,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { getAuthenticatedAccountType, getAccountStorageKey, hasCompletedClientProfile } from "@/lib/account";
 import { ReviewsSection } from "@/components/ReviewsSection";
 import { DashboardHeaderActions } from "@/components/DashboardHeaderActions";
+import { CustomSiteRequestModal } from "@/components/CustomSiteRequestModal";
 
 const normalizeSearchValue = (value: unknown) =>
   String(value ?? "")
@@ -67,6 +70,7 @@ function DiscoverHomeContent() {
    const [activeTab, setActiveTab] = useState<"detalhes" | "especificacoes" | "comentarios">("detalhes");
    const [likedProjectIds, setLikedProjectIds] = useState<string[]>([]);
    const [purchasedProjects, setPurchasedProjects] = useState<any[]>([]);
+   const [customRequestOpen, setCustomRequestOpen] = useState(() => searchParams.get("customRequest") === "1");
 
    const { addToCart, items } = useCart();
 
@@ -778,6 +782,27 @@ function DiscoverHomeContent() {
                 ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-7 md:gap-8">
                     <AnimatePresence mode="popLayout">
+                    <motion.button
+                      type="button"
+                      layout
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      onClick={() => setCustomRequestOpen(true)}
+                      className="group flex flex-col text-left"
+                    >
+                      <div className="relative aspect-[16/10] w-full overflow-hidden rounded-2xl border border-violet-400/20 bg-[#09070f] shadow-[0_18px_50px_rgba(124,58,237,0.12)] transition-all duration-300 group-hover:-translate-y-1 group-hover:border-violet-400/45 md:rounded-[1.25rem]">
+                        <div className="absolute -right-14 -top-16 h-48 w-48 rounded-full bg-violet-600/35 blur-3xl" />
+                        <div className="absolute -bottom-20 -left-12 h-48 w-48 rounded-full bg-fuchsia-600/20 blur-3xl" />
+                        <div className="absolute inset-0 opacity-25 [background-image:radial-gradient(circle_at_center,rgba(196,181,253,0.6)_1px,transparent_1px)] [background-size:18px_18px]" />
+                        <div className="relative flex h-full flex-col justify-between p-5 text-white">
+                          <span className="flex w-fit items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] ring-1 ring-white/10"><WandSparkles className="h-3.5 w-3.5 text-violet-300" /> Sob medida</span>
+                          <div><h3 className="max-w-[15rem] text-xl font-black leading-tight tracking-[-0.035em]">Não encontrou nada?</h3><p className="mt-1.5 max-w-[16rem] text-xs font-medium leading-relaxed text-white/55">Solicite um site personalizado para o seu negócio.</p></div>
+                        </div>
+                        <span className="absolute bottom-5 right-5 flex h-10 w-10 items-center justify-center rounded-full bg-white text-black transition-transform group-hover:translate-x-1"><ArrowRight className="h-4 w-4" /></span>
+                      </div>
+                      <div className="mt-3.5 flex items-center justify-between gap-2 px-0.5"><span className="text-sm font-semibold text-foreground">Criar projeto personalizado</span><span className="text-[10px] font-black uppercase tracking-wider text-accent">Falar com a equipe</span></div>
+                      <div className="mt-2 flex gap-1.5 px-0.5"><span className="rounded-full border border-neutral-800/80 bg-[#141417] px-2.5 py-0.5 text-[11px] font-medium text-neutral-400">briefing</span><span className="rounded-full border border-neutral-800/80 bg-[#141417] px-2.5 py-0.5 text-[11px] font-medium text-neutral-400">exclusivo</span></div>
+                    </motion.button>
                     {filtered.length > 0 ? filtered.map((proj, i) => {
                          const bought = isPurchased(proj);
                          const tags = getProjectTags(proj);
@@ -1107,6 +1132,8 @@ function DiscoverHomeContent() {
               viewCount={productViewsCount} 
               hasPurchased={purchasedProjects.length > 0} 
             />
+
+            <CustomSiteRequestModal open={customRequestOpen} onClose={() => setCustomRequestOpen(false)} />
 
             {/* Toast de Curtida */}
             <AnimatePresence>

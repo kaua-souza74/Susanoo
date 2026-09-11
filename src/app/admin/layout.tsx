@@ -1,7 +1,7 @@
 "use client";
 import { ReactNode, useState, useEffect } from "react";
 import Link from "next/link";
-import { LayoutDashboard, Users, MessageSquareText, LogOut, LayoutList, Rocket, Plus, Clock, Bell, Menu, X, Zap } from "lucide-react";
+import { LayoutDashboard, Users, MessageSquareText, LogOut, LayoutList, Rocket, Plus, Clock, Bell, Menu, X, Zap, WandSparkles } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useRouter, usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -69,6 +69,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                
                <div className="px-3 mb-2 mt-4 opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-[10px] font-bold text-foreground/40 uppercase tracking-widest">Operações</span></div>
                <NavItem badge={unreadChat} icon={<MessageSquareText className="w-5 h-5"/>} label="Comunicações (Teams)" active={pathname?.includes('/admin/chat')} href="/admin/chat" />
+               <NavItem icon={<WandSparkles className="w-5 h-5"/>} label="Sites Personalizados" active={pathname?.includes('/admin/requests')} href="/admin/requests" />
                <NavItem badge={unreadTasks} icon={<LayoutList className="w-5 h-5"/>} label="Progresso & Tarefas" active={pathname?.includes('/admin/tasks')} href="/admin/tasks" />
                <NavItem icon={<Rocket className="w-5 h-5"/>} label="Deploy & Publicação" active={pathname?.includes('/admin/deploy')} href="/admin/deploy" />
                <NavItem icon={<Plus className="w-5 h-5"/>} label="Adicionar Site" active={pathname?.includes('/admin/add-site')} href="/admin/add-site" />
@@ -121,6 +122,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               <NavItem expanded icon={<LayoutDashboard className="h-5 w-5" />} label="Visão Geral" active={pathname === '/admin'} href="/admin" />
               <NavItem expanded icon={<Users className="h-5 w-5" />} label="Clientes" active={pathname?.includes('/admin/clients')} href="/admin/clients" />
               <NavItem expanded badge={unreadChat} icon={<MessageSquareText className="h-5 w-5" />} label="Comunicações" active={pathname?.includes('/admin/chat')} href="/admin/chat" />
+              <NavItem expanded icon={<WandSparkles className="h-5 w-5" />} label="Sites personalizados" active={pathname?.includes('/admin/requests')} href="/admin/requests" />
               <NavItem expanded badge={unreadTasks} icon={<LayoutList className="h-5 w-5" />} label="Tarefas" active={pathname?.includes('/admin/tasks')} href="/admin/tasks" />
               <NavItem expanded icon={<Rocket className="h-5 w-5" />} label="Deploy" active={pathname?.includes('/admin/deploy')} href="/admin/deploy" />
               <NavItem expanded icon={<Plus className="h-5 w-5" />} label="Adicionar Site" active={pathname?.includes('/admin/add-site')} href="/admin/add-site" />

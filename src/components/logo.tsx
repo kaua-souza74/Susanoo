@@ -5,7 +5,7 @@ import logoEscuro from "@/Assets/escuro.png"; // Dark logo (for light background
 
 interface LogoProps {
   className?: string;
-  size?: "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg";
 }
 
 export function Logo({ className = "", size = "md" }: LogoProps) {
@@ -14,7 +14,11 @@ export function Logo({ className = "", size = "md" }: LogoProps) {
   let height = 80;
   let imgClass = "h-20 w-auto md:h-24";
 
-  if (size === "sm") {
+  if (size === "xs") {
+    width = 120;
+    height = 34;
+    imgClass = "h-8 w-auto";
+  } else if (size === "sm") {
     width = 180;
     height = 50;
     imgClass = "h-12 w-auto";

@@ -48,7 +48,7 @@ function LoginForm() {
       await supabase.auth.signOut();
       setErrorMessage(
         role === "developer"
-          ? "Esta conta é de cliente. Entre pela opção “Sou cliente”."
+          ? "Esta conta é de cliente. Entre pela opção “Quero contratar”."
           : "Esta conta é de desenvolvedor. Entre pela opção “Sou dev”.",
       );
       setStatus("idle");
@@ -57,8 +57,11 @@ function LoginForm() {
 
     localStorage.setItem("susanoo_profile_type", role === "developer" ? "Desenvolvedor" : "Comércio");
     window.dispatchEvent(new Event("profileTypeChanged"));
+    const { data: accountProfile } = user
+      ? await supabase.from("profiles").select("onboarding_completed").eq("id", user.id).maybeSingle()
+      : { data: null };
     const hasFinishedWelcome = user
-      ? user.user_metadata?.onboarding_completed === true || localStorage.getItem(`susanoo:${user.id}:welcome-completed`) === "true"
+      ? accountProfile?.onboarding_completed === true || user.user_metadata?.onboarding_completed === true || localStorage.getItem(`susanoo:${user.id}:welcome-completed`) === "true"
       : false;
     const destination = isAdmin ? "/admin" : hasFinishedWelcome ? "/dashboard" : "/welcome";
     window.setTimeout(() => setTransitioning(true), 420);
@@ -124,7 +127,7 @@ function LoginForm() {
       <div className="mt-5 space-y-2 text-center text-sm text-white/40">
         <p>Ainda não tem uma conta? <Link href={`/register?role=${role}`} className="font-bold text-white hover:text-violet-300 hover:underline">Criar conta</Link></p>
         <Link href={`/login?role=${role === "developer" ? "client" : "developer"}`} className="inline-flex font-bold text-violet-400 hover:text-violet-300 hover:underline">
-          {role === "developer" ? "Entrar como cliente" : "Entrar como desenvolvedor"}
+          {role === "developer" ? "Quero contratar" : "Entrar como desenvolvedor"}
         </Link>
       </div>
 

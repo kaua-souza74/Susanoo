@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode, useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -16,9 +17,10 @@ import {
   ShoppingBag,
   Sparkles,
   User,
+  WandSparkles,
   X,
-  Zap,
 } from "lucide-react";
+import { Logo } from "@/components/logo";
 import { supabase } from "@/lib/supabase";
 import { getAuthenticatedAccountType } from "@/lib/account";
 
@@ -131,9 +133,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <ArrowLeft className="h-5 w-5" />
           </button>
         ) : null}
-        <Link href="/dashboard" className="ml-1 flex min-w-0 items-center gap-2 font-black tracking-tight text-foreground">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-white"><Zap className="h-4 w-4 fill-current" /></span>
-          <span className="truncate">Susanoo</span>
+        <Link href="/dashboard" className="ml-1 flex min-w-0 items-center gap-2" aria-label="Ir para o painel Susanoo">
+          <Image src="/favicon.jpeg" alt="" width={32} height={32} className="h-8 w-8 shrink-0 rounded-lg object-cover shadow-sm" />
+          <Logo size="xs" className="min-w-0 overflow-hidden" />
         </Link>
       </header>
 
@@ -181,8 +183,8 @@ function SidebarContent({ userType, pathname, unreadChatCount, storeProfileCompl
     <>
       <div className="flex min-h-0 flex-1 flex-col">
         <Link href="/dashboard" onClick={onNavigate} aria-label="Ir para o painel Susanoo" className="mx-3 flex h-12 items-center gap-3 rounded-2xl px-2 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-white shadow-lg shadow-accent/20"><Zap className="h-5 w-5 fill-current" /></span>
-          <span className={`${labelClass} text-sm font-black tracking-wide`}>Susanoo</span>
+          <Image src="/favicon.jpeg" alt="" width={40} height={40} className="h-10 w-10 shrink-0 rounded-xl object-cover shadow-lg shadow-accent/15" />
+          <span className={`${labelClass} flex min-w-0 items-center overflow-hidden`}><Logo size="sm" /></span>
         </Link>
 
         <nav className="custom-scrollbar mt-6 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3">
@@ -191,15 +193,17 @@ function SidebarContent({ userType, pathname, unreadChatCount, storeProfileCompl
               <NavItem onNavigate={onNavigate} compact={compact} icon={<Sparkles className="h-5 w-5" />} label="Painel Dev" active={pathname === "/dashboard"} href="/dashboard" />
               <NavItem onNavigate={onNavigate} compact={compact} icon={<Grid className="h-5 w-5" />} label="Projetos Criados" active={Boolean(pathname?.includes("/projects"))} href="/dashboard/projects" />
               <NavItem onNavigate={onNavigate} compact={compact} icon={<Plus className="h-5 w-5" />} label="Adicionar Site" active={Boolean(pathname?.includes("/add-site"))} href="/dashboard/add-site" />
-              <NavItem onNavigate={onNavigate} compact={compact} badge={unreadChatCount} icon={<MessageSquareText className="h-5 w-5" />} label="Chat com Clientes" active={Boolean(pathname?.includes("/chat"))} href="/dashboard/chat" />
+              <NavItem onNavigate={onNavigate} compact={compact} icon={<WandSparkles className="h-5 w-5" />} label="Solicitações" active={Boolean(pathname?.includes("/requests"))} href="/dashboard/requests" />
+              <NavItem onNavigate={onNavigate} compact={compact} badge={unreadChatCount} icon={<MessageSquareText className="h-5 w-5" />} label="Chat" active={Boolean(pathname?.includes("/chat"))} href="/dashboard/chat" />
             </>
           ) : (
             <>
               <NavItem onNavigate={onNavigate} compact={compact} icon={<Sparkles className="h-5 w-5" />} label="Marketplace" active={pathname === "/dashboard"} href="/dashboard" />
               <NavItem onNavigate={onNavigate} compact={compact} icon={<User className="h-5 w-5" />} label="Desenvolvedores" active={Boolean(pathname?.includes("/developers"))} href="/dashboard/developers" />
               <NavItem onNavigate={onNavigate} compact={compact} icon={<ShoppingBag className="h-5 w-5" />} label="Minhas Compras" active={Boolean(pathname?.includes("/projects"))} href="/dashboard/projects" />
+              <NavItem onNavigate={onNavigate} compact={compact} icon={<WandSparkles className="h-5 w-5" />} label="Sites sob medida" active={Boolean(pathname?.includes("/requests"))} href="/dashboard/requests" />
               <NavItem onNavigate={onNavigate} compact={compact} icon={<Calendar className="h-5 w-5" />} label="Progresso Integrado" active={Boolean(pathname?.includes("/timeline") || pathname?.includes("/kanban"))} href="/dashboard/timeline" />
-              <NavItem onNavigate={onNavigate} compact={compact} badge={unreadChatCount} icon={<MessageSquareText className="h-5 w-5" />} label="Chat com a Equipe" active={Boolean(pathname?.includes("/chat"))} href="/dashboard/chat" />
+              <NavItem onNavigate={onNavigate} compact={compact} badge={unreadChatCount} icon={<MessageSquareText className="h-5 w-5" />} label="Chat" active={Boolean(pathname?.includes("/chat"))} href="/dashboard/chat" />
             </>
           )}
 

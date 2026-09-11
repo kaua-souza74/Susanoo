@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Send, Paperclip, X, FileText, Download, UserRound, Loader2, Users, Search, Hash, ShieldAlert, Pin, ArrowLeft, Trash2, AlertTriangle } from "lucide-react";
+import { Send, Paperclip, X, FileText, Download, UserRound, Loader2, Search, Hash, ShieldAlert, Pin, ArrowLeft, Trash2, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { playNotificationSound } from "@/lib/utils";
 
@@ -34,6 +34,7 @@ function ChatPageContent() {
     const searchParams = useSearchParams();
     const initDevId = searchParams.get('devId');
     const initDevName = searchParams.get('devName');
+    const initChatId = searchParams.get('chatId');
 
     const [user, setUser] = useState<any>(null);
     const [profile, setProfile] = useState<any>(null);
@@ -283,7 +284,9 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
             setChannels(loadedChats);
 
             let actCh = null;
-            if (boughtSite && supportChannel) {
+            if (initChatId) {
+                actCh = loadedChats.find(c => c.id === initChatId) || null;
+            } else if (boughtSite && supportChannel) {
                 actCh = loadedChats.find(c => c.id === supportChannel.id) || supportChannel;
             } else if (addedDevChat) {
                 actCh = loadedChats.find(c => c.id === addedDevChat.id);
@@ -620,19 +623,27 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
             </AnimatePresence>
 
             {/* Sidebar */}
-            <div className={`${activeChannel ? 'hidden md:flex' : 'flex'} h-full w-full shrink-0 flex-col bg-surface/30 md:w-[300px] md:border-r md:border-surface-border`}>
-                <div className="p-6 border-b border-surface-border">
-                    <h2 className="text-xl font-black text-foreground tracking-tighter mb-4">Mensagens</h2>
+            <aside className={`${activeChannel ? 'hidden md:flex' : 'flex'} h-full w-full shrink-0 flex-col bg-surface/45 md:w-[320px] md:border-r md:border-surface-border lg:w-[344px]`}>
+                <div className="px-4 pb-4 pt-5 sm:px-5 sm:pt-6">
+                    <div className="mb-5 flex items-end justify-between gap-3">
+                        <div>
+                            <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.22em] text-accent">Conversas</span>
+                            <h2 className="text-2xl font-black tracking-[-0.04em] text-foreground">Chat</h2>
+                        </div>
+                        <span className="flex h-8 min-w-8 items-center justify-center rounded-full bg-accent/10 px-2 text-xs font-black text-accent ring-1 ring-accent/15">
+                            {channels.length}
+                        </span>
+                    </div>
                     <div className="relative">
-                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-foreground/30"/>
+                        <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground/30"/>
                         <input 
-                            type="text" placeholder="Filtrar conversas..." 
+                            type="search" placeholder="Buscar uma conversa"
                             value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-                            className="w-full bg-background border border-surface-border text-xs p-3 pl-10 rounded-xl outline-none font-medium"
+                            className="h-12 w-full rounded-2xl border border-surface-border bg-background/80 pl-11 pr-4 text-sm font-medium text-foreground outline-none transition-all placeholder:text-foreground/30 focus:border-accent/40 focus:ring-4 focus:ring-accent/5"
                         />
                     </div>
                 </div>
-                <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                <div className="custom-scrollbar flex-1 space-y-2 overflow-y-auto px-3 pb-5">
                     {[...channels]
                         .sort((a, b) => {
                             const aPinned = pinnedChannelIds.includes(a.id);
@@ -651,9 +662,9 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                                 <div key={c.id} className="group relative flex items-center">
                                     <button 
                                         onClick={() => handleSelectChannel(c)}
-                                        className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 cursor-pointer hover:scale-[1.01] active:scale-[0.99] ${activeChannel?.id === c.id ? 'bg-accent/10 border border-accent/20 shadow-sm' : 'hover:bg-surface border border-transparent hover:shadow-sm'}`}
+                                        className={`flex w-full cursor-pointer items-center gap-3 rounded-2xl border p-3.5 text-left transition-all duration-200 active:scale-[0.99] ${activeChannel?.id === c.id ? 'border-accent/20 bg-accent/10 shadow-sm shadow-accent/5' : 'border-transparent hover:border-surface-border hover:bg-background/75'}`}
                                     >
-                                        <div className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center font-black text-sm uppercase transition-colors relative overflow-hidden ${activeChannel?.id === c.id ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-surface-border text-foreground/50 group-hover:bg-accent/20 group-hover:text-accent'}`}>
+                                        <div className={`relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl text-sm font-black uppercase transition-colors ${activeChannel?.id === c.id ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-background text-foreground/50 ring-1 ring-surface-border group-hover:text-accent'}`}>
                                             {c.isStaff ? (
                                                 <ShieldAlert className="w-5 h-5"/>
                                             ) : c.avatar_url ? (
@@ -662,7 +673,7 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                                                 c.name?.substring(0,2)
                                             )}
                                         </div>
-                                        <div className="flex flex-col items-start overflow-hidden flex-1 text-left min-w-0 pr-10">
+                                        <div className="flex min-w-0 flex-1 flex-col items-start overflow-hidden pr-9 text-left">
                                             <span className="text-sm font-bold text-foreground truncate w-full flex items-center justify-between gap-1.5">
                                                 <span className="truncate">{c.name}</span>
                                                 {unreadCount > 0 ? (
@@ -698,7 +709,7 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                             );
                         })}
                 </div>
-            </div>
+            </aside>
 
             {/* Main */}
             <div className={`${activeChannel ? 'flex' : 'hidden md:flex'} relative h-full min-w-0 flex-1 flex-col`}>
@@ -843,7 +854,7 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                         </div>
 
                         <div className="bg-background px-3 pb-3 sm:px-6 sm:pb-6">
-                            <div className="max-w-4xl mx-auto flex flex-col gap-3">
+                            <div className="mx-auto flex max-w-4xl flex-col gap-2.5">
                                 {editingMessage && (
                                     <div className="mb-1 flex items-center justify-between rounded-xl bg-accent/10 px-4 py-2 text-xs font-bold text-accent ring-1 ring-accent/25">
                                         <span>Editando mensagem...</span>
@@ -863,11 +874,33 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                                     )}
                                 </AnimatePresence>
 
-                                <form onSubmit={handleSend} className="bg-surface border border-surface-border rounded-[1.5rem] p-1.5 flex items-center gap-2 focus-within:border-accent/40 shadow-sm transition-colors">
-                                    <button type="button" onClick={() => fileInputRef.current?.click()} className="w-11 h-11 rounded-full flex items-center justify-center text-foreground/40 hover:text-accent transition-colors"><Paperclip className="w-5 h-5" /></button>
+                                <form onSubmit={handleSend} className="rounded-[1.5rem] border border-surface-border bg-surface p-2.5 shadow-[0_14px_38px_rgba(0,0,0,0.07)] transition-all focus-within:border-accent/35 focus-within:shadow-[0_16px_44px_rgba(124,58,237,0.09)] sm:rounded-[1.75rem] sm:p-3">
+                                    <label htmlFor="chat-message" className="sr-only">Escreva sua mensagem</label>
+                                    <textarea
+                                        id="chat-message"
+                                        rows={1}
+                                        value={content}
+                                        onChange={e => { setContent(e.target.value); handleTyping(); }}
+                                        onKeyDown={event => {
+                                            if (event.key === 'Enter' && !event.shiftKey) {
+                                                event.preventDefault();
+                                                event.currentTarget.form?.requestSubmit();
+                                            }
+                                        }}
+                                        placeholder={`Escreva para ${activeChannel.name || 'esta conversa'}...`}
+                                        className="max-h-28 min-h-[42px] w-full resize-none bg-transparent px-1 py-1 text-sm font-medium leading-relaxed text-foreground outline-none placeholder:text-foreground/30"
+                                    />
                                     <input type="file" multiple hidden ref={fileInputRef} onChange={handleFileSelect} />
-                                    <input type="text" value={content} onChange={e => { setContent(e.target.value); handleTyping(); }} placeholder="Escreva sua mensagem..." className="flex-1 bg-transparent py-3 px-2 outline-none text-foreground font-medium text-sm placeholder:text-foreground/30" />
-                                    <button type="submit" disabled={loading || (!content.trim() && stagedFiles.length === 0)} className="w-12 h-12 rounded-[1.2rem] bg-accent flex items-center justify-center shadow-md shadow-accent/20 hover:opacity-90 active:scale-95 transition-all disabled:opacity-30"><Send className="w-5 h-5 text-white ml-1" /></button>
+                                    <div className="mt-1.5 flex items-center justify-end gap-2">
+                                            <button type="button" onClick={() => fileInputRef.current?.click()} className="flex h-10 w-[6.5rem] items-center justify-center gap-2 rounded-full border border-surface-border bg-background text-xs font-bold text-foreground/60 shadow-sm transition-all hover:border-accent/25 hover:text-accent">
+                                                <Paperclip className="h-4 w-4" />
+                                                <span>Anexar</span>
+                                            </button>
+                                            <button type="submit" disabled={loading || (!content.trim() && stagedFiles.length === 0)} className="flex h-10 w-[6.5rem] items-center justify-center gap-2 rounded-full bg-foreground text-xs font-black text-background shadow-md transition-all hover:opacity-90 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30">
+                                                <Send className="h-4 w-4" />
+                                                Enviar
+                                            </button>
+                                    </div>
                                 </form>
                             </div>
                         </div>
