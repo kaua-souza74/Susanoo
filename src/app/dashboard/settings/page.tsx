@@ -38,7 +38,7 @@ import { getAuthenticatedAccountType } from "@/lib/account";
 export default function SettingsPage() {
     const [user, setUser] = useState<any>(null);
     const [profile, setProfile] = useState<any>(null);
-    const [activeTab, setActiveTab] = useState<"profile" | "security" | "notifications" | "privacy">("profile");
+    const [activeTab, setActiveTab] = useState<"profile" | "security" | "notifications" | "privacy">("security");
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [accountType, setAccountType] = useState<"Comércio" | "Desenvolvedor">("Comércio");
@@ -188,6 +188,9 @@ export default function SettingsPage() {
             return;
         }
 
+        const previousAvatarUrl = formData.avatar_url;
+        const instantPreviewUrl = URL.createObjectURL(file);
+        setFormData(prev => ({ ...prev, avatar_url: instantPreviewUrl }));
         setSaving(true);
         try {
             const fileExt = file.name.split('.').pop();
@@ -214,8 +217,10 @@ export default function SettingsPage() {
             showToast("Foto de perfil atualizada!", "success");
         } catch (err: any) {
             console.error("Erro ao subir avatar:", err);
+            setFormData(prev => ({ ...prev, avatar_url: previousAvatarUrl }));
             showToast(err?.message || "Erro ao atualizar foto de perfil.", "error");
         } finally {
+            URL.revokeObjectURL(instantPreviewUrl);
             setSaving(false);
         }
     };
@@ -354,8 +359,8 @@ export default function SettingsPage() {
                 >
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
                         <div className="flex items-center gap-5">
-                            {/* Avatar com ação de foto rápida */}
-                            <div className="relative group">
+                            {/* Resumo da conta; a edição visual fica exclusivamente em Meu Perfil. */}
+                            <div className="relative">
                                 <div className="w-20 h-20 md:w-22 md:h-22 rounded-2xl bg-surface border-2 border-surface-border overflow-hidden flex items-center justify-center shadow-md">
                                     {formData.avatar_url ? (
                                         <img src={formData.avatar_url} alt={formData.name} className="w-full h-full object-cover" />
@@ -365,22 +370,6 @@ export default function SettingsPage() {
                                         </span>
                                     )}
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => fileInputRef.current?.click()}
-                                    className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl flex flex-col items-center justify-center text-white text-[10px] font-bold gap-1 cursor-pointer backdrop-blur-[2px]"
-                                    title="Alterar Foto de Perfil"
-                                >
-                                    <Camera className="w-5 h-5" />
-                                    <span>Alterar</span>
-                                </button>
-                                <input
-                                    type="file"
-                                    ref={fileInputRef}
-                                    hidden
-                                    accept="image/*"
-                                    onChange={handleAvatarUpload}
-                                />
                             </div>
 
                             <div>
@@ -409,7 +398,7 @@ export default function SettingsPage() {
                                 className="px-4 py-2.5 rounded-xl border border-surface-border bg-surface hover:bg-surface-border/40 text-xs font-bold text-foreground flex items-center gap-2 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
                             >
                                 <ExternalLink className="w-4 h-4 text-foreground/50" />
-                                Ver Perfil Público
+                                Editar Meu Perfil
                             </button>
                             <button
                                 onClick={handleLogout}
@@ -425,17 +414,6 @@ export default function SettingsPage() {
 
                 {/* Navegação por Abas Intuitiva */}
                 <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-surface-border custom-scrollbar">
-                    <button
-                        onClick={() => setActiveTab("profile")}
-                        className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
-                            activeTab === "profile"
-                                ? "bg-accent text-white shadow-md shadow-accent/20"
-                                : "text-foreground/50 hover:text-foreground hover:bg-surface"
-                        }`}
-                    >
-                        <User className="w-4 h-4" />
-                        Perfil & Dados
-                    </button>
                     <button
                         onClick={() => setActiveTab("security")}
                         className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
@@ -488,14 +466,6 @@ export default function SettingsPage() {
                                         Mantenha seus dados comerciais ou profissionais atualizados para clientes e parceiros.
                                     </p>
                                 </div>
-                                <button
-                                    onClick={handleSaveProfile}
-                                    disabled={saving}
-                                    className="px-6 py-3 bg-accent text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md hover:bg-accent/90 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 self-start sm:self-center"
-                                >
-                                    {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Save className="w-4 h-4" />}
-                                    {saving ? "Salvando..." : "Salvar Dados"}
-                                </button>
                             </div>
 
                             <form onSubmit={handleSaveProfile} className="space-y-6">

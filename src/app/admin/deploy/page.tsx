@@ -213,7 +213,7 @@ export default function AdminDeploy() {
     });
 
     return (
-        <div className="flex-1 overflow-y-auto p-8 bg-[#050505] text-white h-full flex flex-col font-sans custom-scrollbar">
+        <div className="custom-scrollbar flex h-full flex-1 flex-col overflow-x-hidden overflow-y-auto bg-[#050505] p-4 font-sans text-white sm:p-8">
             
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-16 px-4">
                 <div>

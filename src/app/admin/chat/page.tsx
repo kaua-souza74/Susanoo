@@ -23,7 +23,8 @@ import {
     Download,
     UserCircle,
     PlusSquare,
-    Edit3
+    Edit3,
+    ArrowLeft
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { playNotificationSound } from "@/lib/utils";
@@ -80,6 +81,8 @@ export default function AdminTeamsChat() {
    const [typingUsers, setTypingUsers] = useState<string[]>([]);
    const [replyingTo, setReplyingTo] = useState<Message | null>(null);
    const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+   const [messageToDelete, setMessageToDelete] = useState<Message | null>(null);
+   const [messageDeleteLoading, setMessageDeleteLoading] = useState(false);
    const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
    const [pinnedChannelIds, setPinnedChannelIds] = useState<string[]>([]);
    const [profilesMapState, setProfilesMapState] = useState<Record<string, any>>({});
@@ -190,6 +193,16 @@ export default function AdminTeamsChat() {
                     }
                 }
             })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload: any) => {
+                const updatedMessage = payload.new as Message | undefined;
+                if (!updatedMessage?.id) return;
+                setMessages(prev => prev.map(message => message.id === updatedMessage.id ? updatedMessage : message));
+            })
+            .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, (payload: any) => {
+                const deletedId = payload.old?.id as string | undefined;
+                if (!deletedId) return;
+                setMessages(prev => prev.filter(message => message.id !== deletedId));
+            })
             .subscribe();
 
         return () => { supabase.removeChannel(globalCh); };
@@ -209,6 +222,16 @@ export default function AdminTeamsChat() {
                     return [...prev, payload.newMessage];
                 });
             }
+        })
+        .on('broadcast', { event: 'message-updated' }, ({ payload }) => {
+            const updatedMessage = payload?.message as Message | undefined;
+            if (!updatedMessage?.id) return;
+            setMessages(prev => prev.map(message => message.id === updatedMessage.id ? updatedMessage : message));
+        })
+        .on('broadcast', { event: 'message-deleted' }, ({ payload }) => {
+            const deletedId = payload?.messageId as string | undefined;
+            if (!deletedId) return;
+            setMessages(prev => prev.filter(message => message.id !== deletedId));
         })
         .on('broadcast', { event: 'typing' }, ({ payload }) => {
             const { name, isTyping } = payload;
@@ -380,7 +403,7 @@ export default function AdminTeamsChat() {
 
         setChannels(all);
 
-        if (all.length > 0 && !activeChannel) setActiveChannel(all[0]);
+        if (all.length > 0 && !activeChannel && window.matchMedia("(min-width: 768px)").matches) setActiveChannel(all[0]);
     };
 
 
@@ -491,10 +514,12 @@ export default function AdminTeamsChat() {
         if (editingMessage) {
             const parsed = parseReply(editingMessage.content);
             const newContent = parsed.isReply ? `[REPLY:${parsed.replyToName}|${parsed.replyToContent}]${temp}` : temp;
-            await supabase.from('messages').update({ content: newContent }).eq('id', editingMessage.id);
+            const { data: updatedMessage } = await supabase.from('messages').update({ content: newContent }).eq('id', editingMessage.id).select().single();
+            if (updatedMessage) {
+                setMessages(prev => prev.map(message => message.id === updatedMessage.id ? updatedMessage : message));
+                chatChannelRef.current?.send({ type: 'broadcast', event: 'message-updated', payload: { message: updatedMessage } });
+            }
             setEditingMessage(null);
-            if (chatChannelRef.current) chatChannelRef.current.send({ type: 'broadcast', event: 'sync', payload: {} });
-            loadMessages(activeChannel);
             return;
         }
 
@@ -564,13 +589,41 @@ export default function AdminTeamsChat() {
         }
     };
 
+    const handleDeleteMessage = async () => {
+        if (!messageToDelete) return;
+        setMessageDeleteLoading(true);
+        const deletedId = messageToDelete.id;
+        const { error } = await supabase.from('messages').delete().eq('id', deletedId);
+        if (!error) {
+            setMessages(prev => prev.filter(message => message.id !== deletedId));
+            chatChannelRef.current?.send({ type: 'broadcast', event: 'message-deleted', payload: { messageId: deletedId } });
+            setMessageToDelete(null);
+        }
+        setMessageDeleteLoading(false);
+    };
+
     return (
-        <div className="flex-1 flex overflow-hidden bg-[#050505] h-full font-sans relative text-white">
+        <div className="relative flex h-full min-w-0 flex-1 overflow-hidden bg-[#050505] font-sans text-white">
             
             <AnimatePresence>
+                {messageToDelete && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[120] flex items-center justify-center bg-black/80 p-5 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="admin-delete-message-title">
+                        <motion.div initial={{ opacity: 0, y: 14, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.98 }} className="w-full max-w-sm rounded-[2rem] border border-red-500/20 bg-[#0a0a0a] p-7 shadow-2xl">
+                            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/10 text-red-500"><Trash2 className="h-6 w-6" /></div>
+                            <h2 id="admin-delete-message-title" className="text-xl font-black">Excluir esta mensagem?</h2>
+                            <p className="mt-2 text-sm leading-relaxed text-white/45">A mensagem será removida em tempo real para todos os participantes.</p>
+                            <div className="mt-6 flex gap-3">
+                                <button type="button" onClick={() => setMessageToDelete(null)} disabled={messageDeleteLoading} className="flex-1 rounded-xl border border-white/10 bg-white/5 py-3 text-xs font-black text-white/65 hover:bg-white/10">Cancelar</button>
+                                <button type="button" onClick={handleDeleteMessage} disabled={messageDeleteLoading} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-500 py-3 text-xs font-black text-white hover:bg-red-600 disabled:opacity-60">
+                                    {messageDeleteLoading ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <Trash2 className="h-4 w-4" />} Excluir
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
                 {isModalOpen && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
-                         <div className="bg-[#0a0a0a] border border-[#222] p-8 rounded-[2rem] w-full max-w-sm">
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md sm:p-6">
+                         <div className="w-full max-w-sm rounded-[2rem] border border-[#222] bg-[#0a0a0a] p-6 sm:p-8">
                              <h2 className="text-xl font-black mb-6">{isEditingChat ? 'Editar Nome da Conversa' : 'Novo Grupo Staff'}</h2>
                              <input 
                                  type="text" value={groupName} onChange={e => setGroupName(e.target.value)}
@@ -587,8 +640,8 @@ export default function AdminTeamsChat() {
             </AnimatePresence>
 
             {/* Sidebar */}
-            <div className="w-[300px] bg-[#0a0a0a] border-r border-[#222] flex flex-col h-full shrink-0">
-                <div className="p-6 border-b border-[#222]">
+            <div className={`${activeChannel ? "hidden md:flex" : "flex"} h-full w-full shrink-0 flex-col border-r border-[#222] bg-[#0a0a0a] md:w-[300px]`}>
+                <div className="border-b border-[#222] p-4 sm:p-6">
                     <div className="flex justify-between items-center mb-5">
                          <h2 className="text-xl font-black text-white tracking-tighter flex items-center gap-3">
                              <Users className="w-5 h-5 text-accent"/> Equipes HQ
@@ -685,11 +738,14 @@ export default function AdminTeamsChat() {
             </div>
 
            {/* Chat Main */}
-           <div className="flex-1 flex flex-col h-full bg-[#050505]">
+           <div className={`${activeChannel ? "flex" : "hidden md:flex"} h-full min-w-0 flex-1 flex-col bg-[#050505]`}>
                {activeChannel ? (
                    <>
-                       <div className="p-5 border-b border-[#222] flex justify-between items-center bg-[#0a0a0a]/80 backdrop-blur-xl">
-                           <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-between gap-2 border-b border-[#222] bg-[#0a0a0a]/80 p-3 backdrop-blur-xl sm:p-5">
+                            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                                <button type="button" onClick={() => setActiveChannel(null)} aria-label="Voltar para conversas" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white/55 hover:bg-white/5 hover:text-white md:hidden">
+                                    <ArrowLeft className="h-5 w-5" />
+                                </button>
                                <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#222] border border-[#333] flex items-center justify-center text-sm font-bold text-white shrink-0">
                                    {activeChannel.avatar_url ? (
                                        <img src={activeChannel.avatar_url} alt={activeChannel.name} className="w-full h-full object-cover" />
@@ -697,9 +753,9 @@ export default function AdminTeamsChat() {
                                        activeChannel.name?.substring(0, 2).toUpperCase()
                                    )}
                                </div>
-                               <div>
-                                   <h1 className="font-bold text-white flex items-center gap-2">{activeChannel.name}</h1>
-                                   <p className="text-[10px] text-[#666] font-bold uppercase">{activeChannel.sub}</p>
+                                <div className="min-w-0">
+                                    <h1 className="truncate font-bold text-white">{activeChannel.name}</h1>
+                                    <p className="truncate text-[10px] font-bold uppercase text-[#666]">{activeChannel.sub}</p>
                                </div>
                            </div>
                            <div className="flex gap-2">
@@ -708,12 +764,12 @@ export default function AdminTeamsChat() {
                                    className={`p-2 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${pinnedChannelIds.includes(activeChannel.id) ? 'bg-accent/20 text-accent border-accent/30' : 'bg-[#111] text-white/60 hover:text-white border-[#222]'}`}
                                >
                                    <Pin className={`w-4 h-4 ${pinnedChannelIds.includes(activeChannel.id) ? 'fill-accent' : ''}`} />
-                                   {pinnedChannelIds.includes(activeChannel.id) ? 'Fixada' : 'Fixar'}
+                                    <span className="hidden sm:inline">{pinnedChannelIds.includes(activeChannel.id) ? 'Fixada' : 'Fixar'}</span>
                                </button>
                            </div>
                        </div>
 
-                       <div className="flex-1 overflow-y-auto p-8 flex flex-col gap-8 custom-scrollbar">
+                        <div className="custom-scrollbar flex flex-1 flex-col gap-5 overflow-y-auto p-3 sm:gap-8 sm:p-8">
                            {messages.map((msg, idx) => {
                                const isStaffFromTag = msg.sender_name?.startsWith('[STAFF]');
                                const parsed = parseReply(msg.content);
@@ -721,7 +777,7 @@ export default function AdminTeamsChat() {
                                const authorAvatar = profilesMapState[msg.user_id]?.avatar_url;
 
                                return (
-                                   <div key={msg.id} className={`flex w-full gap-4 ${isStaffFromTag ? 'flex-row-reverse' : 'flex-row'}`}>
+                                    <div key={msg.id} className={`flex w-full gap-2.5 sm:gap-4 ${isStaffFromTag ? 'flex-row-reverse' : 'flex-row'}`}>
                                        <div className={`w-10 h-10 rounded-full shrink-0 border flex items-center justify-center text-[10px] font-black uppercase overflow-hidden ${isStaffFromTag ? 'bg-accent border-accent/30 text-white shadow-[0_0_15px_rgba(var(--accent-rgb),0.3)]' : 'bg-[#111] border-[#222] text-[#555]'}`}>
                                            {isStaffFromTag ? (
                                                'HQ'
@@ -732,7 +788,7 @@ export default function AdminTeamsChat() {
                                            )}
                                        </div>
 
-                                       <div className={`max-w-[70%] flex flex-col ${isStaffFromTag ? 'items-end' : 'items-start'}`}>
+                                        <div className={`flex max-w-[82%] flex-col sm:max-w-[70%] ${isStaffFromTag ? 'items-end' : 'items-start'}`}>
                                            <span className={`text-[10px] font-black uppercase mb-2 tracking-widest flex items-center gap-2 ${isStaffFromTag ? 'text-accent' : 'text-[#444]'}`}>
                                                {isStaffFromTag && <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></div>}
                                                {displayName}
@@ -778,12 +834,12 @@ export default function AdminTeamsChat() {
                                                })()}
                                                <div className="mt-2 text-[8px] font-bold opacity-30 text-right">{new Date(msg.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
                                             </div>
-                                            <div className={`flex gap-2 mt-1 opacity-0 hover:opacity-100 transition-opacity ${isStaffFromTag ? 'flex-row-reverse' : ''}`}>
+                                             <div className={`mt-1 flex gap-2 opacity-100 transition-opacity md:opacity-0 md:hover:opacity-100 ${isStaffFromTag ? 'flex-row-reverse' : ''}`}>
                                                 <button onClick={() => setReplyingTo(msg)} className="text-[9px] font-black text-accent uppercase tracking-widest cursor-pointer">Responder</button>
                                                 {isStaffFromTag && (
                                                     <button onClick={() => { setEditingMessage(msg); setContent(parseReply(msg.content).actualContent); }} className="text-[9px] font-black text-emerald-500 uppercase tracking-widest cursor-pointer hover:underline">Editar</button>
                                                 )}
-                                                <button onClick={async () => await supabase.from('messages').delete().eq('id', msg.id)} className="text-[9px] font-black text-red-500 uppercase tracking-widest cursor-pointer">Apagar</button>
+                                                <button onClick={() => setMessageToDelete(msg)} className="text-[9px] font-black text-red-500 uppercase tracking-widest cursor-pointer">Apagar</button>
                                             </div>
                                        </div>
                                    </div>
@@ -792,7 +848,7 @@ export default function AdminTeamsChat() {
                            <div ref={messagesEndRef} className="h-4"/>
                        </div>
 
-                       <div className="p-6 bg-[#0a0a0a] border-t border-[#222]">
+                        <div className="border-t border-[#222] bg-[#0a0a0a] p-3 sm:p-6">
                             <div className="max-w-5xl mx-auto flex flex-col gap-3">
                                 {editingMessage && (
                                     <div className="flex justify-between items-center px-4 py-2 bg-accent/20 rounded-xl border border-accent/30 text-xs font-bold text-white mb-1 animate-pulse">

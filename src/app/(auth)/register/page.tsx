@@ -1,288 +1,210 @@
 "use client";
-import { useState, useMemo, Suspense } from "react";
-import { supabase } from "@/lib/supabase";
-import { useRouter, useSearchParams } from "next/navigation";
+
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle2, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  AlertCircle,
+  BriefcaseBusiness,
+  Check,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  LoaderCircle,
+  Store,
+} from "lucide-react";
+import { supabase } from "@/lib/supabase";
+
+type AccountRole = "client" | "developer";
+type RegisterStatus = "idle" | "loading" | "success";
 
 function RegisterForm() {
   const searchParams = useSearchParams();
-  const role: "client" | "developer" = searchParams.get("role") === "developer" ? "developer" : "client";
+  const router = useRouter();
+  const [role, setRole] = useState<AccountRole>(() => searchParams.get("role") === "developer" ? "developer" : "client");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [notification, setNotification] = useState<{type: "success" | "error", msg: string} | null>(null);
-  
-  // Client Specific Fields
-  const [storeName, setStoreName] = useState("");
-  const [segment, setSegment] = useState("");
+  const [status, setStatus] = useState<RegisterStatus>("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Developer Specific Fields
-  const [github, setGithub] = useState("");
-  const [linkedin, setLinkedin] = useState("");
-  const [portfolio, setPortfolio] = useState("");
-  const [specialties, setSpecialties] = useState("");
-  const [experience, setExperience] = useState("");
+  const passwordChecks = useMemo(() => [
+    { label: "8 caracteres", valid: password.length >= 8 },
+    { label: "1 maiúscula", valid: /[A-Z]/.test(password) },
+    { label: "1 símbolo", valid: /[!@#$%^&*(),.?":{}|<>]/.test(password) },
+  ], [password]);
+  const passwordIsValid = passwordChecks.every((check) => check.valid);
 
-  const router = useRouter();
+  const chooseRole = (nextRole: AccountRole) => {
+    setRole(nextRole);
+    router.replace(`/register?role=${nextRole}`, { scroll: false });
+  };
 
-  // Password strength checker
-  const passwordStrength = useMemo(() => {
-    if (!password) return { value: 0, label: '', color: 'bg-transparent' };
-    const hasUpperCase = /[A-Z]/.test(password);
-    const hasSymbol = /[!@#$%^&*(),.?":{}|<>]/.test(password);
-    const validLength = password.length >= 8;
-    
-    if (validLength && hasUpperCase && hasSymbol) return { value: 100, label: 'Forte', color: 'bg-emerald-500' };
-    if (password.length > 5) return { value: 50, label: 'Média', color: 'bg-yellow-500' };
-    return { value: 25, label: 'Fraca', color: 'bg-red-500' };
-  }, [password]);
+  const handleRegister = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setStatus("loading");
+    setErrorMessage(null);
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setNotification(null);
-    
-    const { data, error } = await supabase.auth.signUp({ 
-        email, 
-        password,
-        options: { data: { full_name: name, role: role === "developer" ? "developer" : "client" } }
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: name.trim(),
+          role,
+          onboarding_completed: false,
+        },
+      },
     });
 
     if (error) {
-        setNotification({ type: "error", msg: error.message });
-        setLoading(false);
-    } else {
-        // Save profile configuration in LocalStorage
-        const selectedRoleName = role === "developer" ? "Desenvolvedor" : "Comércio";
-        localStorage.setItem("susanoo_profile_type", selectedRoleName);
-        window.dispatchEvent(new Event("profileTypeChanged"));
-
-        if (role === "developer") {
-          localStorage.setItem(`susanoo:${data.user?.id ?? "anonymous"}:dev-profile`, JSON.stringify({
-            name,
-            email,
-            github,
-            linkedin,
-            portfolio,
-            specialties: specialties.split(",").map(s => s.trim()).filter(Boolean),
-            experience
-          }));
-        } else {
-          localStorage.setItem(`susanoo:${data.user?.id ?? "anonymous"}:client-profile`, JSON.stringify({
-            name,
-            email,
-            storeName,
-            segment,
-            completed: false
-          }));
-          localStorage.setItem("susanoo_store_profile_completed", "false");
-        }
-
-        setNotification({ type: "success", msg: "Tudo pronto! Entrando no seu novo painel..." });
-        setTimeout(() => router.push("/dashboard"), 2000);
+      setErrorMessage(error.message);
+      setStatus("idle");
+      return;
     }
+
+    const userId = data.user?.id ?? "anonymous";
+    const accountType = role === "developer" ? "Desenvolvedor" : "Comércio";
+    localStorage.setItem("susanoo_profile_type", accountType);
+    localStorage.setItem(`susanoo:${userId}:welcome-completed`, "false");
+    localStorage.setItem(
+      `susanoo:${userId}:${role === "developer" ? "dev-profile" : "client-profile"}`,
+      JSON.stringify({ name: name.trim(), email, completed: false }),
+    );
+    window.dispatchEvent(new Event("profileTypeChanged"));
+
+    setStatus("success");
+    window.setTimeout(() => router.replace(data.session ? "/welcome" : "/login"), 900);
   };
 
   return (
-    <motion.div initial={{opacity: 0, scale: 0.98}} animate={{opacity: 1, scale: 1}} transition={{ duration: 0.6, ease: "easeOut" }}>
-      <h2 className="text-4xl font-bold tracking-tight mb-3">
-        {role === "developer" ? "Cadastre-se como Profissional" : "Comece a inovar."}
-      </h2>
-      <p className="text-foreground/50 mb-8 text-lg">
-        {role === "developer" 
-          ? "Preencha suas informações para receber propostas e expandir sua reputação."
-          : "Crie sua conta na Susanoo para estruturar o seu projeto."}
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, ease: "easeOut" }}
+      className="mx-auto w-full"
+    >
+      <span className="mb-3 block text-[10px] font-black uppercase tracking-[0.24em] text-violet-400">Nova conta Susanoo</span>
+      <h2 className="text-3xl font-black tracking-[-0.045em] text-white sm:text-4xl">Comece do seu jeito.</h2>
+      <p className="mb-5 mt-2 text-sm font-medium leading-relaxed text-white/45">
+        Crie apenas o acesso agora. Os dados do perfil serão pedidos quando realmente forem necessários.
       </p>
 
-      {/* Notification */}
+      <div className="mb-5 grid grid-cols-2 gap-2 rounded-2xl bg-white/[0.04] p-1.5 ring-1 ring-inset ring-white/10" aria-label="Tipo de conta">
+        <button
+          type="button"
+          onClick={() => chooseRole("client")}
+          aria-pressed={role === "client"}
+          className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 ${role === "client" ? "bg-violet-600 text-white shadow-lg shadow-violet-950/40" : "text-white/45 hover:bg-white/5 hover:text-white"}`}
+        >
+          <Store className="h-4 w-4" /> Quero contratar
+        </button>
+        <button
+          type="button"
+          onClick={() => chooseRole("developer")}
+          aria-pressed={role === "developer"}
+          className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 ${role === "developer" ? "bg-violet-600 text-white shadow-lg shadow-violet-950/40" : "text-white/45 hover:bg-white/5 hover:text-white"}`}
+        >
+          <BriefcaseBusiness className="h-4 w-4" /> Sou dev
+        </button>
+      </div>
+
       <AnimatePresence>
-        {notification && (
-          <motion.div 
-            initial={{ opacity: 0, y: -10, scale: 0.95 }} 
-            animate={{ opacity: 1, y: 0, scale: 1 }} 
-            exit={{ opacity: 0, y: -10 }}
-            className={`p-4 rounded-xl mb-6 flex items-center gap-3 shadow-lg font-medium ${notification.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'}`}
+        {errorMessage ? (
+          <motion.div
+            role="alert"
+            aria-live="polite"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="mb-4 flex items-start gap-3 rounded-2xl bg-red-500/10 px-4 py-3 text-sm text-red-300 ring-1 ring-red-500/20"
           >
-            {notification.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0"/> : <AlertCircle className="w-5 h-5 shrink-0" />}
-            <span className="text-sm leading-snug">{notification.msg}</span>
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{errorMessage}</span>
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
 
-      <form onSubmit={handleRegister} className="flex flex-col gap-5">
+      <form onSubmit={handleRegister} className="flex flex-col gap-3.5">
         <div>
-          <label className="block text-sm font-semibold mb-2 opacity-80">
-            {role === "developer" ? "Nome Completo" : "Nome da Empresa"}
+          <label htmlFor="register-name" className="mb-1.5 block text-xs font-bold text-white/65">
+            {role === "developer" ? "Seu nome" : "Seu nome ou empresa"}
           </label>
-          <input 
-            type="text" 
+          <input
+            id="register-name"
+            type="text"
+            autoComplete="name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full p-4.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-foreground/30 font-medium text-foreground"
-            placeholder={role === "developer" ? "Seu Nome Completo" : "Susanoo Studio Inc."}
-            required disabled={notification?.type === 'success'}
+            onChange={(event) => setName(event.target.value)}
+            disabled={status === "success"}
+            className="h-12 w-full rounded-2xl bg-white/[0.055] px-4 text-sm font-medium text-white ring-1 ring-inset ring-white/10 outline-none transition-all placeholder:text-white/25 hover:ring-white/20 focus:ring-2 focus:ring-violet-500 disabled:opacity-60"
+            placeholder={role === "developer" ? "Como você quer ser chamado?" : "Quem está criando este projeto?"}
+            required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-semibold mb-2 opacity-80">
-            {role === "developer" ? "E-mail Profissional" : "E-mail Comercial"}
-          </label>
-          <input 
-            type="email" 
+          <label htmlFor="register-email" className="mb-1.5 block text-xs font-bold text-white/65">E-mail</label>
+          <input
+            id="register-email"
+            type="email"
+            autoComplete="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full p-4.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-foreground/30 font-medium text-foreground"
-            placeholder={role === "developer" ? "dev@exemplo.com" : "ceo@susanoo.com.br"}
-            required disabled={notification?.type === 'success'}
+            onChange={(event) => setEmail(event.target.value)}
+            disabled={status === "success"}
+            className="h-12 w-full rounded-2xl bg-white/[0.055] px-4 text-sm font-medium text-white ring-1 ring-inset ring-white/10 outline-none transition-all placeholder:text-white/25 hover:ring-white/20 focus:ring-2 focus:ring-violet-500 disabled:opacity-60"
+            placeholder="voce@empresa.com.br"
+            required
           />
         </div>
 
-        {/* Client Specific Fields */}
-        {role === "client" && (
-          <>
-            <div>
-              <label className="block text-sm font-semibold mb-2 opacity-80">Nome da Loja</label>
-              <input 
-                type="text" 
-                value={storeName}
-                onChange={(e) => setStoreName(e.target.value)}
-                className="w-full p-4.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-foreground/30 font-medium text-foreground"
-                placeholder="Minha Loja Virtual"
-                required disabled={notification?.type === 'success'}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-2 opacity-80">Segmento do Negócio</label>
-              <input 
-                type="text" 
-                value={segment}
-                onChange={(e) => setSegment(e.target.value)}
-                className="w-full p-4.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-foreground/30 font-medium text-foreground"
-                placeholder="Ex: Moda, Alimentação, Serviços..."
-                required disabled={notification?.type === 'success'}
-              />
-            </div>
-          </>
-        )}
-
-        {/* Developer Specific Fields */}
-        {role === "developer" && (
-          <>
-            <div>
-              <label className="block text-sm font-semibold mb-2 opacity-80">Link do GitHub <span className="text-foreground/45 font-medium">(opcional)</span></label>
-              <input 
-                type="url" 
-                value={github}
-                onChange={(e) => setGithub(e.target.value)}
-                className="w-full p-4.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-foreground/30 font-medium text-foreground"
-                placeholder="https://github.com/usuario"
-                disabled={notification?.type === 'success'}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-2 opacity-80">Link do LinkedIn <span className="text-foreground/45 font-medium">(opcional)</span></label>
-              <input 
-                type="url" 
-                value={linkedin}
-                onChange={(e) => setLinkedin(e.target.value)}
-                className="w-full p-4.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-foreground/30 font-medium text-foreground"
-                placeholder="https://linkedin.com/in/usuario"
-                disabled={notification?.type === 'success'}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-2 opacity-80">Portfólio / Site (Opcional)</label>
-              <input 
-                type="url" 
-                value={portfolio}
-                onChange={(e) => setPortfolio(e.target.value)}
-                className="w-full p-4.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-foreground/30 font-medium text-foreground"
-                placeholder="https://meuportfolio.com"
-                disabled={notification?.type === 'success'}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-2 opacity-80">Especialidades (separadas por vírgula)</label>
-              <input 
-                type="text" 
-                value={specialties}
-                onChange={(e) => setSpecialties(e.target.value)}
-                className="w-full p-4.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-foreground/30 font-medium text-foreground"
-                placeholder="Ex: React, Next.js, UI/UX, Node.js"
-                required disabled={notification?.type === 'success'}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-2 opacity-80">Anos de Experiência</label>
-              <input 
-                type="number" 
-                value={experience}
-                onChange={(e) => setExperience(e.target.value)}
-                className="w-full p-4.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-foreground/30 font-medium text-foreground"
-                placeholder="Ex: 3"
-                required disabled={notification?.type === 'success'}
-              />
-            </div>
-          </>
-        )}
-
         <div>
-          <label className="block text-sm font-semibold mb-2 opacity-80">Nova Senha Segura</label>
+          <label htmlFor="register-password" className="mb-1.5 block text-xs font-bold text-white/65">Senha</label>
           <div className="relative">
-             <input 
-               type={showPassword ? "text" : "password"}
-               value={password}
-               onChange={(e) => setPassword(e.target.value)}
-               className="w-full p-4.5 rounded-xl bg-surface border border-surface-border focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all placeholder:text-foreground/30 font-medium text-foreground pr-12"
-               placeholder="••••••••"
-               required minLength={6} disabled={notification?.type === 'success'}
-              />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-foreground/40 hover:text-foreground transition-colors">
-                {showPassword ? <EyeOff className="w-5 h-5"/> : <Eye className="w-5 h-5"/>}
-              </button>
+            <input
+              id="register-password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="new-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              disabled={status === "success"}
+              className="h-12 w-full rounded-2xl bg-white/[0.055] px-4 pr-14 text-sm font-medium text-white ring-1 ring-inset ring-white/10 outline-none transition-all placeholder:text-white/25 hover:ring-white/20 focus:ring-2 focus:ring-violet-500 disabled:opacity-60"
+              placeholder="Crie uma senha segura"
+              minLength={8}
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((current) => !current)}
+              aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+              className="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl text-white/35 hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
           </div>
-          <div className={`flex flex-col gap-3 mt-3 transition-opacity duration-300 ${password.length > 0 ? 'opacity-100' : 'opacity-0 select-none'}`}>
-             <div className="flex items-center gap-3">
-               <div className="flex-1 h-1.5 bg-surface border border-surface-border rounded-full overflow-hidden">
-                  <div className={`h-full ${passwordStrength.color} transition-all duration-300 ease-out`} style={{width: `${passwordStrength.value}%`}}></div>
-               </div>
-               <span className={`text-[11px] uppercase font-bold tracking-wider ${passwordStrength.value === 100 ? 'text-emerald-500' : (passwordStrength.value > 33 ? 'text-yellow-500' : 'text-red-500')}`}>
-                   {passwordStrength.label || 'Vazio'}
-               </span>
-             </div>
-             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1">
-               <div className={`flex items-center gap-1.5 text-xs font-bold transition-colors ${password.length >= 8 ? 'text-emerald-500' : 'text-foreground/40'}`}>
-                 {password.length >= 8 ? <CheckCircle2 className="w-3.5 h-3.5" /> : <div className="w-3.5 h-3.5 rounded-full border-2 border-current opacity-30" />}
-                 Mínimo de 8 caracteres
-               </div>
-               <div className={`flex items-center gap-1.5 text-xs font-bold transition-colors ${/[A-Z]/.test(password) ? 'text-emerald-500' : 'text-foreground/40'}`}>
-                 {/[A-Z]/.test(password) ? <CheckCircle2 className="w-3.5 h-3.5" /> : <div className="w-3.5 h-3.5 rounded-full border-2 border-current opacity-30" />}
-                 Letra maiúscula
-               </div>
-               <div className={`flex items-center gap-1.5 text-xs font-bold transition-colors ${/[!@#$%^&*(),.?":{}|<>]/.test(password) ? 'text-emerald-500' : 'text-foreground/40'}`}>
-                 {/[!@#$%^&*(),.?":{}|<>]/.test(password) ? <CheckCircle2 className="w-3.5 h-3.5" /> : <div className="w-3.5 h-3.5 rounded-full border-2 border-current opacity-30" />}
-                 Símbolo especial
-               </div>
-             </div>
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {passwordChecks.map((check) => (
+              <span key={check.label} className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold ring-1 ring-inset ${check.valid ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/20" : "bg-white/[0.035] text-white/30 ring-white/10"}`}>
+                <Check className="h-3 w-3" /> {check.label}
+              </span>
+            ))}
           </div>
         </div>
-        
-        <button 
-          type="submit" 
-          disabled={loading || notification?.type === 'success' || passwordStrength.value !== 100}
-          className={`w-full py-4.5 rounded-xl font-bold transition-all mt-4 text-lg shadow-xl cursor-pointer ${notification?.type === 'success' ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 'bg-accent text-accent-foreground hover:opacity-90 shadow-accent/10'} disabled:opacity-50`}
+
+        <motion.button
+          type="submit"
+          disabled={status !== "idle" || !passwordIsValid}
+          animate={status === "success" ? { scale: [1, 1.025, 1] } : { scale: 1 }}
+          className={`mt-1 flex h-12 w-full items-center justify-center gap-2 rounded-2xl px-5 text-sm font-black text-white transition-colors active:scale-[0.98] disabled:pointer-events-none disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 ${status === "success" ? "bg-emerald-500 shadow-[0_14px_40px_rgba(16,185,129,0.3)] focus-visible:ring-emerald-400" : "bg-violet-600 shadow-[0_14px_40px_rgba(124,58,237,0.28)] hover:bg-violet-500 focus-visible:ring-violet-400"}`}
         >
-          {loading ? "Criando sua conta..." : (notification?.type === 'success' ? "Redirecionando..." : "Criar Minha Conta")}
-        </button>
+          {status === "loading" ? <><LoaderCircle className="h-4 w-4 animate-spin" /> Criando conta...</> : status === "success" ? <><CheckCircle2 className="h-5 w-5" /> Conta criada</> : `Criar conta de ${role === "developer" ? "desenvolvedor" : "cliente"}`}
+        </motion.button>
       </form>
 
-      <p className="mt-10 text-center text-foreground/50">
-        Já possui acesso? <Link href="/login" className="text-foreground font-semibold hover:underline">Fazer login</Link>
+      <p className="mt-5 text-center text-sm text-white/40">
+        Já possui acesso? <Link href="/login" className="font-bold text-white hover:text-violet-300 hover:underline">Fazer login</Link>
       </p>
     </motion.div>
   );
@@ -290,11 +212,7 @@ function RegisterForm() {
 
 export default function RegisterPage() {
   return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center p-12">
-        <div className="w-8 h-8 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
-      </div>
-    }>
+    <Suspense fallback={<div className="flex items-center justify-center p-12"><LoaderCircle className="h-7 w-7 animate-spin text-violet-400" /></div>}>
       <RegisterForm />
     </Suspense>
   );

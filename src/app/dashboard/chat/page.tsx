@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Send, Paperclip, X, FileText, Download, UserRound, Loader2, Users, Search, Hash, ShieldAlert, Pin } from "lucide-react";
+import { Send, Paperclip, X, FileText, Download, UserRound, Loader2, Users, Search, Hash, ShieldAlert, Pin, ArrowLeft, Trash2, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { playNotificationSound } from "@/lib/utils";
 
@@ -53,6 +53,9 @@ function ChatPageContent() {
     const [profilesMapState, setProfilesMapState] = useState<Record<string, any>>({});
     const [lastActivityMapState, setLastActivityMapState] = useState<Record<string, number>>({});
     const [editingMessage, setEditingMessage] = useState<any | null>(null);
+    const [messageToDelete, setMessageToDelete] = useState<Message | null>(null);
+    const [showRemoveConversation, setShowRemoveConversation] = useState(false);
+    const [destructiveActionLoading, setDestructiveActionLoading] = useState(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const chatChannelRef = useRef<any>(null);
@@ -244,7 +247,8 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                     name,
                     isStaff,
                     sub,
-                    avatar_url
+                    avatar_url,
+                    profileId: c.type === 'dm' ? c.participants?.find((pid: string) => pid !== session.user.id) : null
                 };
             });
 
@@ -356,6 +360,16 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                     }
                 }
             })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload: any) => {
+                const updatedMessage = payload.new as Message | undefined;
+                if (!updatedMessage?.id) return;
+                setMessages(prev => prev.map(message => message.id === updatedMessage.id ? updatedMessage : message));
+            })
+            .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, (payload: any) => {
+                const deletedId = payload.old?.id as string | undefined;
+                if (!deletedId) return;
+                setMessages(prev => prev.filter(message => message.id !== deletedId));
+            })
             .subscribe();
 
         return () => { supabase.removeChannel(globalCh); };
@@ -374,6 +388,16 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                         return [...prev, msg];
                     });
                 }
+            })
+            .on('broadcast', { event: 'message-updated' }, ({ payload }) => {
+                const updatedMessage = payload?.message as Message | undefined;
+                if (!updatedMessage?.id) return;
+                setMessages(prev => prev.map(message => message.id === updatedMessage.id ? updatedMessage : message));
+            })
+            .on('broadcast', { event: 'message-deleted' }, ({ payload }) => {
+                const deletedId = payload?.messageId as string | undefined;
+                if (!deletedId) return;
+                setMessages(prev => prev.filter(message => message.id !== deletedId));
             })
             .on('broadcast', { event: 'typing' }, (raw: any) => {
                 const { name, isTyping } = raw.payload ?? {};
@@ -406,6 +430,52 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
         }));
 
         await loadMessages(channel);
+    };
+
+    const openParticipantProfile = (profileId?: string | null) => {
+        if (!profileId) return;
+        router.push(`/dashboard/developers/${profileId}`);
+    };
+
+    const handleDeleteMessage = async () => {
+        if (!messageToDelete) return;
+        setDestructiveActionLoading(true);
+        const deletedId = messageToDelete.id;
+        const { error } = await supabase.from('messages').delete().eq('id', deletedId);
+        if (!error) {
+            setMessages(prev => prev.filter(message => message.id !== deletedId));
+            chatChannelRef.current?.send({ type: 'broadcast', event: 'message-deleted', payload: { messageId: deletedId } });
+            setMessageToDelete(null);
+        }
+        setDestructiveActionLoading(false);
+    };
+
+    const handleRemoveConversation = async () => {
+        if (!activeChannel || !user) return;
+        setDestructiveActionLoading(true);
+
+        const participants = Array.isArray(activeChannel.participants) ? activeChannel.participants : [];
+        const remainingParticipants = participants.filter((participantId: string) => participantId !== user.id);
+        const shouldDeleteOwnedSupport = activeChannel.type === 'support' && activeChannel.user_id === user.id;
+
+        let error = null;
+        if (shouldDeleteOwnedSupport) {
+            await supabase.from('messages').delete().eq('chat_id', activeChannel.id);
+            const result = await supabase.from('chats').delete().eq('id', activeChannel.id);
+            error = result.error;
+        } else {
+            const result = await supabase.from('chats').update({ participants: remainingParticipants }).eq('id', activeChannel.id);
+            error = result.error;
+        }
+
+        if (!error) {
+            setChannels(prev => prev.filter(channel => channel.id !== activeChannel.id));
+            setPinnedChannelIds(prev => prev.filter(channelId => channelId !== activeChannel.id));
+            setMessages([]);
+            setActiveChannel(null);
+            setShowRemoveConversation(false);
+        }
+        setDestructiveActionLoading(false);
     };
 
     const handleUpdateName = async () => {
@@ -443,10 +513,10 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
         setContent(""); setStagedFiles([]); setPreviews([]);
 
         if (editingMessage) {
-            const { error } = await supabase.from('messages').update({ content: msgContent }).eq('id', editingMessage.id);
-            if (!error) {
-                setMessages(prev => prev.map(m => m.id === editingMessage.id ? { ...m, content: msgContent } : m));
-                chatChannelRef.current?.send({ type: 'broadcast', event: 'sync', payload: {} });
+            const { data: updatedMessage, error } = await supabase.from('messages').update({ content: msgContent }).eq('id', editingMessage.id).select().single();
+            if (!error && updatedMessage) {
+                setMessages(prev => prev.map(m => m.id === editingMessage.id ? updatedMessage : m));
+                chatChannelRef.current?.send({ type: 'broadcast', event: 'message-updated', payload: { message: updatedMessage } });
             }
             setEditingMessage(null);
             return;
@@ -491,7 +561,41 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
     };
 
     return (
-        <div className="flex-1 flex overflow-hidden bg-background h-full relative text-white">
+        <div className="flex-1 flex overflow-hidden bg-background h-full relative text-foreground">
+
+            <AnimatePresence>
+                {messageToDelete && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[250] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="delete-message-title">
+                        <motion.div initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }} className="w-full max-w-sm rounded-3xl bg-surface p-6 shadow-2xl ring-1 ring-red-500/20">
+                            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/10 text-red-500"><AlertTriangle className="h-6 w-6" /></div>
+                            <h2 id="delete-message-title" className="text-xl font-black text-foreground">Excluir esta mensagem?</h2>
+                            <p className="mt-2 text-sm leading-relaxed text-foreground/55">Ela será removida desta conversa em tempo real para todos os participantes.</p>
+                            <div className="mt-6 flex gap-3">
+                                <button type="button" onClick={() => setMessageToDelete(null)} disabled={destructiveActionLoading} className="flex-1 rounded-xl bg-foreground/5 px-4 py-3 text-xs font-black text-foreground/65 hover:bg-foreground/10">Cancelar</button>
+                                <button type="button" onClick={handleDeleteMessage} disabled={destructiveActionLoading} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-500 px-4 py-3 text-xs font-black text-white hover:bg-red-600 disabled:opacity-60">
+                                    {destructiveActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Excluir
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+
+                {showRemoveConversation && activeChannel && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[240] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="remove-chat-title">
+                        <motion.div initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }} className="w-full max-w-sm rounded-3xl bg-surface p-6 shadow-2xl ring-1 ring-red-500/20">
+                            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/10 text-red-500"><Trash2 className="h-6 w-6" /></div>
+                            <h2 id="remove-chat-title" className="text-xl font-black text-foreground">Remover conversa?</h2>
+                            <p className="mt-2 text-sm leading-relaxed text-foreground/55">{activeChannel.type === 'support' ? 'O histórico deste atendimento será excluído.' : 'Você sairá desta conversa e ela deixará de aparecer na sua lista.'}</p>
+                            <div className="mt-6 flex gap-3">
+                                <button type="button" onClick={() => setShowRemoveConversation(false)} disabled={destructiveActionLoading} className="flex-1 rounded-xl bg-foreground/5 px-4 py-3 text-xs font-black text-foreground/65 hover:bg-foreground/10">Cancelar</button>
+                                <button type="button" onClick={handleRemoveConversation} disabled={destructiveActionLoading} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-500 px-4 py-3 text-xs font-black text-white hover:bg-red-600 disabled:opacity-60">
+                                    {destructiveActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Remover
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             <AnimatePresence>
                 {showOnboarding && (
@@ -516,7 +620,7 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
             </AnimatePresence>
 
             {/* Sidebar */}
-            <div className="w-[300px] border-r border-surface-border flex flex-col h-full bg-surface/30 shrink-0">
+            <div className={`${activeChannel ? 'hidden md:flex' : 'flex'} h-full w-full shrink-0 flex-col bg-surface/30 md:w-[300px] md:border-r md:border-surface-border`}>
                 <div className="p-6 border-b border-surface-border">
                     <h2 className="text-xl font-black text-foreground tracking-tighter mb-4">Mensagens</h2>
                     <div className="relative">
@@ -597,11 +701,14 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
             </div>
 
             {/* Main */}
-            <div className="flex-1 flex flex-col h-full relative">
+            <div className={`${activeChannel ? 'flex' : 'hidden md:flex'} relative h-full min-w-0 flex-1 flex-col`}>
                 {activeChannel ? (
                     <>
-                        <div className="px-8 py-5 border-b border-surface-border flex justify-between items-center bg-background/60 backdrop-blur-md z-50">
-                            <div className="flex items-center gap-4">
+                        <div className="z-50 flex items-center justify-between bg-background/80 px-3 py-3 shadow-sm backdrop-blur-md sm:px-8 sm:py-5">
+                            <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+                                <button type="button" onClick={() => setActiveChannel(null)} aria-label="Voltar para conversas" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-foreground/55 hover:bg-foreground/5 md:hidden">
+                                    <ArrowLeft className="h-5 w-5" />
+                                </button>
                                 <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent overflow-hidden">
                                     {activeChannel.isStaff ? (
                                         <ShieldAlert className="w-5 h-5" />
@@ -611,15 +718,13 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                                         <UserRound className="w-5 h-5" />
                                     )}
                                 </div>
-                                <div>
-                                    <h1 className="font-bold text-foreground flex items-center gap-2">
-                                        {activeChannel.name}
-                                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                <button type="button" onClick={() => openParticipantProfile(activeChannel.profileId)} disabled={!activeChannel.profileId} className="min-w-0 text-left disabled:cursor-default">
+                                    <h1 className="flex items-center gap-2 font-bold text-foreground transition-colors enabled:hover:text-accent">
+                                        <span className="truncate">{activeChannel.name}</span>
+                                        <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500 animate-pulse" />
                                     </h1>
-                                    <p className="text-[10px] font-black text-foreground/30 uppercase tracking-widest">
-                                        {activeChannel.sub}
-                                    </p>
-                                </div>
+                                    <p className="truncate text-[10px] font-black uppercase tracking-widest text-foreground/30">{activeChannel.sub}</p>
+                                </button>
                             </div>
                             <div className="flex items-center gap-2">
                                 <button 
@@ -627,12 +732,15 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                                     className={`p-2 px-3 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${pinnedChannelIds.includes(activeChannel.id) ? 'bg-accent/20 text-accent border-accent/30' : 'bg-surface text-foreground/60 hover:text-foreground border-surface-border'}`}
                                 >
                                     <Pin className={`w-4 h-4 ${pinnedChannelIds.includes(activeChannel.id) ? 'fill-accent' : ''}`} />
-                                    {pinnedChannelIds.includes(activeChannel.id) ? 'Fixada' : 'Fixar'}
+                                    <span className="hidden sm:inline">{pinnedChannelIds.includes(activeChannel.id) ? 'Fixada' : 'Fixar'}</span>
+                                </button>
+                                <button type="button" onClick={() => setShowRemoveConversation(true)} aria-label="Remover conversa" title="Sair ou excluir conversa" className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/10 text-red-500 ring-1 ring-red-500/20 transition-colors hover:bg-red-500 hover:text-white">
+                                    <Trash2 className="h-4 w-4" />
                                 </button>
                             </div>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto px-6 py-8 flex flex-col gap-6 custom-scrollbar">
+                        <div className="custom-scrollbar flex flex-1 flex-col gap-6 overflow-y-auto px-3 py-5 sm:px-6 sm:py-8">
                             {loading && (
                                 <div className="flex-1 flex items-center justify-center opacity-30">
                                     <Loader2 className="w-8 h-8 animate-spin" />
@@ -664,13 +772,13 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                                                 HQ
                                             </div>
                                         ) : (
-                                            <div className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-[12px] font-black uppercase bg-surface border border-surface-border text-foreground/50 overflow-hidden">
+                                            <button type="button" onClick={() => isMe ? router.push('/dashboard/profile') : openParticipantProfile(msg.user_id)} aria-label={`Abrir perfil de ${isMe ? 'você' : displayName}`} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-surface-border bg-surface text-[12px] font-black uppercase text-foreground/50 ring-accent transition hover:ring-2">
                                                 {authorAvatar ? (
                                                     <img src={authorAvatar} alt={displayName} className="w-full h-full object-cover" />
                                                 ) : (
                                                     displayName.charAt(0)
                                                 )}
-                                            </div>
+                                            </button>
                                         )}
 
                                         <div className={`flex flex-col gap-1.5 max-w-[75%] ${isMe ? 'items-end' : 'items-start'}`}>
@@ -678,7 +786,7 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                                                 {isMe ? `Você` : `${displayName} ${isStaff ? '· STAFF' : ''}`}
                                             </span>
 
-                                            <div className={`px-5 py-4 shadow-sm relative ${isMe ? 'bg-foreground text-background rounded-l-2xl rounded-br-2xl' : 'bg-surface border border-surface-border text-foreground rounded-r-2xl rounded-bl-2xl'}`}>
+                                            <div className={`relative px-5 py-4 shadow-sm ${isMe ? 'rounded-l-2xl rounded-br-2xl bg-accent text-white' : 'rounded-r-2xl rounded-bl-2xl bg-surface text-foreground ring-1 ring-foreground/8'}`}>
                                                 {msg.file_url && (
                                                     <div className="mb-3">
                                                         {msg.file_type?.startsWith('image/') || msg.file_url?.match(/\.(png|jpg|jpeg|gif|webp)/i) ? (
@@ -709,11 +817,11 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                                                     {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                 </p>
                                             </div>
-                                            <div className={`flex gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ${isMe ? 'flex-row-reverse' : ''}`}>
+                                            <div className={`mt-1 flex gap-2 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${isMe ? 'flex-row-reverse' : ''}`}>
                                                 {isMe && (
                                                     <>
                                                         <button onClick={() => { setEditingMessage(msg); setContent(msg.content || ""); }} className="text-[9px] font-black text-emerald-500 uppercase tracking-widest cursor-pointer hover:underline">Editar</button>
-                                                        <button onClick={async () => { if (confirm("Deseja apagar esta mensagem?")) { await supabase.from('messages').delete().eq('id', msg.id); setMessages(prev => prev.filter(m => m.id !== msg.id)); } }} className="text-[9px] font-black text-red-500 uppercase tracking-widest cursor-pointer hover:underline">Apagar</button>
+                                                        <button onClick={() => setMessageToDelete(msg)} className="text-[9px] font-black text-red-500 uppercase tracking-widest cursor-pointer hover:underline">Apagar</button>
                                                     </>
                                                 )}
                                             </div>
@@ -734,12 +842,12 @@ Para iniciarmos o desenvolvimento da sua aplicação, por favor nos envie por aq
                             <div ref={messagesEndRef} />
                         </div>
 
-                        <div className="px-6 pb-6 bg-background">
+                        <div className="bg-background px-3 pb-3 sm:px-6 sm:pb-6">
                             <div className="max-w-4xl mx-auto flex flex-col gap-3">
                                 {editingMessage && (
-                                    <div className="flex justify-between items-center px-4 py-2 bg-accent/20 rounded-xl border border-accent/30 text-xs font-bold text-white mb-1 animate-pulse">
+                                    <div className="mb-1 flex items-center justify-between rounded-xl bg-accent/10 px-4 py-2 text-xs font-bold text-accent ring-1 ring-accent/25">
                                         <span>Editando mensagem...</span>
-                                        <button onClick={() => { setEditingMessage(null); setContent(""); }} className="text-red-400 hover:text-red-300 uppercase tracking-wider text-[10px] cursor-pointer">Cancelar</button>
+                                        <button onClick={() => { setEditingMessage(null); setContent(""); }} className="text-[10px] uppercase tracking-wider text-red-500 hover:text-red-600 cursor-pointer">Cancelar</button>
                                     </div>
                                 )}
                                 <AnimatePresence>

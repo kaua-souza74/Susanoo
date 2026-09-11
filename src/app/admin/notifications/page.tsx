@@ -113,7 +113,7 @@ export default function AdminNotifications() {
     };
 
     return (
-        <div className="flex-1 overflow-y-auto p-10 bg-background text-foreground transition-colors duration-300 pb-20">
+        <div className="flex-1 overflow-x-hidden overflow-y-auto bg-background p-5 pb-20 text-foreground transition-colors duration-300 sm:p-8 lg:p-10">
             <div className="w-full max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
                 {/* Esquerda: Lista de Notificações */}
                 <div className="lg:col-span-8 space-y-6">

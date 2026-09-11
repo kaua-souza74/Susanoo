@@ -5,6 +5,7 @@ import { MapPin, Star, ShieldCheck, Mail, ArrowLeft, Globe, Code2, AtSign, Brief
 import { motion, AnimatePresence } from "framer-motion";
 import { ReviewsSection } from "@/components/ReviewsSection";
 import { supabase } from "@/lib/supabase";
+import { hasCompletedClientProfile } from "@/lib/account";
 
 export default function DeveloperProfilePage({ params }: { params: Promise<{ id: string }> }) {
     const router = useRouter();
@@ -12,6 +13,17 @@ export default function DeveloperProfilePage({ params }: { params: Promise<{ id:
     const [dev, setDev] = useState<any>(null);
     const [devProjects, setDevProjects] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+
+    const handleContact = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        const isDeveloper = user?.user_metadata?.role === "developer";
+        if (!isDeveloper && !(await hasCompletedClientProfile())) {
+            sessionStorage.setItem("susanoo_flash_toast", "Complete os dados essenciais do perfil antes de enviar uma solicitação.");
+            router.push(`/dashboard/profile?intent=request&developerId=${resolvedParams.id}`);
+            return;
+        }
+        router.push(`/dashboard/chat?devId=${dev.id}&devName=${encodeURIComponent(dev.name || '')}`);
+    };
 
     useEffect(() => {
         const fetchDevData = async () => {
@@ -127,7 +139,7 @@ export default function DeveloperProfilePage({ params }: { params: Promise<{ id:
 
                     <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.3 }} className="flex items-center gap-4 mt-6 sm:mt-0">
                          <button 
-                            onClick={() => router.push(`/dashboard/chat?devId=${dev.id}&devName=${encodeURIComponent(dev.name || '')}`)}
+                            onClick={handleContact}
                             className="bg-white text-black hover:bg-white/90 font-black text-xs uppercase tracking-widest px-8 py-4 rounded-2xl transition-all shadow-xl hover:scale-105 active:scale-95 flex items-center gap-2"
                         >
                             <Mail className="w-4 h-4" /> Entrar em Contato
@@ -136,9 +148,9 @@ export default function DeveloperProfilePage({ params }: { params: Promise<{ id:
                 </div>
             </div>
 
-            <div className="w-full max-w-5xl mx-auto pt-32 px-6 grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-6 px-4 pb-20 pt-6 sm:px-6 sm:pt-10 md:grid-cols-3 md:gap-8 md:pt-16">
                 <div className="md:col-span-2 space-y-6">
-                    <motion.div initial={{opacity: 0, y: 20}} animate={{opacity: 1, y: 0}} transition={{ delay: 0.4 }} className="bg-surface border border-surface-border rounded-[2rem] p-8 shadow-sm">
+                    <motion.div initial={{opacity: 0, y: 20}} animate={{opacity: 1, y: 0}} transition={{ delay: 0.4 }} className="rounded-[2rem] border border-surface-border bg-surface p-5 shadow-sm sm:p-8">
                         <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><Briefcase className="w-5 h-5 text-accent"/> Sobre o Profissional</h3>
                         <p className="text-foreground/70 leading-relaxed font-medium text-sm md:text-base mb-8">
                             {dev.bio || "Desenvolvedor parceiro da comunidade Susanoo."}
@@ -194,7 +206,7 @@ export default function DeveloperProfilePage({ params }: { params: Promise<{ id:
                 </div>
 
                 <div className="space-y-6">
-                    <motion.div initial={{opacity: 0, x: 20}} animate={{opacity: 1, x: 0}} transition={{delay: 0.4}} className="bg-surface border border-surface-border rounded-[2rem] p-8 shadow-sm flex flex-col items-center text-center">
+                    <motion.div initial={{opacity: 0, x: 20}} animate={{opacity: 1, x: 0}} transition={{delay: 0.4}} className="flex flex-col items-center rounded-[2rem] border border-surface-border bg-surface p-5 text-center shadow-sm sm:p-8">
                         <div className="w-20 h-20 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-6 relative">
                             <Star className="w-10 h-10 text-emerald-500 fill-emerald-500" />
                             <div className="absolute -inset-2 border border-emerald-500/30 rounded-full animate-ping opacity-20" />
@@ -205,7 +217,7 @@ export default function DeveloperProfilePage({ params }: { params: Promise<{ id:
                         </p>
                     </motion.div>
 
-                    <motion.div initial={{opacity: 0, x: 20}} animate={{opacity: 1, x: 0}} transition={{delay: 0.5}} className="bg-surface border border-surface-border rounded-[2rem] p-8 shadow-sm">
+                    <motion.div initial={{opacity: 0, x: 20}} animate={{opacity: 1, x: 0}} transition={{delay: 0.5}} className="rounded-[2rem] border border-surface-border bg-surface p-5 shadow-sm sm:p-8">
                         <h3 className="text-lg font-bold mb-6">Links Oficiais</h3>
                         <div className="space-y-4">
                             <div className="flex items-center gap-4 bg-background border border-surface-border p-4 rounded-2xl cursor-pointer hover:border-accent/40 transition-colors group">

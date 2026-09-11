@@ -1,43 +1,49 @@
 import { ReactNode } from "react";
 import Link from "next/link";
+import { ArrowLeft, CheckCircle2, ShieldCheck } from "lucide-react";
 import { Logo } from "@/components/logo";
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen flex text-foreground bg-background transition-colors duration-300">
-      {/* Left Panel - Image/Brand */}
-      <div className="hidden lg:flex flex-col flex-1 bg-[#050505] relative overflow-hidden border-r border-surface-border p-16 transition-colors duration-300">
-        {/* Decorative Background Circles */}
-        <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-          <div className="absolute top-[-20%] right-[-10%] w-[800px] h-[800px] rounded-full bg-blue-600/20 shadow-[inset_0_0_100px_rgba(0,0,0,0.5)] blur-sm" />
-          <div className="absolute bottom-[-15%] left-[-10%] w-[600px] h-[600px] rounded-full bg-blue-700/20 shadow-[inset_0_0_80px_rgba(0,0,0,0.6)] blur-sm" />
-          <div className="absolute top-[40%] right-[10%] w-[300px] h-[300px] rounded-full bg-blue-500/15 shadow-[inset_0_0_120px_rgba(0,0,0,0.8)] blur-sm" />
-          <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
+    <div className="dark grid h-svh overflow-hidden bg-[#050505] text-white lg:grid-cols-[44%_56%]">
+      <section className="relative hidden h-svh overflow-hidden bg-[#050505] p-10 lg:flex lg:flex-col xl:p-14" aria-label="Apresentação Susanoo">
+        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+          <div className="absolute -left-48 -top-40 h-[38rem] w-[38rem] rounded-full bg-violet-600/20 blur-[130px]" />
+          <div className="absolute -bottom-56 right-[-12rem] h-[42rem] w-[42rem] rounded-full bg-fuchsia-600/15 blur-[150px]" />
+          <div className="absolute inset-0 opacity-35 [background-image:radial-gradient(circle_at_center,rgba(168,85,247,0.28)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:linear-gradient(to_bottom_right,black,transparent_68%)]" />
+          <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-violet-950/20 to-transparent" />
         </div>
 
-        <Link href="/" aria-label="Voltar para a página inicial" className="group absolute left-12 top-12 z-30 flex cursor-pointer items-center rounded-xl outline-none transition-transform hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-accent">
-          <Logo className="pointer-events-none transition-opacity group-hover:opacity-80" />
+        <Link href="/" aria-label="Voltar para a página inicial" className="relative z-10 w-fit rounded-xl outline-none transition-opacity hover:opacity-75 focus-visible:ring-2 focus-visible:ring-accent">
+          <Logo size="md" />
         </Link>
 
-        <div className="relative z-10 flex flex-col items-center justify-center h-full text-center px-8">
-          <h1 className="text-4xl lg:text-[4rem] font-black tracking-tighter uppercase italic leading-none mb-6 text-white max-w-2xl">
-             Transforme ideias em projetos reais.
+        <div className="relative z-10 my-auto max-w-xl py-8">
+          <h1 className="text-4xl font-black uppercase italic leading-[0.9] tracking-[-0.06em] text-white xl:text-6xl 2xl:text-7xl">
+            Ideias ganham <span className="text-violet-400">forma.</span>
           </h1>
-          <p className="text-xl text-white/70 max-w-xl leading-relaxed mx-auto font-bold italic">
-             Acesse sua conta para acompanhar projetos, conversar com sua equipe, gerenciar entregas ou encontrar novas oportunidades na plataforma Susanoo.
+          <p className="mt-5 max-w-lg text-sm font-medium leading-relaxed text-white/55 xl:text-base">
+            Projetos, profissionais e entregas reunidos em uma experiência feita para avançar sem ruído.
           </p>
+          <div className="mt-7 flex flex-wrap gap-3 text-xs font-bold text-white/60">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-2 ring-1 ring-white/10"><ShieldCheck className="h-4 w-4 text-violet-400" /> Acesso protegido</span>
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-2 ring-1 ring-white/10"><CheckCircle2 className="h-4 w-4 text-violet-400" /> Tudo em um só lugar</span>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Right Panel - Form Area */}
-      <div className="flex-[0.8] flex flex-col justify-center items-center py-12 px-4 sm:px-8 bg-background relative z-20 shadow-2xl transition-colors duration-300">
-        <Link href="/" aria-label="Voltar para a página inicial" className="absolute left-6 top-6 z-30 flex cursor-pointer items-center rounded-lg outline-none transition-transform hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-accent lg:hidden">
-          <Logo size="sm" className="pointer-events-none" />
-        </Link>
-        <div className="w-full max-w-[420px]">
-          {children}
+      <section className="relative flex h-svh min-h-0 flex-col overflow-y-auto bg-[#080808] px-5 py-4 sm:px-8 lg:px-12 lg:py-7">
+        <div className="flex items-center justify-between">
+          <Link href="/" className="inline-flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-semibold text-white/50 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+            <ArrowLeft className="h-4 w-4" /> Voltar
+          </Link>
+          <div className="lg:hidden"><Logo size="sm" /></div>
         </div>
-      </div>
+
+        <div className="flex min-h-0 flex-1 items-center justify-center py-3 sm:py-5">
+          <div className="w-full max-w-[420px]">{children}</div>
+        </div>
+      </section>
     </div>
   );
 }

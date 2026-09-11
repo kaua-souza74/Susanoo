@@ -172,7 +172,7 @@ export default function CheckoutPage() {
               <motion.div key="credit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="flex flex-col gap-8">
                 
                 {/* Visual Credit Card */}
-                <div className="relative w-[340px] h-[215px] perspective-1000 mx-auto lg:mx-0">
+                <div className="perspective-1000 relative mx-auto h-[215px] w-full max-w-[340px] lg:mx-0">
                    <motion.div 
                      className="w-full h-full relative preserve-3d transition-transform duration-500" 
                      animate={{ rotateY: isFlipped ? 180 : 0 }}
@@ -211,7 +211,7 @@ export default function CheckoutPage() {
                 </div>
 
                 {/* Form */}
-                <div className="grid grid-cols-2 gap-5">
+                <div className="grid grid-cols-1 gap-5 min-[360px]:grid-cols-2">
                   <div className="col-span-2">
                     <label className="block text-xs font-bold uppercase tracking-wider opacity-60 mb-2 text-foreground">Número do Cartão</label>
                     <input 

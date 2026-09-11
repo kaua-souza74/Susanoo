@@ -131,7 +131,7 @@ export default function AdminTrello() {
          : 'Todos';
 
    return (
-       <div className="flex-1 overflow-x-hidden p-8 md:p-12 2xl:p-16 bg-[#050505] flex flex-col h-full relative">
+       <div className="relative flex h-full flex-1 flex-col overflow-x-hidden bg-[#050505] p-4 sm:p-8 md:p-12 2xl:p-16">
            
            <div className="flex flex-col md:flex-row justify-between md:items-end gap-6 mb-10 shrink-0">
                <div>
@@ -154,7 +154,7 @@ export default function AdminTrello() {
                               initial={{opacity:0, y:-10, scale: 0.98}} 
                               animate={{opacity:1, y:0, scale: 1}} 
                               exit={{opacity:0, y:-10, scale: 0.98}} 
-                              className="absolute top-[110%] right-0 w-full min-w-[320px] bg-[#0a0a0c]/95 border border-[#222] rounded-3xl shadow-3xl flex flex-col overflow-hidden backdrop-blur-xl z-50 p-2 gap-1"
+                              className="absolute right-0 top-[110%] z-50 flex w-full min-w-0 flex-col gap-1 overflow-hidden rounded-3xl border border-[#222] bg-[#0a0a0c]/95 p-2 shadow-3xl backdrop-blur-xl sm:min-w-[320px]"
                            >
                                <div className="p-2 border-b border-[#222] mb-1 flex items-center gap-2">
                                    <Search className="w-4 h-4 text-foreground/30 shrink-0" />

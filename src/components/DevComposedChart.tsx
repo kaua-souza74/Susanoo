@@ -81,10 +81,10 @@ export function DevComposedChart({ customData }: { customData?: DataPoint[] }) {
   const activePoint = hoveredIndex !== null ? points[hoveredIndex] : points[points.length - 1];
 
   return (
-    <div className="bg-surface border border-surface-border rounded-2xl p-6 shadow-sm transition-colors">
+    <div className="rounded-3xl bg-surface p-6 shadow-[0_18px_50px_rgba(15,23,42,0.055)] ring-1 ring-foreground/7 transition-colors dark:shadow-black/20">
       
       {/* Header Minimalista */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-surface-border">
+      <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h3 className="text-base font-bold text-foreground">
             Faturamento e Entregas
@@ -107,7 +107,7 @@ export function DevComposedChart({ customData }: { customData?: DataPoint[] }) {
             </span>
           </div>
 
-          <div className="flex items-center bg-background border border-surface-border p-1 rounded-xl">
+          <div className="flex items-center rounded-xl bg-background p-1 ring-1 ring-foreground/8">
             {(["15d", "30d", "90d"] as const).map(range => (
               <button
                 key={range}

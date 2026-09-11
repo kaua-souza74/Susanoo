@@ -6,8 +6,16 @@ import { supabase } from "@/lib/supabase";
 import { getAccountStorageKey, getAuthenticatedAccountType } from "@/lib/account";
 import { useRouter } from "next/navigation";
 
-const EditableField = ({ label, value, onChange, placeholder, isTextarea = false, className = "" }: any) => {
+const DEFAULT_BIOS = ["Desenvolvedor de soluções na Susanoo.", "Comerciante inovando com a Susanoo."];
+const DEFAULT_PROFILE_LOCATION = "São Paulo, SP";
+const STATIC_PROFILE_RATING = "5.0 (12 avaliações)";
+
+const EditableField = ({ label, value, onChange, onEditStart, placeholder, isTextarea = false, className = "" }: any) => {
     const [isEditing, setIsEditing] = useState(false);
+    const startEditing = () => {
+        onEditStart?.();
+        setIsEditing(true);
+    };
     return (
         <div className={`relative flex flex-col gap-1.5 ${className}`}>
             <label className="text-[11px] font-bold text-foreground/50 uppercase tracking-wider">
@@ -36,11 +44,11 @@ const EditableField = ({ label, value, onChange, placeholder, isTextarea = false
                 </div>
             ) : (
                 <div 
-                    onClick={() => setIsEditing(true)}
+                    onClick={startEditing}
                     className="w-full bg-surface border border-surface-border/60 hover:border-accent/40 rounded-xl px-4 py-3.5 text-sm font-medium transition-all text-foreground flex justify-between items-center cursor-pointer hover:bg-accent/5 hover:shadow-sm"
                 >
                     <span className={!value ? "text-foreground/30 italic" : "whitespace-pre-line font-medium"}>{value || placeholder || "Não informado"}</span>
-                    <button onClick={(e) => { e.stopPropagation(); setIsEditing(true); }} className="text-foreground/40 hover:text-accent p-1.5 cursor-pointer ml-2 shrink-0 transition-colors">
+                    <button onClick={(e) => { e.stopPropagation(); startEditing(); }} className="text-foreground/40 hover:text-accent p-1.5 cursor-pointer ml-2 shrink-0 transition-colors">
                         <Pencil className="w-3.5 h-3.5" />
                     </button>
                 </div>
@@ -172,8 +180,8 @@ export default function ProfilePage() {
             const mergedEmail = dbProfile?.email || user?.email || meta.email || localData.email || "";
             const mergedAvatar = dbProfile?.avatar_url || meta.avatar_url || localData.avatar_url || "";
             const mergedBanner = meta.banner_url || localData.banner_url || "";
-            const mergedBio = dbProfile?.bio || meta.bio || localData.bio || (type === "Desenvolvedor" ? "Desenvolvedor de soluções na Susanoo." : "Comerciante inovando com a Susanoo.");
-            const mergedLocation = dbProfile?.location || meta.location || localData.location || (meta.city && meta.state ? `${meta.city}, ${meta.state}` : (localData.city && localData.state ? `${localData.city}, ${localData.state}` : "São Paulo, SP"));
+            const mergedBio = dbProfile?.bio || meta.bio || localData.bio || (type === "Desenvolvedor" ? DEFAULT_BIOS[0] : DEFAULT_BIOS[1]);
+            const mergedLocation = dbProfile?.location || meta.location || localData.location || (meta.city && meta.state ? `${meta.city}, ${meta.state}` : (localData.city && localData.state ? `${localData.city}, ${localData.state}` : DEFAULT_PROFILE_LOCATION));
             const mergedSkills = dbProfile?.skills || meta.skills || localData.specialties || localData.skills || [];
 
             const initialFormData = {
@@ -217,7 +225,7 @@ export default function ProfilePage() {
 
                 const { data: dbLikes } = await supabase
                     .from('likes')
-                    .select('project_id, projects(id, name, cover_url, deploy_url)')
+                    .select('project_id, projects(id, name, price, cover_url, deploy_url)')
                     .eq('user_id', user.id);
                 if (dbLikes) {
                     const mappedLikes = dbLikes
@@ -225,7 +233,7 @@ export default function ProfilePage() {
                         .map((l: any) => ({
                             id: l.projects.id,
                             name: l.projects.name,
-                            price: 49.90,
+                            price: Number(l.projects.price ?? 0),
                             cover_url: l.projects.cover_url || "",
                             deploy_url: l.projects.deploy_url
                         }));
@@ -320,6 +328,10 @@ export default function ProfilePage() {
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'avatar' | 'banner') => {
         const file = e.target.files?.[0];
         if (!file) return;
+        const fieldKey = type === 'avatar' ? 'avatar_url' : 'banner_url';
+        const previousValue = formData[fieldKey];
+        const instantPreviewUrl = URL.createObjectURL(file);
+        setFormData(prev => ({ ...prev, [fieldKey]: instantPreviewUrl }));
         setLoading(true);
         try {
             const maxWidth = type === 'avatar' ? 400 : 1200;
@@ -350,7 +362,6 @@ export default function ProfilePage() {
                 // Fallback automático para o dataUrl otimizado
             }
 
-            const fieldKey = type === 'avatar' ? 'avatar_url' : 'banner_url';
             setFormData(prev => ({
                 ...prev,
                 [fieldKey]: finalUrl
@@ -370,8 +381,10 @@ export default function ProfilePage() {
             showToast(`${type === 'avatar' ? 'Foto de perfil' : 'Banner'} atualizado com sucesso!`);
         } catch (error) {
             console.error("Erro no processamento da imagem:", error);
+            setFormData(prev => ({ ...prev, [fieldKey]: previousValue }));
             showToast("Erro ao processar imagem.");
         } finally {
+            URL.revokeObjectURL(instantPreviewUrl);
             setLoading(false);
         }
     };
@@ -549,7 +562,7 @@ export default function ProfilePage() {
                         <input type="file" ref={avatarInputRef} hidden accept="image/*" onChange={(e) => handleImageUpload(e, 'avatar')} />
                         <div className="w-24 h-24 md:w-28 md:h-28 rounded-full bg-background border-4 border-background overflow-hidden relative shadow-2xl flex items-center justify-center">
                             {formData.avatar_url ? (
-                                <img src={formData.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                                <img src={formData.avatar_url} alt="Avatar" loading="eager" decoding="async" className="w-full h-full object-cover" />
                             ) : (
                                 <span className="text-xl font-black text-foreground/20 uppercase tracking-tighter">PERFIL</span>
                             )}
@@ -567,8 +580,8 @@ export default function ProfilePage() {
                             </span>
                         </div>
                         <p className="text-white/80 drop-shadow-md font-medium text-xs sm:text-sm flex items-center justify-center sm:justify-start gap-4 mt-2">
-                            <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5"/> {formData.location || "Localização não preenchida"}</span>
-                            <span className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400"/> 5.0 (12 avaliações)</span>
+                            <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5"/> {formData.location || DEFAULT_PROFILE_LOCATION}</span>
+                            <span className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400"/> {STATIC_PROFILE_RATING}</span>
                         </p>
                     </div>
 
@@ -582,7 +595,7 @@ export default function ProfilePage() {
             </div>
 
             {/* Content Section */}
-            <div className="w-full max-w-5xl mx-auto pt-24 px-6 flex flex-col gap-8">
+            <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 pb-20 pt-6 sm:px-6 sm:pt-10 md:gap-8 md:pt-16">
                 {/* Tabs */}
                 <div className="flex items-center gap-4 border-b border-surface-border pb-4">
                     <button 
@@ -619,7 +632,7 @@ export default function ProfilePage() {
                         <motion.div key="informacoes" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="grid grid-cols-1 md:grid-cols-3 gap-8">
                             {/* Left Column (Main forms) */}
                             <div className="md:col-span-2 space-y-8">
-                                <div className="bg-surface border border-surface-border rounded-3xl p-8 shadow-xl shadow-black/5 hover:border-accent/15 transition-all duration-300">
+                                <div className="rounded-3xl border border-surface-border bg-surface p-5 shadow-xl shadow-black/5 transition-all duration-300 hover:border-accent/15 sm:p-8">
                                     <div className="flex items-center justify-between mb-8 pb-4 border-b border-surface-border">
                                         <h3 className="text-xl font-bold text-foreground tracking-tight flex items-center gap-3">
                                             <span className="w-1.5 h-6 bg-accent rounded-full"></span>
@@ -667,6 +680,9 @@ export default function ProfilePage() {
                                             label="Biografia / Descrição"
                                             value={formData.bio}
                                             isTextarea={true}
+                                            onEditStart={() => {
+                                                if (DEFAULT_BIOS.includes(formData.bio)) setFormData({...formData, bio: ""});
+                                            }}
                                             onChange={(val: string) => setFormData({...formData, bio: val})}
                                         />
 
@@ -768,7 +784,7 @@ export default function ProfilePage() {
                                     </div>
                                 </div>
 
-                                <div className="bg-surface border border-surface-border rounded-3xl p-8 shadow-xl shadow-black/5 hover:border-accent/15 transition-all duration-300">
+                                <div className="rounded-3xl border border-surface-border bg-surface p-5 shadow-xl shadow-black/5 transition-all duration-300 hover:border-accent/15 sm:p-8">
                                     <h3 className="text-xl font-bold mb-6 text-foreground flex items-center gap-3">
                                         <span className="w-1.5 h-6 bg-accent rounded-full"></span>
                                         Links e Redes

@@ -13,13 +13,20 @@ import {
   Star,
   ChevronDown,
   ChevronUp,
-  HelpCircle
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Logo } from "@/components/logo";
 import { useRouter } from "next/navigation";
 import { useScroll, useTransform } from "framer-motion";
 import { ShaderAnimation } from "@/components/ui/shader-animation";
+import StatsCounter from "@/components/StatsCounter";
+import FlipText from "@/components/FlipText";
+
+const EXPERIENCE_PHRASES = [
+  "Clareza em cada etapa.",
+  "Tecnologia que gera confiança.",
+  "Do primeiro contato ao site no ar.",
+] as const;
 
 export default function Home() {
   const router = useRouter();
@@ -33,8 +40,6 @@ export default function Home() {
   const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
   const scale = useTransform(scrollYProgress, [0, 0.5], [1, 0.9]);
   const y = useTransform(scrollYProgress, [0, 0.5], [0, 100]);
-  const sectionY = useTransform(scrollYProgress, [0, 0.8], [150, 0]);
-  const sectionScale = useTransform(scrollYProgress, [0, 0.8], [0.93, 1]);
 
   return (
     <div className="min-h-screen bg-background text-foreground transition-colors selection:bg-accent selection:text-white">
@@ -74,10 +79,10 @@ export default function Home() {
             className="flex flex-col sm:flex-row items-center justify-center gap-4 md:gap-8 relative z-50 px-4"
           >
             <button 
-              onClick={() => router.push('/register?role=client')}
+              onClick={() => router.push('/login?role=client')}
               className="w-full sm:w-auto group bg-accent text-white font-black text-base md:text-xl px-8 py-5 md:px-14 md:py-8 rounded-2xl md:rounded-[3rem] hover:scale-105 md:hover:scale-110 md:hover:-rotate-2 active:scale-95 transition-all shadow-[0_20px_40px_-15px_rgba(168,85,247,0.5)] flex flex-col items-center justify-center gap-1 md:gap-2 relative z-[60] cursor-pointer"
             >
-              <span className="flex items-center gap-2">Quero um site <ArrowRight className="w-5 h-5 md:w-7 md:h-7 group-hover:translate-x-2 transition-transform" /></span>
+              <span className="flex items-center gap-2">Sou cliente <ArrowRight className="w-5 h-5 md:w-7 md:h-7 group-hover:translate-x-2 transition-transform" /></span>
               <span className="text-xs md:text-sm font-medium opacity-80 font-normal normal-case">Para clientes.</span>
             </button>
             <button 
@@ -201,6 +206,25 @@ export default function Home() {
                 </div>
                 <p className="text-sm md:text-base text-background/80 relative z-10 font-bold">Estamos disponíveis para acompanhar o funcionamento do seu projeto e oferecer suporte sempre que necessário.</p>
              </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Social Proof */}
+      <section className="relative z-10 overflow-hidden bg-[#070707] px-4 py-20 text-white md:px-6 md:py-28">
+        <div className="pointer-events-none absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/20 blur-[110px]" aria-hidden="true" />
+        <div className="relative mx-auto grid max-w-7xl items-center gap-12 text-center lg:grid-cols-[0.8fr_1.2fr] lg:text-left">
+          <div>
+            <p className="mb-3 text-[10px] font-black uppercase tracking-[0.3em] text-violet-400">Resultados que ganham forma</p>
+            <div className="flex items-baseline justify-center gap-3 lg:justify-start">
+              <StatsCounter value={1200} suffix="+" className="text-6xl font-black italic tracking-[-0.07em] sm:text-7xl md:text-8xl" />
+            </div>
+            <p className="mt-2 text-sm font-bold uppercase tracking-[0.18em] text-white/45">clientes atendidos</p>
+          </div>
+
+          <div className="rounded-[2rem] bg-white/[0.035] px-5 py-10 ring-1 ring-inset ring-white/10 sm:px-10 md:py-14">
+            <p className="mb-5 text-[10px] font-black uppercase tracking-[0.28em] text-white/35">A experiência Susanoo</p>
+            <FlipText phrases={EXPERIENCE_PHRASES} className="text-3xl font-black uppercase italic leading-[0.95] tracking-[-0.045em] sm:text-4xl md:text-5xl" />
           </div>
         </div>
       </section>

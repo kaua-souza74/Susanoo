@@ -2,17 +2,10 @@
 
 import { motion } from "framer-motion";
 import { useTheme } from "./theme-provider";
-import { useEffect, useState } from "react";
 
 export function ThemeToggle({ className = "" }: { className?: string }) {
   const { theme, toggleTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const isDark = mounted ? theme === "dark" : true;
+  const isDark = theme === "dark";
 
   return (
     <button
@@ -36,6 +29,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
       >
         <clipPath id="susanoo-theme-toggle-clip">
           <motion.path
+            initial={false}
             animate={{ 
               y: isDark ? 10 : 0, 
               x: isDark ? -12 : 0 
@@ -46,6 +40,8 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
         </clipPath>
         <g clipPath="url(#susanoo-theme-toggle-clip)">
           <motion.circle
+            initial={false}
+            r={isDark ? 10 : 7.5}
             animate={{ 
               r: isDark ? 10 : 7.5,
               fill: isDark ? "#fbbf24" : "#f59e0b"
@@ -55,6 +51,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
             cy="16"
           />
           <motion.g
+            initial={false}
             animate={{
               rotate: isDark ? -100 : 0,
               scale: isDark ? 0.3 : 1,

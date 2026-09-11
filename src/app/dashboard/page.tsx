@@ -11,28 +11,14 @@ import {
   ShoppingBag,
   Zap,
   Shield,
-  ThumbsUp,
   ArrowLeft,
   User,
-  Briefcase,
-  TrendingUp,
-  DollarSign,
   MessageCircle,
-  FileText,
-  Sparkles,
-  ArrowRight,
   Calendar,
   CheckCircle2,
   Code2,
-  GitCommit,
-  Clock,
-  Flame,
-  Activity,
-  Award,
-  ArrowUpRight,
   Plus,
-  ChevronDown,
-  SlidersHorizontal
+  ChevronDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
@@ -40,18 +26,28 @@ import { useCart } from "@/components/CartContext";
 import { DevComposedChart } from "@/components/DevComposedChart";
 import { ALL_COMMERCE_TYPES, matchProjectCommerceType } from "@/lib/commerceCategories";
 import { ClientInterestSurveyModal } from "@/components/ClientInterestSurveyModal";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getAuthenticatedAccountType, getAccountStorageKey } from "@/lib/account";
+import { getAuthenticatedAccountType, getAccountStorageKey, hasCompletedClientProfile } from "@/lib/account";
 import { ReviewsSection } from "@/components/ReviewsSection";
+import { DashboardHeaderActions } from "@/components/DashboardHeaderActions";
 
-type MainMode = "Susanoo" | "Geral";
+const normalizeSearchValue = (value: unknown) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+const getProjectPrice = (value: unknown) => {
+  const price = Number(value);
+  return Number.isFinite(price) ? price : 0;
+};
 
 function DiscoverHomeContent() {
    const router = useRouter();
    const searchParams = useSearchParams();
    const [userType, setUserType] = useState<"Comércio" | "Desenvolvedor">("Comércio");
-   const [mainMode, setMainMode] = useState<MainMode>("Susanoo");
    const [selectedType, setSelectedType] = useState<string>("all");
    const [selectedOrigin, setSelectedOrigin] = useState<string>("all");
    const [isTypeMenuOpen, setIsTypeMenuOpen] = useState(false);
@@ -68,23 +64,11 @@ function DiscoverHomeContent() {
    const [loading, setLoading] = useState(true);
    const [toastMsg, setToastMsg] = useState<string | null>(null);
    const [activeProduct, setActiveProduct] = useState<any | null>(null);
-   const [favorited, setFavorited] = useState(false);
-   const [liked, setLiked] = useState(false);
    const [activeTab, setActiveTab] = useState<"detalhes" | "especificacoes" | "comentarios">("detalhes");
    const [likedProjectIds, setLikedProjectIds] = useState<string[]>([]);
    const [purchasedProjects, setPurchasedProjects] = useState<any[]>([]);
 
-   // Checklist & Onboarding states (inicializados como ocultos para evitar flash de renderização antes de carregar o estado da conta)
-   const [accountLoaded, setAccountLoaded] = useState(false);
-   const [storeProfileCompleted, setStoreProfileCompleted] = useState(true);
-   const [hasProjects, setHasProjects] = useState(false);
-   const [hasExploredDevelopers, setHasExploredDevelopers] = useState(false);
-   const [hasChat, setHasChat] = useState(false);
-   const [hasReview, setHasReview] = useState(false);
-   const [onboardingDismissed, setOnboardingDismissed] = useState(true);
-   const [showProgressCard, setShowProgressCard] = useState(false);
-
-   const { addToCart, items, setIsCartOpen } = useCart();
+   const { addToCart, items } = useCart();
 
    const isPurchased = (proj: any) => {
      if (!proj) return false;
@@ -108,50 +92,21 @@ function DiscoverHomeContent() {
                .from('projects')
                .select('id, name')
                .eq('client_id', userId);
-             userPurchasesList = userPurchases || [];
-             setPurchasedProjects(userPurchasesList);
-             if (userPurchasesList.length > 0) {
-               setHasProjects(true);
-             }
+              userPurchasesList = userPurchases || [];
+              setPurchasedProjects(userPurchasesList);
            } catch (e) {
              console.error("Erro ao carregar compras do usuário:", e);
            }
          }
 
-         const [profileKey, projectKey, developersKey, chatKey, reviewKey, onboardingKey, likeKey, progressKey] = await Promise.all([
-           getAccountStorageKey("store-profile-completed"), 
-           getAccountStorageKey("first-project"), 
-           getAccountStorageKey("explored-developers"), 
-           getAccountStorageKey("first-chat"), 
-           getAccountStorageKey("first-review"), 
-           getAccountStorageKey("onboarding-dismissed"), 
-           getAccountStorageKey("liked_projects"), 
-           getAccountStorageKey("progress-card-dismissed")
-         ]);
-
-         const isProfileDone = localStorage.getItem(profileKey) === "true" || localStorage.getItem("susanoo_store_profile_completed") === "true";
-         const isProjDone = localStorage.getItem(projectKey) === "true" || userPurchasesList.length > 0;
-         const isDevDone = localStorage.getItem(developersKey) === "true";
-         const isChatDone = localStorage.getItem(chatKey) === "true";
-         const isReviewDone = localStorage.getItem(reviewKey) === "true";
-         const isOnboardDismissed = localStorage.getItem(onboardingKey) === "true";
-         const isProgressDismissed = localStorage.getItem(progressKey) === "true";
-
-         setStoreProfileCompleted(isProfileDone);
-         setHasProjects(isProjDone);
-         setHasExploredDevelopers(isDevDone);
-         setHasChat(isChatDone);
-         setHasReview(isReviewDone);
-         setOnboardingDismissed(isOnboardDismissed);
-         setShowProgressCard(!isProgressDismissed);
+          const likeKey = await getAccountStorageKey("liked_projects");
          
          if (userId) {
            try {
              const { data: dbLikes } = await supabase.from('likes').select('project_id').eq('user_id', userId);
-             if (dbLikes && dbLikes.length > 0) {
-               setLikedProjectIds(dbLikes.map((l: any) => l.project_id));
-               setAccountLoaded(true);
-               return;
+              if (dbLikes && dbLikes.length > 0) {
+                setLikedProjectIds(dbLikes.map((l: any) => l.project_id));
+                return;
              }
            } catch (e) {
              console.error("Erro ao carregar curtidas do banco:", e);
@@ -161,9 +116,9 @@ function DiscoverHomeContent() {
          // Curtidas vinculadas por conta — chave única por user.id
          const storedLikes = JSON.parse(localStorage.getItem(likeKey) || '[]');
          setLikedProjectIds(storedLikes.map((p: any) => p.id));
-       } finally {
-         setAccountLoaded(true);
-       }
+        } catch (error) {
+          console.error("Erro ao carregar a conta:", error);
+        }
      };
      loadAccount();
 
@@ -220,49 +175,35 @@ function DiscoverHomeContent() {
      fetchProjects();
 
      // Escuta em tempo real para novos sites adicionados/publicados no banco
-     const channel = supabase.channel('marketplace-projects-realtime')
+     const channel = supabase.channel(`marketplace-projects-realtime-${crypto.randomUUID()}`)
        .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => {
          fetchProjects();
        })
        .subscribe();
 
-     // Listen to layout completion updates
-     const handleProfileComplete = () => {
-       getAccountStorageKey("store-profile-completed").then(key => setStoreProfileCompleted(localStorage.getItem(key) === "true" || localStorage.getItem("susanoo_store_profile_completed") === "true"));
-     };
-     window.addEventListener("profileCompletedChanged", handleProfileComplete);
-     return () => {
-       supabase.removeChannel(channel);
-       window.removeEventListener("profileCompletedChanged", handleProfileComplete);
-     };
+      return () => {
+        supabase.removeChannel(channel);
+      };
    }, []);
 
    const openProduct = (proj: any) => {
      setActiveProduct(proj);
      setProductViewsCount(prev => prev + 1);
-     setFavorited(false);
-     setLiked(false);
      setActiveTab("detalhes");
    };
 
-   const handleAddToCart = (proj: any, e?: React.MouseEvent) => {
+   const handleAddToCart = async (proj: any, e?: React.MouseEvent) => {
      e?.stopPropagation();
-     addToCart({ id: proj.id, name: proj.name, price: proj.price || 49.90, cover_url: proj.cover_url });
-     getAccountStorageKey("first-project").then(key => localStorage.setItem(key, "true"));
-     setHasProjects(true);
+     if (userType === "Comércio" && !(await hasCompletedClientProfile())) {
+       sessionStorage.setItem("susanoo_flash_toast", "Complete os dados essenciais do perfil para continuar com a compra.");
+       setActiveProduct(null);
+       router.push("/dashboard/profile?intent=purchase");
+       return;
+     }
+     addToCart({ id: proj.id, name: proj.name, price: getProjectPrice(proj.price), cover_url: proj.cover_url });
    };
 
    const isInCart = (id: string) => items.some(i => i.id === id);
-
-   const dismissOnboarding = async () => {
-     localStorage.setItem(await getAccountStorageKey("onboarding-dismissed"), "true");
-     setOnboardingDismissed(true);
-   };
-
-   const handleDismissProgressCard = async () => {
-     localStorage.setItem(await getAccountStorageKey("progress-card-dismissed"), "true");
-     setShowProgressCard(false);
-   };
 
    const toggleFavorite = async (project: any) => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -310,16 +251,6 @@ function DiscoverHomeContent() {
         }
       }
     }, [loading, projects, searchParams]);
-
-   const markDevelopersExplored = async () => {
-     localStorage.setItem(await getAccountStorageKey("explored-developers"), "true");
-     setHasExploredDevelopers(true);
-   };
-
-   const markProjectsExplored = async () => {
-     localStorage.setItem(await getAccountStorageKey("first-project"), "true");
-     setHasProjects(true);
-   };
 
     // Fechar menu de tipos ao clicar fora
     useEffect(() => {
@@ -408,10 +339,19 @@ function DiscoverHomeContent() {
       return tags.slice(0, 3);
     };
 
+    const normalizedSearch = normalizeSearchValue(search);
     const filtered = projects.filter(proj => {
-       const matchSearch = !search || 
-         (proj.name || "").toLowerCase().includes(search.toLowerCase()) ||
-         (proj.category || "").toLowerCase().includes(search.toLowerCase());
+       const searchableValues = [
+         proj.name,
+         proj.category,
+         proj.description,
+         proj.author_name,
+         proj.developer_name,
+         ...(Array.isArray(proj.technologies) ? proj.technologies : []),
+         ...(Array.isArray(proj.tags) ? proj.tags : proj.tags ? [proj.tags] : []),
+         ...getProjectTags(proj),
+       ];
+       const matchSearch = !normalizedSearch || searchableValues.some((value) => normalizeSearchValue(value).includes(normalizedSearch));
        
        const isSusanoo = proj.is_official === true || proj.created_by_susanoo === true || !proj.developer_id;
        let matchOrigin = true;
@@ -422,39 +362,37 @@ function DiscoverHomeContent() {
 
        return matchSearch && matchOrigin && matchType;
     });
-
    // RENDER DEVELOPER DASHBOARD - CLEAN & MINIMALIST
    if (userType === "Desenvolvedor") {
      return (
-       <div className="flex-1 overflow-y-auto w-full bg-background text-foreground transition-colors duration-300 custom-scrollbar">
-         {/* Header Clean */}
-         <div className="flex items-center justify-between p-4 px-6 md:px-10 border-b border-surface-border bg-background/80 backdrop-blur-md sticky top-0 z-50">
+       <div className="custom-scrollbar flex-1 overflow-y-auto bg-background text-foreground">
+         <div className="sticky top-0 z-50 flex items-center justify-between gap-3 bg-background/78 px-4 py-3 shadow-[0_10px_30px_rgba(15,23,42,0.035)] backdrop-blur-xl sm:px-6 sm:py-4 md:px-10 dark:shadow-black/10">
            <div>
-             <h1 className="font-bold text-base text-foreground">Painel do Desenvolvedor</h1>
-             <p className="text-xs text-foreground/50">Visão geral de projetos e faturamento</p>
+             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-accent">Workspace</span>
+             <h1 className="text-lg font-black tracking-tight text-foreground">Painel do Desenvolvedor</h1>
            </div>
-           <div className="flex items-center gap-3">
+           <div className="flex items-center gap-2">
              <button 
                onClick={() => router.push("/dashboard/chat")}
-               className="px-4 py-2 bg-accent hover:bg-accent/90 text-white rounded-xl font-bold text-xs transition-colors flex items-center gap-2 cursor-pointer"
+               className="hidden h-11 items-center gap-2 rounded-2xl bg-foreground px-4 text-xs font-black text-background transition-all hover:-translate-y-0.5 sm:flex"
              >
                <MessageCircle className="w-3.5 h-3.5" /> Mensagens
              </button>
            </div>
          </div>
 
-         <div className="w-full max-w-6xl mx-auto py-8 px-6 md:px-10 space-y-8 pb-24">
+         <div className="mx-auto w-full max-w-[1440px] space-y-6 px-4 py-6 pb-24 sm:px-6 sm:py-8 md:px-10">
            {/* Boas-vindas simples */}
            <div>
-             <h2 className="text-2xl font-black text-foreground">Visão Geral</h2>
+             <h2 className="text-3xl font-black uppercase italic tracking-[-0.045em] text-foreground">Visão Geral</h2>
              <p className="text-foreground/50 text-sm mt-0.5">
                Acompanhe suas entregas, faturamento e solicitações de clientes.
              </p>
            </div>
 
            {/* Cards de Métricas Minimalistas 100% Conectados ao Banco */}
-           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-             <div className="bg-surface border border-surface-border rounded-2xl p-5 shadow-sm">
+           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+             <div className="rounded-3xl bg-surface p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)] ring-1 ring-foreground/7 dark:shadow-black/20">
                <span className="text-xs font-semibold text-foreground/50 block mb-1">Faturamento Acumulado</span>
                <p className="text-2xl font-black text-foreground">
                  {devRevenue > 0 
@@ -466,7 +404,7 @@ function DiscoverHomeContent() {
                </span>
              </div>
 
-             <div className="bg-surface border border-surface-border rounded-2xl p-5 shadow-sm">
+             <div className="rounded-3xl bg-surface p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)] ring-1 ring-foreground/7 dark:shadow-black/20">
                <span className="text-xs font-semibold text-foreground/50 block mb-1">Projetos em Andamento</span>
                <p className="text-2xl font-black text-foreground">
                  {devProjects.length} {devProjects.length === 1 ? 'projeto' : 'projetos'}
@@ -476,7 +414,7 @@ function DiscoverHomeContent() {
                </span>
              </div>
 
-             <div className="bg-surface border border-surface-border rounded-2xl p-5 shadow-sm">
+             <div className="rounded-3xl bg-surface p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)] ring-1 ring-foreground/7 dark:shadow-black/20">
                 <span className="text-xs font-semibold text-foreground/50 block mb-1">Tempo Médio de Entrega</span>
                 <p className="text-2xl font-black text-foreground">
                   {calculateAvgDeliveryDays(devProjects) || "—"}
@@ -486,7 +424,7 @@ function DiscoverHomeContent() {
                 </span>
               </div>
 
-              <div className="bg-surface border border-surface-border rounded-2xl p-5 shadow-sm">
+              <div className="rounded-3xl bg-surface p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)] ring-1 ring-foreground/7 dark:shadow-black/20">
                 <span className="text-xs font-semibold text-foreground/50 block mb-1">Avaliação dos Clientes</span>
                 <p className="text-2xl font-black text-foreground">
                   {devReviewCount > 0 ? `${devRating.toFixed(1)} ★` : "—"}
@@ -501,10 +439,10 @@ function DiscoverHomeContent() {
             <DevComposedChart customData={devChartData} />
 
            {/* Seção de Tecnologias & Segmentos Conectados ao Banco */}
-           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
              
              {/* Segmentos Mais Procurados (Agro, Barbearia, Confeitaria, etc.) */}
-             <div className="bg-surface border border-surface-border rounded-2xl p-6 shadow-sm">
+             <div className="rounded-3xl bg-surface p-6 shadow-[0_18px_50px_rgba(15,23,42,0.055)] ring-1 ring-foreground/7 dark:shadow-black/20">
                <div className="mb-5 pb-3 border-b border-surface-border">
                  <div className="flex items-center justify-between">
                    <h3 className="text-sm font-bold text-foreground">Segmentos Mais Procurados</h3>
@@ -553,7 +491,7 @@ function DiscoverHomeContent() {
              </div>
 
              {/* Tecnologias & Recursos Mais Desejados */}
-             <div className="bg-surface border border-surface-border rounded-2xl p-6 shadow-sm">
+             <div className="rounded-3xl bg-surface p-6 shadow-[0_18px_50px_rgba(15,23,42,0.055)] ring-1 ring-foreground/7 dark:shadow-black/20">
                <div className="mb-5 pb-3 border-b border-surface-border">
                  <h3 className="text-sm font-bold text-foreground">Tecnologias Mais Solicitadas</h3>
                  <p className="text-xs text-foreground/50">Recursos e integrações mais votados pelos clientes</p>
@@ -604,7 +542,7 @@ function DiscoverHomeContent() {
            </div>
 
            {/* Projetos Recentes do Desenvolvedor */}
-           <div className="bg-surface border border-surface-border rounded-2xl p-6 shadow-sm">
+           <div className="rounded-3xl bg-surface p-6 shadow-[0_18px_50px_rgba(15,23,42,0.055)] ring-1 ring-foreground/7 dark:shadow-black/20">
              <div className="mb-5 pb-3 border-b border-surface-border flex items-center justify-between">
                <div>
                  <h3 className="text-sm font-bold text-foreground">Projetos em Andamento</h3>
@@ -643,7 +581,7 @@ function DiscoverHomeContent() {
                      <div className="space-y-0.5">
                        <h4 className="font-bold text-xs text-foreground">{p.name}</h4>
                        <p className="text-[11px] text-foreground/50">
-                         {p.category || "Site"} • <span className="font-semibold text-foreground">R$ {Number(p.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                         {p.category || "Site"} • <span className="font-semibold text-foreground">R$ {getProjectPrice(p.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                        </p>
                      </div>
                      <div className="flex items-center gap-3">
@@ -671,144 +609,41 @@ function DiscoverHomeContent() {
 
    // RENDER CLIENT DASHBOARD (MARKETPLACE)
    return (
-       <div className="flex-1 overflow-y-auto w-full bg-background text-foreground transition-colors duration-300">
-           {/* Header simples */}
-           <div className="flex items-center justify-between p-4 px-6 border-b border-surface-border bg-background/80 backdrop-blur-md sticky top-0 z-50">
-               <h1 className="font-black text-lg text-foreground">Marketplace</h1>
-               <button
-                 onClick={() => setIsCartOpen(true)}
-                 className="relative flex items-center justify-center bg-accent text-white w-12 h-12 rounded-full hover:scale-105 transition-all cursor-pointer shadow-lg shadow-accent/20"
-               >
-                 <ShoppingCart className="w-5 h-5" />
-                 {items.length > 0 && (
-                   <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-background">{items.length}</span>
-                 )}
-               </button>
+       <div className="flex-1 overflow-x-hidden overflow-y-auto bg-background text-foreground">
+           <div className="sticky top-0 z-50 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 bg-background/78 px-4 py-3 shadow-[0_10px_30px_rgba(15,23,42,0.035)] backdrop-blur-xl sm:px-6 sm:py-4 md:grid-cols-[auto_minmax(18rem,1fr)_auto] dark:shadow-black/10">
+               <div className="min-w-0">
+                 <span className="block text-[10px] font-black uppercase leading-none tracking-[0.2em] text-accent">Descobrir</span>
+                 <h1 className="mt-1 text-xl font-black leading-none tracking-tight text-foreground">Marketplace</h1>
+               </div>
+
+               <div className="col-span-2 row-start-2 w-full md:col-span-1 md:row-auto md:mx-auto md:max-w-2xl">
+                 <label htmlFor="marketplace-search" className="sr-only">Buscar sites no Marketplace</label>
+                 <div className="relative">
+                   <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground/35" />
+                   <input
+                     id="marketplace-search"
+                     type="search"
+                     value={search}
+                     onChange={(event) => setSearch(event.target.value)}
+                     placeholder="Buscar sites, categorias ou tecnologias"
+                     className="h-11 w-full rounded-2xl bg-surface/85 pl-11 pr-11 text-sm font-medium text-foreground shadow-sm ring-1 ring-inset ring-foreground/8 outline-none transition-all placeholder:text-foreground/30 hover:ring-foreground/15 focus:ring-2 focus:ring-accent"
+                   />
+                   {search ? (
+                     <button type="button" onClick={() => setSearch("")} aria-label="Limpar pesquisa" className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-xl text-foreground/35 hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+                       <X className="h-4 w-4" />
+                     </button>
+                   ) : null}
+                 </div>
+               </div>
+
+               <DashboardHeaderActions showCart />
            </div>
 
-           <div className="w-full max-w-[1600px] mx-auto py-10 px-6 space-y-8">
-               {/* 1. Onboarding Natural de Primeiro Acesso (Passo 1, 2, 3) */}
-               {accountLoaded && !onboardingDismissed && !(storeProfileCompleted && hasExploredDevelopers && hasProjects) && (
-                 <motion.div 
-                   initial={{ opacity: 0, y: -10 }}
-                   animate={{ opacity: 1, y: 0 }}
-                   exit={{ opacity: 0, y: -10 }}
-                   className="bg-accent/5 border border-accent/20 rounded-3xl p-6 relative overflow-hidden"
-                 >
-                   <button 
-                     onClick={dismissOnboarding} 
-                     className="absolute top-4 right-4 text-foreground/40 hover:text-foreground"
-                   >
-                     <X className="w-4 h-4" />
-                   </button>
-                   
-                   <div className="max-w-3xl">
-                     <span className="text-[10px] font-black uppercase tracking-[0.2em] text-accent mb-2 block">Primeiro Acesso</span>
-                     <h2 className="text-2xl font-black text-foreground mb-2">Bem-vindo à Susanoo! Vamos preparar sua conta.</h2>
-                     <p className="text-sm text-foreground/60 mb-6 font-medium">Siga estes 3 passos básicos para ter o melhor aproveitamento da nossa plataforma.</p>
-                     
-                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                       <Link href="/dashboard/profile" className={`bg-surface border hover:border-accent/30 p-4 rounded-2xl flex items-start gap-3 transition-colors ${storeProfileCompleted ? 'border-emerald-500/30' : 'border-surface-border'}`}>
-                         <span className={`text-lg font-black w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${storeProfileCompleted ? 'text-white bg-emerald-500' : 'text-accent bg-accent/10'}`}>
-                           {storeProfileCompleted ? <Check className="w-5 h-5" /> : "1"}
-                         </span>
-                         <div>
-                           <h4 className="font-bold text-sm text-foreground">{storeProfileCompleted ? "Perfil Completo" : "Complete seu perfil"}</h4>
-                           <p className="text-xs text-foreground/50 mt-1">Preencha sua Razão Social, CNPJ e CEP na aba de perfil.</p>
-                         </div>
-                       </Link>
-                       <Link onClick={markDevelopersExplored} href="/dashboard/developers" className={`bg-surface border hover:border-accent/30 p-4 rounded-2xl flex items-start gap-3 transition-colors ${hasExploredDevelopers ? 'border-emerald-500/30' : 'border-surface-border'}`}>
-                         <span className={`text-lg font-black w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${hasExploredDevelopers ? 'text-white bg-emerald-500' : 'text-accent bg-accent/10'}`}>
-                           {hasExploredDevelopers ? <Check className="w-5 h-5" /> : "2"}
-                         </span>
-                         <div>
-                           <h4 className="font-bold text-sm text-foreground">{hasExploredDevelopers ? "Profissionais Explorados" : "Encontre um profissional"}</h4>
-                           <p className="text-xs text-foreground/50 mt-1">Compare perfis e encontre o profissional ideal para o seu projeto.</p>
-                         </div>
-                       </Link>
-                       <Link onClick={markProjectsExplored} href="#templates-grid" className={`bg-surface border hover:border-accent/30 p-4 rounded-2xl flex items-start gap-3 transition-colors ${hasProjects ? 'border-emerald-500/30' : 'border-surface-border'}`}>
-                         <span className={`text-lg font-black w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${hasProjects ? 'text-white bg-emerald-500' : 'text-accent bg-accent/10'}`}>
-                           {hasProjects ? <Check className="w-5 h-5" /> : "3"}
-                         </span>
-                         <div>
-                           <h4 className="font-bold text-sm text-foreground">{hasProjects ? "Projeto Iniciado" : "Comece seu projeto"}</h4>
-                           <p className="text-xs text-foreground/50 mt-1">Explore os templates e contrate o desenvolvimento completo.</p>
-                         </div>
-                       </Link>
-                     </div>
-                   </div>
-                 </motion.div>
-               )}
-
-               {/* 2. Checklist Progressiva para incentivar o cliente */}
-               {accountLoaded && showProgressCard && (
-                 <div className="bg-surface border border-surface-border rounded-3xl p-6 shadow-sm relative">
-                   <button 
-                     onClick={handleDismissProgressCard} 
-                     className="absolute top-4 right-4 text-foreground/40 hover:text-foreground cursor-pointer"
-                     title="Remover card de progresso"
-                   >
-                     <X className="w-4 h-4" />
-                   </button>
-                   <h3 className="text-base font-black uppercase tracking-wider text-foreground/70 mb-4 pr-6">Seu Progresso de Configuração</h3>
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                     {[
-                       { label: "Perfil Preenchido", checked: storeProfileCompleted, link: "/dashboard/profile" },
-                       { label: "Profissionais explorados", checked: hasExploredDevelopers, link: "/dashboard/developers" },
-                       { label: "Explorar sites e templates", checked: hasProjects, link: "#templates-grid" }
-                     ].map((item, idx) => (
-                       <div 
-                         key={idx} 
-                         onClick={() => router.push(item.link)}
-                         className={`border rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all ${item.checked ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-600' : 'bg-background border-surface-border hover:border-foreground/20 text-foreground/60'}`}
-                       >
-                         <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${item.checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-surface-border'}`}>
-                           {item.checked && <Check className="w-3.5 h-3.5" />}
-                         </div>
-                         <span className="text-xs font-bold">{item.label}</span>
-                       </div>
-                     ))}
-                   </div>
-                 </div>
-               )}
-
-               {/* 3. Onboarding de Acompanhamento (Só aparece após ter projetos) */}
-               {hasProjects && (
-                 <div className="bg-gradient-to-r from-accent/10 to-transparent border border-accent/20 rounded-3xl p-6">
-                   <h3 className="text-lg font-black mb-2 flex items-center gap-2">
-                     <Sparkles className="w-5 h-5 text-accent" /> Site Ativo Detectado!
-                   </h3>
-                   <p className="text-sm text-foreground/60 mb-4 max-w-2xl">Use nossas ferramentas de acompanhamento para ver o andamento do seu site e se comunicar com o seu desenvolvedor.</p>
-                   <div className="flex flex-wrap gap-3">
-                     <button onClick={() => router.push("/dashboard/projects")} className="px-4 py-2 bg-foreground text-background font-bold text-xs rounded-xl uppercase tracking-wider hover:opacity-90 flex items-center gap-1.5 cursor-pointer">
-                       <ShoppingBag className="w-3.5 h-3.5" /> Ver Minhas Compras
-                     </button>
-                     <button onClick={() => router.push("/dashboard/timeline")} className="px-4 py-2 bg-surface border border-surface-border font-bold text-xs rounded-xl uppercase tracking-wider text-foreground hover:border-accent/40 flex items-center gap-1.5 cursor-pointer">
-                           <Calendar className="w-3.5 h-3.5 text-accent" /> Acompanhar Progresso
-                     </button>
-                     <button onClick={() => router.push("/dashboard/chat")} className="px-4 py-2 bg-surface border border-surface-border font-bold text-xs rounded-xl uppercase tracking-wider text-foreground hover:border-accent/40 flex items-center gap-1.5 cursor-pointer">
-                       <MessageCircle className="w-3.5 h-3.5 text-accent" /> Converse no Chat
-                     </button>
-                   </div>
-                 </div>
-               )}
-
+           <div className="mx-auto w-full max-w-[1600px] space-y-7 px-4 py-6 pb-24 sm:px-6 sm:py-8">
                 {/* Barra de pesquisa e Filtros Horizontais com Pills e Contadores (Estilo Referência) */}
                 <div id="templates-grid" className="space-y-4 pt-2">
-                    {/* Barra de Pesquisa */}
-                    <div className="relative max-w-xl">
-                        <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400" />
-                        <input 
-                           type="text" 
-                           value={search}
-                           onChange={(e) => setSearch(e.target.value)}
-                           placeholder="Buscar por nome, categoria ou tecnologia..."
-                           className="w-full bg-[#111114] border border-neutral-800 rounded-full py-2.5 pl-11 pr-4 text-xs md:text-sm text-foreground focus:border-neutral-700 outline-none transition-all placeholder:text-neutral-500 shadow-xs"
-                        />
-                    </div>
-
                     {/* Barra de Filtros - Tipos (Menu Customizado) e Origem Perfeitamente Visíveis */}
-                    <div className="flex flex-wrap items-center gap-4 py-2 text-xs">
+                    <div className="custom-scrollbar -mx-6 flex items-center gap-4 overflow-x-auto px-6 py-2 text-xs md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
                         {/* Grupo TIPOS com Menu Dropdown Customizado */}
                         <div className="flex items-center gap-2.5 shrink-0" ref={typeMenuRef}>
                             <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest pl-1">TIPOS</span>
@@ -902,8 +737,6 @@ function DiscoverHomeContent() {
                             </div>
                         </div>
 
-                        <div className="w-[1px] h-4 bg-neutral-800 shrink-0" />
-
                         {/* Grupo ORIGEM */}
                         <div className="flex items-center gap-2 shrink-0">
                             <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">ORIGEM</span>
@@ -931,6 +764,9 @@ function DiscoverHomeContent() {
                               );
                             })}
                         </div>
+                        <span className="ml-auto rounded-full bg-foreground/5 px-3 py-1.5 text-[11px] font-bold text-foreground/45" aria-live="polite">
+                          {filtered.length} {filtered.length === 1 ? "resultado" : "resultados"}
+                        </span>
                     </div>
                 </div>
 
@@ -983,10 +819,10 @@ function DiscoverHomeContent() {
                                  {/* Botão de curtir discreto */}
                                  <button
                                    onClick={(e) => { e.stopPropagation(); toggleFavorite(proj); }}
-                                   className={`absolute top-3 right-3 p-2 rounded-full backdrop-blur-md border transition-all ${
+                                   className={`absolute top-3 right-3 p-2 rounded-full backdrop-blur-md border transition-all opacity-100 ${
                                      likedProjectIds.includes(proj.id) 
                                        ? 'bg-red-500/20 border-red-500/40 text-red-500 opacity-100' 
-                                       : 'bg-black/50 border-white/10 text-white/70 hover:text-red-400 opacity-0 group-hover:opacity-100'
+                                       : 'bg-black/50 border-white/10 text-white/70 hover:text-red-400 md:opacity-0 md:group-hover:opacity-100'
                                    }`}
                                    title="Favoritar"
                                  >
@@ -1006,7 +842,7 @@ function DiscoverHomeContent() {
                                  </div>
 
                                  <span className="text-xs font-semibold text-neutral-400 shrink-0">
-                                   R$ {Number(proj.price || 49.90).toFixed(2).replace('.', ',')}
+                                   R$ {getProjectPrice(proj.price).toFixed(2).replace('.', ',')}
                                  </span>
                              </div>
 
@@ -1168,7 +1004,7 @@ function DiscoverHomeContent() {
                                </div>
 
                                {/* Direita: Compra e Ações (Fixo/Rolável) */}
-                               <div className="lg:col-span-4 p-8 bg-background flex flex-col justify-between h-full overflow-y-auto custom-scrollbar">
+                               <div className="custom-scrollbar flex h-full flex-col justify-between overflow-y-auto bg-background p-5 sm:p-8 lg:col-span-4">
                                    <div className="flex flex-col gap-6">
                                        <div>
                                            <div className="flex items-start justify-between gap-4 mb-2">
@@ -1188,7 +1024,7 @@ function DiscoverHomeContent() {
 
                                        <div className="bg-surface border border-surface-border rounded-2xl p-5">
                                            <p className="text-[10px] text-foreground/40 font-black uppercase tracking-widest mb-1.5">Preço Único</p>
-                                           <p className="text-4xl font-black text-foreground">R$ {(activeProduct.price || 49.90).toFixed(2).replace('.', ',')}</p>
+                                           <p className="text-4xl font-black text-foreground">R$ {getProjectPrice(activeProduct.price).toFixed(2).replace('.', ',')}</p>
                                            <p className="text-xs text-emerald-500 font-bold mt-1.5 flex items-center gap-1.5">
                                                <Zap className="w-3.5 h-3.5 fill-current" /> Acesso imediato no e-mail
                                            </p>
@@ -1247,7 +1083,7 @@ function DiscoverHomeContent() {
                                               </>
                                             )}
                                             <button 
-                                                onClick={() => router.push(`/preview/${activeProduct.id}`)}
+                                                onClick={() => window.open(`/preview/${activeProduct.id}`, "_blank", "noopener,noreferrer")}
                                                 className="w-full py-4.5 bg-surface border border-surface-border hover:border-foreground/20 text-foreground font-black rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider cursor-pointer"
                                             >
                                                 <ExternalLink className="w-4 h-4" /> Prévia Ao Vivo

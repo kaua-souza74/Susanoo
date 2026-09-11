@@ -57,7 +57,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 return {
                   id: p.id,
                   name: p.name,
-                  price: p.price || 0,
+                  price: Number(p.price ?? 0),
                   cover_url: p.photos?.[0] || "",
                 };
               });
@@ -147,4 +147,3 @@ export function useCart() {
   if (!context) throw new Error("useCart must be used within a CartProvider");
   return context;
 }
-

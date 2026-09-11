@@ -52,7 +52,7 @@ export default function AdminOverview() {
     ];
 
     return (
-        <div className="flex-1 overflow-y-auto p-10 2xl:p-16 bg-background transition-colors duration-300">
+        <div className="flex-1 overflow-x-hidden overflow-y-auto bg-background p-5 transition-colors duration-300 sm:p-8 lg:p-10 2xl:p-16">
             <motion.div initial={{opacity:0, y:-10}} animate={{opacity:1, y:0}} className="mb-14">
                 <h1 className="text-4xl md:text-5xl font-black tracking-tighter text-foreground mb-3">Suprema Mestra</h1>
                 <p className="text-foreground/60 font-medium text-lg max-w-2xl leading-relaxed">
