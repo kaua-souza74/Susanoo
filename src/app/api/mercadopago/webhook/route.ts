@@ -20,14 +20,13 @@ import {
 import { PaymentPersistenceConfigurationError } from "@/lib/mercadopago/supabase-admin";
 import {
   isProviderOrderId,
+  isWebhookTimestampValid,
   parseOrderWebhookNotification,
 } from "@/lib/mercadopago/webhook";
 
 export const runtime = "nodejs";
 
 const MAX_WEBHOOK_BYTES = 16_384;
-const SIGNATURE_TOLERANCE_SECONDS = 300;
-
 export async function POST(request: Request) {
   const secret = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
   if (!secret) {
@@ -36,20 +35,29 @@ export async function POST(request: Request) {
 
   const url = new URL(request.url);
   const queryDataId = url.searchParams.get("data.id");
+  const xSignature = request.headers.get("x-signature");
+  const xRequestId = request.headers.get("x-request-id");
+
+  if (!xRequestId?.trim()) {
+    return errorResponse("Assinatura inválida.", 401);
+  }
 
   try {
     WebhookSignatureValidator.validate({
-      xSignature: request.headers.get("x-signature"),
-      xRequestId: request.headers.get("x-request-id"),
+      xSignature,
+      xRequestId,
       dataId: queryDataId,
       secret,
-      toleranceSeconds: SIGNATURE_TOLERANCE_SECONDS,
     });
   } catch (error: unknown) {
     if (error instanceof InvalidWebhookSignatureError) {
       return errorResponse("Assinatura inválida.", 401);
     }
     return errorResponse("Notificação inválida.", 400);
+  }
+
+  if (!isWebhookTimestampValid(xSignature)) {
+    return errorResponse("Assinatura inválida.", 401);
   }
 
   const contentLength = Number(request.headers.get("content-length") ?? 0);
