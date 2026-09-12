@@ -18,7 +18,10 @@ import {
   getMercadoPagoOrderClient,
 } from "@/lib/mercadopago/server";
 import { PaymentPersistenceConfigurationError } from "@/lib/mercadopago/supabase-admin";
-import { parseOrderWebhookNotification } from "@/lib/mercadopago/webhook";
+import {
+  isProviderOrderId,
+  parseOrderWebhookNotification,
+} from "@/lib/mercadopago/webhook";
 
 export const runtime = "nodejs";
 
@@ -62,6 +65,10 @@ export async function POST(request: Request) {
   const notification = parseOrderWebhookNotification(rawBody, queryDataId);
   if (!notification) {
     return errorResponse("Notificação inválida.", 400);
+  }
+
+  if (!isProviderOrderId(notification.dataId)) {
+    return receivedResponse("ignored");
   }
 
   try {

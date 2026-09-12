@@ -36,8 +36,10 @@ registerHooks({
   },
 });
 
-const { MPNotFoundError, Order } = await import("mercadopago");
+const { MPBadRequestError, MPNotFoundError, Order } = await import("mercadopago");
 const { POST } = await import("../src/app/api/mercadopago/webhook/route.ts");
+
+const providerOrderId = "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3";
 
 function restoreEnvironmentVariable(name, previousValue) {
   if (previousValue === undefined) {
@@ -70,7 +72,39 @@ function signedRequest({ body, dataId = "123456", signature = null }) {
   );
 }
 
-test("recurso autenticado inexistente retorna 200 ignored", async (t) => {
+test("data.id do simulador autenticado retorna 200 ignored sem consultar Orders API", async (t) => {
+  const previousSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
+  const previousAccessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+  process.env.MERCADO_PAGO_WEBHOOK_SECRET = "test-secret";
+  process.env.MERCADO_PAGO_ACCESS_TOKEN = "test-access-token";
+
+  t.after(() => {
+    restoreEnvironmentVariable("MERCADO_PAGO_WEBHOOK_SECRET", previousSecret);
+    restoreEnvironmentVariable("MERCADO_PAGO_ACCESS_TOKEN", previousAccessToken);
+  });
+
+  const get = t.mock.method(Order.prototype, "get", async () => {
+    throw new Error("Orders API não deveria ser chamada");
+  });
+
+  const response = await POST(
+    signedRequest({
+      body: JSON.stringify({
+        type: "order",
+        data: { id: "123456" },
+      }),
+    }),
+  );
+
+  assert.equal(get.mock.callCount(), 0);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    received: true,
+    result: "ignored",
+  });
+});
+
+test("Order ID válido continua consultando Orders API", async (t) => {
   const previousSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
   const previousAccessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
   process.env.MERCADO_PAGO_WEBHOOK_SECRET = "test-secret";
@@ -82,7 +116,7 @@ test("recurso autenticado inexistente retorna 200 ignored", async (t) => {
   });
 
   const get = t.mock.method(Order.prototype, "get", async ({ id }) => {
-    assert.equal(id, "123456");
+    assert.equal(id, providerOrderId);
     throw new MPNotFoundError({
       status: 404,
       error: "not_found",
@@ -92,10 +126,8 @@ test("recurso autenticado inexistente retorna 200 ignored", async (t) => {
 
   const response = await POST(
     signedRequest({
-      body: JSON.stringify({
-        type: "order",
-        data: { id: "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3" },
-      }),
+      dataId: providerOrderId,
+      body: JSON.stringify({ type: "order", data: { id: providerOrderId } }),
     }),
   );
 
@@ -104,6 +136,40 @@ test("recurso autenticado inexistente retorna 200 ignored", async (t) => {
   assert.deepEqual(await response.json(), {
     received: true,
     result: "ignored",
+  });
+});
+
+test("erro 400 de Order ID válido não é mascarado como ignored", async (t) => {
+  const previousSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
+  const previousAccessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+  process.env.MERCADO_PAGO_WEBHOOK_SECRET = "test-secret";
+  process.env.MERCADO_PAGO_ACCESS_TOKEN = "test-access-token";
+
+  t.after(() => {
+    restoreEnvironmentVariable("MERCADO_PAGO_WEBHOOK_SECRET", previousSecret);
+    restoreEnvironmentVariable("MERCADO_PAGO_ACCESS_TOKEN", previousAccessToken);
+  });
+
+  const get = t.mock.method(Order.prototype, "get", async ({ id }) => {
+    assert.equal(id, providerOrderId);
+    throw new MPBadRequestError({
+      status: 400,
+      error: "bad_request",
+      message: "Legitimate Order API error",
+    });
+  });
+
+  const response = await POST(
+    signedRequest({
+      dataId: providerOrderId,
+      body: JSON.stringify({ type: "order", data: { id: providerOrderId } }),
+    }),
+  );
+
+  assert.equal(get.mock.callCount(), 1);
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), {
+    error: "Falha temporária ao processar a notificação.",
   });
 });
 
