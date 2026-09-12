@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { CheckoutExperience } from "./checkout-experience";
+import { getMercadoPagoCheckoutMode } from "@/lib/mercadopago/checkout-mode";
 import {
   defaultServiceId,
   formatPriceInBRL,
@@ -14,6 +15,7 @@ export const metadata: Metadata = {
 
 export default function CheckoutPage() {
   const service = getServiceById(defaultServiceId);
+  const checkoutMode = getMercadoPagoCheckoutMode(service.priceInCents);
 
   return (
     <CheckoutExperience
@@ -22,7 +24,9 @@ export default function CheckoutPage() {
         name: service.name,
         description: service.description,
         deliveryLabel: service.deliveryLabel,
-        formattedPrice: formatPriceInBRL(service.priceInCents),
+        formattedPrice: formatPriceInBRL(checkoutMode.amountInCents),
+        isSandbox: checkoutMode.isSandbox,
+        sessionScope: checkoutMode.sessionScope,
       }}
     />
   );

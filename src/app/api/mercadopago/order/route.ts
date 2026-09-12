@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { getAuthenticatedPayer } from "@/lib/mercadopago/auth";
+import {
+  getMercadoPagoCheckoutMode,
+  getMercadoPagoPayer,
+} from "@/lib/mercadopago/checkout-mode";
 import { parseOrderRequest } from "@/lib/mercadopago/order-input";
 import {
   extractMercadoPagoOrderSnapshot,
@@ -63,12 +67,14 @@ export async function POST(request: Request) {
   }
 
   const service = getServiceById(body.serviceId);
+  const checkoutMode = getMercadoPagoCheckoutMode(service.priceInCents);
+  const providerPayer = getMercadoPagoPayer(checkoutMode, payer.email);
 
   try {
     const paymentOrder = await getOrCreatePaymentOrder({
       userId: payer.userId,
       serviceId: service.id,
-      amountInCents: service.priceInCents,
+      amountInCents: checkoutMode.amountInCents,
       checkoutSessionId: body.checkoutSessionId,
       paymentMethod: "pix",
     });
@@ -76,7 +82,7 @@ export async function POST(request: Request) {
     if (
       paymentOrder.serviceId !== service.id ||
       paymentOrder.paymentMethod !== "pix" ||
-      paymentOrder.amountInCents !== service.priceInCents
+      paymentOrder.amountInCents !== checkoutMode.amountInCents
     ) {
       return errorResponse("Sessão de checkout conflitante.", 409);
     }
@@ -102,7 +108,10 @@ export async function POST(request: Request) {
         external_reference: paymentOrder.externalReference,
         description: service.name,
         payer: {
-          email: payer.email,
+          email: providerPayer.email,
+          ...(providerPayer.firstName
+            ? { first_name: providerPayer.firstName }
+            : {}),
         },
         transactions: {
           payments: [

@@ -31,6 +31,8 @@ type CheckoutService = {
   description: string;
   deliveryLabel: string;
   formattedPrice: string;
+  isSandbox: boolean;
+  sessionScope: string;
 };
 
 const POLLING_INTERVAL_MS = 15_000;
@@ -76,7 +78,9 @@ export function CheckoutExperience({ service }: { service: CheckoutService }) {
         if (active && response.ok && isPixOrderResponse(payload)) {
           setOrder(payload);
           if (payload.status === "approved") {
-            sessionStorage.removeItem(checkoutStorageKey(service.id));
+            sessionStorage.removeItem(
+              checkoutStorageKey(service.id, service.sessionScope),
+            );
           }
         }
       } catch {
@@ -94,7 +98,7 @@ export function CheckoutExperience({ service }: { service: CheckoutService }) {
       active = false;
       window.clearInterval(intervalId);
     };
-  }, [activeOrderId, service.id, shouldMonitorOrder]);
+  }, [activeOrderId, service.id, service.sessionScope, shouldMonitorOrder]);
 
   async function handleSubmit() {
     setMessage(null);
@@ -120,7 +124,8 @@ export function CheckoutExperience({ service }: { service: CheckoutService }) {
       }
 
       const checkoutSessionId =
-        checkoutSessionIdRef.current ?? getOrCreateCheckoutSessionId(service.id);
+        checkoutSessionIdRef.current ??
+        getOrCreateCheckoutSessionId(service.id, service.sessionScope);
       checkoutSessionIdRef.current = checkoutSessionId;
 
       const response = await fetch("/api/mercadopago/order", {
@@ -145,7 +150,9 @@ export function CheckoutExperience({ service }: { service: CheckoutService }) {
 
       setOrder(payload);
       if (payload.status === "approved") {
-        sessionStorage.removeItem(checkoutStorageKey(service.id));
+        sessionStorage.removeItem(
+          checkoutStorageKey(service.id, service.sessionScope),
+        );
       }
     } catch {
       setMessage("Não foi possível conectar ao serviço de pagamento.");
@@ -179,7 +186,7 @@ export function CheckoutExperience({ service }: { service: CheckoutService }) {
           <Logo size="xs" />
           <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
             <LockKeyhole className="h-3.5 w-3.5 text-emerald-400" />
-            Ambiente de teste
+            {service.isSandbox ? "Ambiente de teste" : "Pagamento seguro"}
           </div>
         </header>
 
@@ -393,6 +400,11 @@ function OrderSummary({
           <Sparkles className="h-5 w-5" />
         </div>
         <h2 className="mt-5 text-xl font-black tracking-tight">{service.name}</h2>
+        {service.isSandbox ? (
+          <p className="mt-2 text-sm font-black text-violet-300">
+            Pagamento teste: {service.formattedPrice}
+          </p>
+        ) : null}
         <p className="mt-2 text-sm leading-6 text-white/40">{service.description}</p>
       </div>
       <div className="space-y-4 py-6 text-sm">
@@ -512,8 +524,11 @@ function PreparedField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function getOrCreateCheckoutSessionId(serviceId: ServiceId): string {
-  const storageKey = checkoutStorageKey(serviceId);
+function getOrCreateCheckoutSessionId(
+  serviceId: ServiceId,
+  sessionScope: string,
+): string {
+  const storageKey = checkoutStorageKey(serviceId, sessionScope);
   const storedId = sessionStorage.getItem(storageKey);
   if (storedId) return storedId;
 
@@ -522,8 +537,11 @@ function getOrCreateCheckoutSessionId(serviceId: ServiceId): string {
   return checkoutSessionId;
 }
 
-function checkoutStorageKey(serviceId: ServiceId): string {
-  return `susanoo_mp_checkout_${serviceId}`;
+function checkoutStorageKey(
+  serviceId: ServiceId,
+  sessionScope: string,
+): string {
+  return `susanoo_mp_checkout_${serviceId}_${sessionScope}`;
 }
 
 function isPixOrderResponse(value: unknown): value is PixOrderResponse {
