@@ -12,6 +12,7 @@ import {
   normalizeMercadoPagoStatus,
 } from "../src/lib/mercadopago/status.ts";
 import {
+  isWebhookDataId,
   parseOrderWebhookNotification,
 } from "../src/lib/mercadopago/webhook.ts";
 
@@ -100,11 +101,53 @@ test("aceita assinatura válida e parser é idempotente para webhook repetido", 
   const first = parseOrderWebhookNotification(rawBody, providerOrderId);
   const repeated = parseOrderWebhookNotification(rawBody, providerOrderId);
   assert.deepEqual(first, repeated);
-  assert.equal(
+  assert.deepEqual(
     parseOrderWebhookNotification(
       rawBody,
       "ORD01JQ4S4KY8HWQ6NA5PXB65OTHER",
     ),
+    {
+      type: "order",
+      dataId: "ORD01JQ4S4KY8HWQ6NA5PXB65OTHER",
+    },
+  );
+});
+
+test("aceita data.id estruturalmente seguro do simulador", () => {
+  const simulatorDataId = "123456";
+  const secret = "test-secret";
+  const requestId = "request-simulator";
+  const timestamp = "1700000000";
+  const manifest = `id:${simulatorDataId};request-id:${requestId};ts:${timestamp};`;
+  const signature = createHmac("sha256", secret).update(manifest).digest("hex");
+
+  WebhookSignatureValidator.validate({
+    xSignature: `ts=${timestamp},v1=${signature}`,
+    xRequestId: requestId,
+    dataId: simulatorDataId,
+    secret,
+  });
+
+  assert.deepEqual(
+    parseOrderWebhookNotification(
+      JSON.stringify({ type: "order", data: { id: providerOrderId } }),
+      simulatorDataId,
+    ),
+    { type: "order", dataId: simulatorDataId },
+  );
+});
+
+test("rejeita payload malformado e data.id estruturalmente inseguro", () => {
+  assert.equal(parseOrderWebhookNotification("{", providerOrderId), null);
+  assert.equal(
+    parseOrderWebhookNotification(
+      JSON.stringify({ type: "order", data: { id: "ok" } }),
+      "   ",
+    ),
     null,
   );
+  assert.equal(isWebhookDataId(`order\u0000id`), false);
+  assert.equal(isWebhookDataId("x".repeat(129)), false);
+  assert.equal(isWebhookDataId("123456"), true);
+  assert.equal(isWebhookDataId(providerOrderId), true);
 });
