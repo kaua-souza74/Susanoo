@@ -12,7 +12,7 @@ import type { ServiceId } from "@/lib/mercadopago/services";
 import type { BrickPaymentResponse } from "@/lib/mercadopago/types";
 import { supabase } from "@/lib/supabase";
 
-const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_BRICKS_PUBLIC_KEY;
+const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_ORDERS_PUBLIC_KEY;
 
 if (publicKey) {
   initMercadoPago(publicKey, {
@@ -148,7 +148,7 @@ export function MercadoPagoCardBrick({
   if (!publicKey) {
     return (
       <p role="alert" className="text-sm font-medium text-amber-200/80">
-        Cartão indisponível: Public Key do Bricks não configurada.
+        Cartão indisponível: Public Key de Orders não configurada.
       </p>
     );
   }

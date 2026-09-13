@@ -118,20 +118,14 @@ registerHooks({
           function providerResponse() {
             const order = globalThis.__brickRouteMocks.paymentOrder;
             return {
-              id: 987654321,
+              id: "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3",
               external_reference: order.externalReference,
-              status: order.paymentMethod === "card" ? "approved" : "pending",
-              status_detail: order.paymentMethod === "card" ? "accredited" : "pending_waiting_transfer",
-              point_of_interaction: {
-                transaction_data: {
-                  qr_code: order.paymentMethod === "pix" ? "safe-pix-code" : undefined,
-                  qr_code_base64: order.paymentMethod === "pix" ? "safe-base64" : undefined,
-                  ticket_url: order.paymentMethod === "pix" ? "https://example.test/pix" : undefined,
-                },
-              },
+              status: "processed",
+              status_detail: "accredited",
+              transactions: { payments: [] },
             };
           }
-          export function getMercadoPagoPaymentClient() {
+          export function getMercadoPagoOrderClient() {
             return {
               async create(input) {
                 globalThis.__brickRouteMocks.createInputs.push(input);
@@ -232,8 +226,16 @@ test("amount adulterado é ignorado e preço sandbox permanece server-side", asy
   assert.equal(response.status, 201);
   assert.equal(globalThis.__brickRouteMocks.persistenceInputs[0].amountInCents, 5_000);
   const providerInput = globalThis.__brickRouteMocks.createInputs[0];
-  assert.equal(providerInput.body.transaction_amount, 50);
-  assert.equal(providerInput.body.payment_method_id, "visa");
+  assert.equal(providerInput.body.type, "online");
+  assert.equal(providerInput.body.processing_mode, "automatic");
+  assert.equal(providerInput.body.total_amount, "50.00");
+  assert.equal(providerInput.body.transactions.payments[0].amount, "50.00");
+  assert.deepEqual(providerInput.body.transactions.payments[0].payment_method, {
+    id: "visa",
+    type: "credit_card",
+    token: cardToken,
+    installments: 1,
+  });
   assert.equal(providerInput.body.payer.email, "comprador@exemplo.com");
   assert.equal(providerInput.body.payer.first_name, undefined);
   assert.equal(providerInput.requestOptions.idempotencyKey, "persisted-brick-idempotency-key");
@@ -329,7 +331,7 @@ test("repetição reutiliza idempotency key e não cria novo pagamento", async (
     "persisted-brick-idempotency-key",
   );
   assert.deepEqual(globalThis.__brickRouteMocks.getInputs[0], {
-    id: "987654321",
+    id: "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3",
   });
 });
 
@@ -406,14 +408,15 @@ test("cartão usa token sem expor token ou documento nos logs", async (t) => {
 
   assert.equal(response.status, 201);
   const providerBody = globalThis.__brickRouteMocks.createInputs[0].body;
-  assert.equal(providerBody.token, cardToken);
-  assert.equal(providerBody.installments, 1);
-  assert.equal(providerBody.payer.identification.number, documentNumber);
+  const paymentMethod = providerBody.transactions.payments[0].payment_method;
+  assert.equal(paymentMethod.token, cardToken);
+  assert.equal(paymentMethod.installments, 1);
+  assert.equal(providerBody.payer.identification, undefined);
   const serializedLogs = info.mock.calls
     .map(({ arguments: values }) => values.join(" "))
     .join("\n");
   assert.doesNotMatch(serializedLogs, new RegExp(cardToken));
   assert.doesNotMatch(serializedLogs, new RegExp(documentNumber));
   assert.match(serializedLogs, /"payment_method_id":"visa"/);
-  assert.match(serializedLogs, /"provider_id":"987654321"/);
+  assert.match(serializedLogs, /"provider_id":"ORD01JQ4S4KY8HWQ6NA5PXB65B3D3"/);
 });

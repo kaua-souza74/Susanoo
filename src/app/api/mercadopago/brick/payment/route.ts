@@ -4,7 +4,10 @@ import { MercadoPagoError } from "mercadopago";
 import { getAuthenticatedPayer } from "@/lib/mercadopago/auth";
 import { parseBrickPaymentRequest } from "@/lib/mercadopago/brick-payment-input";
 import { getMercadoPagoCheckoutMode } from "@/lib/mercadopago/checkout-mode";
-import { extractMercadoPagoPaymentSnapshot } from "@/lib/mercadopago/payment-snapshot";
+import {
+  extractMercadoPagoOrderSnapshot,
+  type MercadoPagoOrderSnapshot,
+} from "@/lib/mercadopago/order-snapshot";
 import {
   PaymentOrderMismatchError,
   PaymentOrderPersistenceError,
@@ -14,7 +17,7 @@ import {
 } from "@/lib/mercadopago/payment-orders";
 import {
   MercadoPagoConfigurationError,
-  getMercadoPagoPaymentClient,
+  getMercadoPagoOrderClient,
 } from "@/lib/mercadopago/server";
 import { getServiceById, isServiceId } from "@/lib/mercadopago/services";
 import { PaymentPersistenceConfigurationError } from "@/lib/mercadopago/supabase-admin";
@@ -72,7 +75,7 @@ export async function POST(request: Request) {
       return errorResponse("Sessão de checkout conflitante.", 409);
     }
 
-    const paymentClient = getMercadoPagoPaymentClient();
+    const orderClient = getMercadoPagoOrderClient();
     logSafePaymentMetadata({
       stage: "brick_payment_request",
       payment_method_id: body.paymentMethodId,
@@ -83,24 +86,33 @@ export async function POST(request: Request) {
       sandbox: checkoutMode.isSandbox,
     });
 
-    let providerPayment;
+    let providerOrder;
     try {
-      providerPayment = paymentOrder.providerOrderId
-        ? await paymentClient.get({ id: paymentOrder.providerOrderId })
-        : await paymentClient.create({
+      const amount = (paymentOrder.amountInCents / 100).toFixed(2);
+      providerOrder = paymentOrder.providerOrderId
+        ? await orderClient.get({ id: paymentOrder.providerOrderId })
+        : await orderClient.create({
             body: {
-              transaction_amount: paymentOrder.amountInCents / 100,
+              type: "online",
+              processing_mode: "automatic",
+              total_amount: amount,
               description: service.name,
               external_reference: paymentOrder.externalReference,
-              payment_method_id: body.paymentMethodId,
-              installments: body.installments,
-              ...(body.token ? { token: body.token } : {}),
-              ...(body.issuerId ? { issuer_id: body.issuerId } : {}),
               payer: {
                 email: providerPayerEmail,
-                ...(body.identification
-                  ? { identification: body.identification }
-                  : {}),
+              },
+              transactions: {
+                payments: [
+                  {
+                    amount,
+                    payment_method: {
+                      id: body.paymentMethodId,
+                      type: "credit_card",
+                      token: body.token,
+                      installments: body.installments,
+                    },
+                  },
+                ],
               },
             },
             requestOptions: {
@@ -112,7 +124,7 @@ export async function POST(request: Request) {
       throw error;
     }
 
-    const snapshot = extractMercadoPagoPaymentSnapshot(providerPayment);
+    const snapshot = extractMercadoPagoOrderSnapshot(providerOrder);
     if (!snapshot) {
       return errorResponse("Resposta inválida do serviço de pagamento.", 502);
     }
@@ -163,7 +175,7 @@ export async function POST(request: Request) {
 
 function successResponse(
   paymentOrder: PaymentOrder,
-  snapshot: NonNullable<ReturnType<typeof extractMercadoPagoPaymentSnapshot>>,
+  snapshot: MercadoPagoOrderSnapshot,
   status: 200 | 201,
 ) {
   const payload: BrickPaymentResponse = {

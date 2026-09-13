@@ -6,7 +6,6 @@ import {
 } from "mercadopago";
 
 import { extractMercadoPagoOrderSnapshot } from "@/lib/mercadopago/order-snapshot";
-import { extractMercadoPagoPaymentSnapshot } from "@/lib/mercadopago/payment-snapshot";
 import {
   PaymentOrderMismatchError,
   PaymentOrderPersistenceError,
@@ -17,14 +16,12 @@ import {
 import {
   MercadoPagoConfigurationError,
   getMercadoPagoOrderClient,
-  getMercadoPagoPaymentClient,
 } from "@/lib/mercadopago/server";
 import { PaymentPersistenceConfigurationError } from "@/lib/mercadopago/supabase-admin";
 import {
   isProviderOrderId,
-  isProviderPaymentId,
   isWebhookTimestampValid,
-  parseMercadoPagoWebhookNotification,
+  parseOrderWebhookNotification,
 } from "@/lib/mercadopago/webhook";
 
 export const runtime = "nodejs";
@@ -34,21 +31,17 @@ const MAX_WEBHOOK_BYTES = 16_384;
 export async function POST(request: Request) {
   const url = new URL(request.url);
   const queryType = url.searchParams.get("type");
-  const secret = queryType === "order"
-    ? process.env.MERCADO_PAGO_ORDERS_WEBHOOK_SECRET
-    : queryType === "payment"
-      ? process.env.MERCADO_PAGO_BRICKS_WEBHOOK_SECRET
-      : null;
+  const secret = process.env.MERCADO_PAGO_ORDERS_WEBHOOK_SECRET;
   if (!secret) {
-    return queryType === "order" || queryType === "payment"
-      ? errorResponse("Webhook indisponível.", 503)
-      : errorResponse("Notificação inválida.", 400);
+    return errorResponse("Webhook indisponível.", 503);
+  }
+
+  if (queryType !== "order") {
+    return errorResponse("Notificação inválida.", 400);
   }
 
   const queryDataId = url.searchParams.get("data.id");
-  const signatureDataId = queryType === "order"
-    ? queryDataId?.toLowerCase() ?? null
-    : queryDataId;
+  const signatureDataId = queryDataId?.toLowerCase() ?? null;
   const xSignature = request.headers.get("x-signature");
   const xRequestId = request.headers.get("x-request-id");
   const signatureDiagnostics = getSignatureDiagnostics(xSignature);
@@ -103,30 +96,19 @@ export async function POST(request: Request) {
     return errorResponse("Notificação muito grande.", 413);
   }
 
-  const notification = parseMercadoPagoWebhookNotification(
-    rawBody,
-    queryDataId,
-    queryType,
-  );
+  const notification = parseOrderWebhookNotification(rawBody, queryDataId);
   if (!notification) {
     return errorResponse("Notificação inválida.", 400);
   }
 
-  if (
-    (notification.type === "order" && !isProviderOrderId(notification.dataId)) ||
-    (notification.type === "payment" && !isProviderPaymentId(notification.dataId))
-  ) {
+  if (!isProviderOrderId(notification.dataId)) {
     return receivedResponse("ignored");
   }
 
   try {
-    const snapshot = notification.type === "order"
-      ? extractMercadoPagoOrderSnapshot(
-          await getMercadoPagoOrderClient().get({ id: notification.dataId }),
-        )
-      : extractMercadoPagoPaymentSnapshot(
-          await getMercadoPagoPaymentClient().get({ id: notification.dataId }),
-        );
+    const snapshot = extractMercadoPagoOrderSnapshot(
+      await getMercadoPagoOrderClient().get({ id: notification.dataId }),
+    );
 
     if (!snapshot || snapshot.providerOrderId !== notification.dataId) {
       return errorResponse("Não foi possível confirmar a ordem.", 502);

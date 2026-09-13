@@ -8,8 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const orderId = "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3";
-const paymentId = "987654321";
-globalThis.__webhookRouteMocks = { orderGets: [], paymentGets: [], providerLookups: [], syncInputs: [], paymentOrder: null };
+globalThis.__webhookRouteMocks = { orderGets: [], providerLookups: [], syncInputs: [], paymentOrder: null };
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -32,10 +31,6 @@ registerHooks({
         globalThis.__webhookRouteMocks.orderGets.push(input);
         return { id: input.id, external_reference: "SUS-webhook", status: "processed", status_detail: "accredited", transactions: { payments: [] } };
       } }; }
-      export function getMercadoPagoPaymentClient() { return { async get(input) {
-        globalThis.__webhookRouteMocks.paymentGets.push(input);
-        return { id: Number(input.id), external_reference: "SUS-webhook", status: "approved", status_detail: "accredited" };
-      } }; }
     ` };
     if (url === "mock:webhook-orders") return { format: "module", shortCircuit: true, source: `
       export class PaymentOrderMismatchError extends Error {}
@@ -50,11 +45,10 @@ registerHooks({
 
 const { POST } = await import("../src/app/api/mercadopago/webhook/route.ts");
 
-function signedRequest({ type = "order", dataId = type === "order" ? "123456" : paymentId, secret = type === "order" ? "orders-secret" : "bricks-secret", signature = null, bodyStatus = "forged" } = {}) {
+function signedRequest({ dataId = "123456", secret = "orders-secret", signature = null, bodyStatus = "forged", type = "order" } = {}) {
   const timestamp = String(Date.now());
   const requestId = "request-route-test";
-  const signatureDataId = type === "order" ? dataId.toLowerCase() : dataId;
-  const digest = createHmac("sha256", secret).update(`id:${signatureDataId};request-id:${requestId};ts:${timestamp};`).digest("hex");
+  const digest = createHmac("sha256", secret).update(`id:${dataId.toLowerCase()};request-id:${requestId};ts:${timestamp};`).digest("hex");
   return new Request(`https://example.test/api/mercadopago/webhook?data.id=${encodeURIComponent(dataId)}&type=${type}`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-request-id": requestId, "x-signature": signature ?? `ts=${timestamp},v1=${digest}` },
@@ -62,13 +56,12 @@ function signedRequest({ type = "order", dataId = type === "order" ? "123456" : 
   });
 }
 
-function reset() {
-  Object.assign(process.env, { MERCADO_PAGO_ORDERS_WEBHOOK_SECRET: "orders-secret", MERCADO_PAGO_BRICKS_WEBHOOK_SECRET: "bricks-secret" });
+function reset(paymentMethod = "pix") {
+  process.env.MERCADO_PAGO_ORDERS_WEBHOOK_SECRET = "orders-secret";
   globalThis.__webhookRouteMocks.orderGets.length = 0;
-  globalThis.__webhookRouteMocks.paymentGets.length = 0;
   globalThis.__webhookRouteMocks.providerLookups.length = 0;
   globalThis.__webhookRouteMocks.syncInputs.length = 0;
-  globalThis.__webhookRouteMocks.paymentOrder = { id: "local", externalReference: "SUS-webhook", providerOrderId: null, status: "pending" };
+  globalThis.__webhookRouteMocks.paymentOrder = { id: "local", externalReference: "SUS-webhook", providerOrderId: null, paymentMethod, status: "pending" };
 }
 
 test("simulador Orders autenticado continua ignored sem consultar provider", async () => {
@@ -79,7 +72,7 @@ test("simulador Orders autenticado continua ignored sem consultar provider", asy
   assert.deepEqual(await response.json(), { received: true, result: "ignored" });
 });
 
-test("evento Orders usa secret Orders, lowercase no HMAC e ID original no provider", async () => {
+test("Orders usa lowercase apenas no HMAC e preserva ID original no provider", async () => {
   reset();
   const response = await POST(signedRequest({ dataId: orderId }));
   assert.equal(response.status, 200);
@@ -87,39 +80,38 @@ test("evento Orders usa secret Orders, lowercase no HMAC e ID original no provid
   assert.deepEqual(globalThis.__webhookRouteMocks.providerLookups, [orderId]);
 });
 
-test("evento payment usa secret Bricks e consulta Payments API antes de persistir", async () => {
-  reset();
-  const response = await POST(signedRequest({ type: "payment" }));
-  assert.equal(response.status, 200);
-  assert.deepEqual(globalThis.__webhookRouteMocks.paymentGets, [{ id: paymentId }]);
+test("ordem PIX é reconciliada consultando Orders API", async () => {
+  reset("pix");
+  await POST(signedRequest({ dataId: orderId }));
+  assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 1);
   assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 1);
-  assert.equal(globalThis.__webhookRouteMocks.syncInputs[0].snapshot.status, "approved");
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs[0].order.paymentMethod, "pix");
 });
 
-test("payment assinado com secret Orders é rejeitado", async () => {
-  reset();
-  const response = await POST(signedRequest({ type: "payment", secret: "orders-secret" }));
-  assert.equal(response.status, 401);
-  assert.equal(globalThis.__webhookRouteMocks.paymentGets.length, 0);
+test("ordem de cartão é reconciliada pelo mesmo fluxo Orders", async () => {
+  reset("card");
+  await POST(signedRequest({ dataId: orderId }));
+  assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 1);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 1);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs[0].order.paymentMethod, "card");
 });
 
 test("assinatura inválida retorna 401", async () => {
   reset();
   const response = await POST(signedRequest({ signature: `ts=${Date.now()},v1=invalid` }));
   assert.equal(response.status, 401);
+  assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 0);
+});
+
+test("evento payment legado é rejeitado sem consultar provider", async () => {
+  reset();
+  const response = await POST(signedRequest({ type: "payment", dataId: "987654321" }));
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 0);
 });
 
 test("status forjado no body nunca é persistido", async () => {
   reset();
-  await POST(signedRequest({ type: "payment", bodyStatus: "rejected" }));
+  await POST(signedRequest({ dataId: orderId, bodyStatus: "rejected" }));
   assert.equal(globalThis.__webhookRouteMocks.syncInputs[0].snapshot.status, "approved");
-});
-
-test("payload com data.id divergente é rejeitado antes do provider", async () => {
-  reset();
-  const request = signedRequest({ type: "payment" });
-  const headers = Object.fromEntries(request.headers);
-  const response = await POST(new Request(request.url, { method: "POST", headers, body: JSON.stringify({ type: "payment", data: { id: "111" } }) }));
-  assert.equal(response.status, 400);
-  assert.equal(globalThis.__webhookRouteMocks.paymentGets.length, 0);
 });
