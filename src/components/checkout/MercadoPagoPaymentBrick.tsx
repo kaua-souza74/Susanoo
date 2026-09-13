@@ -337,12 +337,15 @@ function pickSafeBrickFormData(value: unknown) {
     installments: recordValue(value, "installments"),
     payer: isRecord(identification)
       ? {
+          email: recordValue(payer, "email"),
           identification: {
             type: identification.type,
             number: identification.number,
           },
         }
-      : undefined,
+      : isRecord(payer)
+        ? { email: recordValue(payer, "email") }
+        : undefined,
   };
 }
 

@@ -3,10 +3,7 @@ import { MercadoPagoError } from "mercadopago";
 
 import { getAuthenticatedPayer } from "@/lib/mercadopago/auth";
 import { parseBrickPaymentRequest } from "@/lib/mercadopago/brick-payment-input";
-import {
-  getMercadoPagoCheckoutMode,
-  getMercadoPagoPayer,
-} from "@/lib/mercadopago/checkout-mode";
+import { getMercadoPagoCheckoutMode } from "@/lib/mercadopago/checkout-mode";
 import { extractMercadoPagoPaymentSnapshot } from "@/lib/mercadopago/payment-snapshot";
 import {
   PaymentOrderMismatchError,
@@ -56,7 +53,7 @@ export async function POST(request: Request) {
 
   const service = getServiceById(body.serviceId);
   const checkoutMode = getMercadoPagoCheckoutMode(service.priceInCents);
-  const providerPayer = getMercadoPagoPayer(checkoutMode, payer.email);
+  const providerPayerEmail = body.payerEmail ?? payer.email;
 
   try {
     const paymentOrder = await getOrCreatePaymentOrder({
@@ -100,10 +97,7 @@ export async function POST(request: Request) {
               ...(body.token ? { token: body.token } : {}),
               ...(body.issuerId ? { issuer_id: body.issuerId } : {}),
               payer: {
-                email: providerPayer.email,
-                ...(providerPayer.firstName
-                  ? { first_name: providerPayer.firstName }
-                  : {}),
+                email: providerPayerEmail,
                 ...(body.identification
                   ? { identification: body.identification }
                   : {}),

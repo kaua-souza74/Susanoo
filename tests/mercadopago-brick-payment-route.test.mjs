@@ -165,6 +165,7 @@ function brickRequest({
   amount = 50,
   installments = method === "card" ? 1 : undefined,
   token = method === "card" ? cardToken : undefined,
+  email,
 } = {}) {
   return new Request("https://example.test/api/mercadopago/brick/payment", {
     method: "POST",
@@ -183,6 +184,7 @@ function brickRequest({
         token,
         issuer_id: method === "card" ? "310" : undefined,
         payer: {
+          email,
           identification: { type: "CPF", number: documentNumber },
         },
       },
@@ -232,12 +234,36 @@ test("amount adulterado é ignorado e PIX sandbox usa 5000 centavos", async (t) 
   const providerInput = globalThis.__brickRouteMocks.createInputs[0];
   assert.equal(providerInput.body.transaction_amount, 50);
   assert.equal(providerInput.body.payment_method_id, "pix");
-  assert.equal(providerInput.body.payer.email, "test_user_br@testuser.com");
-  assert.equal(providerInput.body.payer.first_name, "APRO");
+  assert.equal(providerInput.body.payer.email, "comprador@exemplo.com");
+  assert.equal(providerInput.body.payer.first_name, undefined);
   assert.equal(providerInput.requestOptions.idempotencyKey, "persisted-brick-idempotency-key");
   const payload = await response.json();
   assert.equal(payload.paymentMethod, "pix");
   assert.equal(payload.qrCode, "safe-pix-code");
+});
+
+test("Brick sanitiza o email informado pelo pagador", async () => {
+  resetMocks();
+
+  const response = await POST(
+    brickRequest({ email: "  Comprador+Brick@Example.COM  " }),
+  );
+
+  assert.equal(response.status, 201);
+  assert.equal(
+    globalThis.__brickRouteMocks.createInputs[0].body.payer.email,
+    "comprador+brick@example.com",
+  );
+});
+
+test("Brick rejeita email de pagador inválido", async () => {
+  resetMocks();
+
+  const response = await POST(brickRequest({ email: "email-invalido" }));
+
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__brickRouteMocks.persistenceInputs.length, 0);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
 });
 
 test("cartão exige token", async () => {
