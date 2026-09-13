@@ -23,6 +23,21 @@ test("checkout usa Card Payment Brick e a Public Key exclusiva do Bricks", () =>
   assert.match(checkout, /<MercadoPagoCardBrick/);
 });
 
+test("Card Brick diferencia erros críticos sem registrar dados sensíveis", () => {
+  const component = read("src/components/checkout/MercadoPagoCardBrick.tsx");
+  assert.match(component, /onError=\{\(error\) =>/);
+  assert.match(component, /error\.type === "non_critical"/);
+  assert.match(component, /Mercado Pago não conseguiu validar este cartão no momento/);
+  assert.match(component, /type: error\.type \?\? null/);
+  assert.match(component, /cause: error\.cause \?\? null/);
+  assert.match(component, /message: error\.message \?\? null/);
+  const diagnosticBlock = component.slice(
+    component.indexOf("[Mercado Pago Card Brick] error"),
+    component.indexOf("if (submissionErrorRef.current)"),
+  );
+  assert.doesNotMatch(diagnosticBlock, /token|payer|document|email|publicKey|formData|bin/i);
+});
+
 test("endpoint temporário PIX diagnostics foi removido", () => {
   assert.throws(() => read("src/app/api/mercadopago/diagnostics/pix-minimal/route.ts"));
 });

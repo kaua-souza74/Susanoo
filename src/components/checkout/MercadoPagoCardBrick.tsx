@@ -192,15 +192,26 @@ export function MercadoPagoCardBrick({
             locale="pt-BR"
             onReady={() => setIsReady(true)}
             onSubmit={handleSubmit}
-            onError={() => {
+            onError={(error) => {
               setIsReady(true);
+
+              if (diagnosticsEnabled) {
+                console.error("[Mercado Pago Card Brick] error", {
+                  type: error.type ?? null,
+                  cause: error.cause ?? null,
+                  message: error.message ?? null,
+                });
+              }
+
               if (submissionErrorRef.current) {
                 submissionErrorRef.current = false;
                 return;
               }
               if (!submitLockRef.current) {
                 setSubmitMessage(
-                  "Não foi possível carregar o formulário de cartão. Tente novamente.",
+                  error.type === "non_critical"
+                    ? "Mercado Pago não conseguiu validar este cartão no momento."
+                    : "Não foi possível carregar o formulário de cartão. Tente novamente.",
                 );
               }
             }}
