@@ -21,6 +21,7 @@ const providerOrderId = "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3";
 
 test("normaliza os estados conhecidos e mantém desconhecidos como pending", () => {
   assert.equal(normalizeMercadoPagoStatus("processed", "accredited"), "approved");
+  assert.equal(normalizeMercadoPagoStatus("approved", "accredited"), "approved");
   assert.equal(normalizeMercadoPagoStatus("failed", "failed"), "rejected");
   assert.equal(normalizeMercadoPagoStatus("expired", "expired"), "cancelled");
   assert.equal(normalizeMercadoPagoStatus("refunded", "refunded"), "refunded");

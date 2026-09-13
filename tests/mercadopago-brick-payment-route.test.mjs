@@ -1,0 +1,312 @@
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { registerHooks } from "node:module";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const projectRoot = path.resolve(import.meta.dirname, "..");
+const checkoutSessionId = "018f47a2-4d7e-7c31-8a5b-11c2df98a120";
+const cardToken = "card-token-sensitive-1234567890";
+const documentNumber = "12345678909";
+
+globalThis.__brickRouteMocks = {
+  authenticatedPayer: {
+    userId: "user-test",
+    email: "comprador@exemplo.com",
+  },
+  paymentOrder: null,
+  persistenceInputs: [],
+  createInputs: [],
+  getInputs: [],
+  syncInputs: [],
+  providerError: null,
+};
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === "server-only") {
+      return { shortCircuit: true, url: "mock:server-only" };
+    }
+    if (specifier === "next/server") {
+      return nextResolve("next/server.js", context);
+    }
+    if (specifier === "@/lib/mercadopago/auth") {
+      return { shortCircuit: true, url: "mock:brick-auth" };
+    }
+    if (specifier === "@/lib/mercadopago/payment-orders") {
+      return { shortCircuit: true, url: "mock:brick-payment-orders" };
+    }
+    if (specifier === "@/lib/mercadopago/server") {
+      return { shortCircuit: true, url: "mock:brick-server" };
+    }
+    if (specifier.startsWith("@/")) {
+      const sourcePath = path.join(projectRoot, "src", `${specifier.slice(2)}.ts`);
+      return nextResolve(pathToFileURL(sourcePath).href, context);
+    }
+    if (specifier.startsWith(".") && context.parentURL?.startsWith("file:")) {
+      const candidateUrl = new URL(`${specifier}.ts`, context.parentURL);
+      if (existsSync(fileURLToPath(candidateUrl))) {
+        return nextResolve(candidateUrl.href, context);
+      }
+    }
+    return nextResolve(specifier, context);
+  },
+  load(url, context, nextLoad) {
+    if (url === "mock:server-only") {
+      return { format: "module", shortCircuit: true, source: "export {};" };
+    }
+    if (url === "mock:brick-auth") {
+      return {
+        format: "module",
+        shortCircuit: true,
+        source: `export async function getAuthenticatedPayer() {
+          return globalThis.__brickRouteMocks.authenticatedPayer;
+        }`,
+      };
+    }
+    if (url === "mock:brick-payment-orders") {
+      return {
+        format: "module",
+        shortCircuit: true,
+        source: `
+          export class PaymentOrderMismatchError extends Error {}
+          export class PaymentOrderPersistenceError extends Error {}
+          export async function getOrCreatePaymentOrder(input) {
+            globalThis.__brickRouteMocks.persistenceInputs.push(input);
+            if (!globalThis.__brickRouteMocks.paymentOrder) {
+              globalThis.__brickRouteMocks.paymentOrder = {
+                id: "local-brick-order",
+                userId: input.userId,
+                serviceId: input.serviceId,
+                amountInCents: input.amountInCents,
+                currency: "BRL",
+                providerOrderId: null,
+                externalReference: "SUS-brick-reference",
+                checkoutSessionId: input.checkoutSessionId,
+                idempotencyKey: "persisted-brick-idempotency-key",
+                paymentMethod: input.paymentMethod,
+                status: "pending",
+                providerStatus: null,
+                statusDetail: null,
+                approvedAt: null,
+              };
+            }
+            return globalThis.__brickRouteMocks.paymentOrder;
+          }
+          export async function syncPaymentOrderFromProvider(order, snapshot) {
+            globalThis.__brickRouteMocks.syncInputs.push({ order, snapshot });
+            globalThis.__brickRouteMocks.paymentOrder = {
+              ...order,
+              providerOrderId: snapshot.providerOrderId,
+              status: snapshot.status,
+              providerStatus: snapshot.providerStatus,
+              statusDetail: snapshot.providerStatusDetail,
+            };
+            return globalThis.__brickRouteMocks.paymentOrder;
+          }
+        `,
+      };
+    }
+    if (url === "mock:brick-server") {
+      return {
+        format: "module",
+        shortCircuit: true,
+        source: `
+          export class MercadoPagoConfigurationError extends Error {}
+          function providerResponse() {
+            const order = globalThis.__brickRouteMocks.paymentOrder;
+            return {
+              id: 987654321,
+              external_reference: order.externalReference,
+              status: order.paymentMethod === "card" ? "approved" : "pending",
+              status_detail: order.paymentMethod === "card" ? "accredited" : "pending_waiting_transfer",
+              point_of_interaction: {
+                transaction_data: {
+                  qr_code: order.paymentMethod === "pix" ? "safe-pix-code" : undefined,
+                  qr_code_base64: order.paymentMethod === "pix" ? "safe-base64" : undefined,
+                  ticket_url: order.paymentMethod === "pix" ? "https://example.test/pix" : undefined,
+                },
+              },
+            };
+          }
+          export function getMercadoPagoPaymentClient() {
+            return {
+              async create(input) {
+                globalThis.__brickRouteMocks.createInputs.push(input);
+                if (globalThis.__brickRouteMocks.providerError) {
+                  throw globalThis.__brickRouteMocks.providerError;
+                }
+                return providerResponse();
+              },
+              async get(input) {
+                globalThis.__brickRouteMocks.getInputs.push(input);
+                if (globalThis.__brickRouteMocks.providerError) {
+                  throw globalThis.__brickRouteMocks.providerError;
+                }
+                return providerResponse();
+              },
+            };
+          }
+        `,
+      };
+    }
+    return nextLoad(url, context);
+  },
+});
+
+const { POST } = await import(
+  "../src/app/api/mercadopago/brick/payment/route.ts"
+);
+
+function brickRequest({
+  method = "pix",
+  amount = 50,
+  installments = method === "card" ? 1 : undefined,
+  token = method === "card" ? cardToken : undefined,
+} = {}) {
+  return new Request("https://example.test/api/mercadopago/brick/payment", {
+    method: "POST",
+    headers: {
+      authorization: "Bearer authenticated-test-session",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      serviceId: "site-institucional",
+      checkoutSessionId,
+      selectedPaymentMethod: method === "pix" ? "bank_transfer" : "creditCard",
+      formData: {
+        payment_method_id: method === "pix" ? "pix" : "visa",
+        transaction_amount: amount,
+        installments,
+        token,
+        issuer_id: method === "card" ? "310" : undefined,
+        payer: {
+          identification: { type: "CPF", number: documentNumber },
+        },
+      },
+    }),
+  });
+}
+
+function resetMocks() {
+  globalThis.__brickRouteMocks.authenticatedPayer = {
+    userId: "user-test",
+    email: "comprador@exemplo.com",
+  };
+  globalThis.__brickRouteMocks.paymentOrder = null;
+  globalThis.__brickRouteMocks.persistenceInputs.length = 0;
+  globalThis.__brickRouteMocks.createInputs.length = 0;
+  globalThis.__brickRouteMocks.getInputs.length = 0;
+  globalThis.__brickRouteMocks.syncInputs.length = 0;
+  globalThis.__brickRouteMocks.providerError = null;
+}
+
+function restoreSandbox(value) {
+  if (value === undefined) delete process.env.MERCADO_PAGO_SANDBOX;
+  else process.env.MERCADO_PAGO_SANDBOX = value;
+}
+
+test("usuário não autenticado recebe 401", async () => {
+  resetMocks();
+  globalThis.__brickRouteMocks.authenticatedPayer = null;
+
+  const response = await POST(brickRequest());
+
+  assert.equal(response.status, 401);
+  assert.equal(globalThis.__brickRouteMocks.persistenceInputs.length, 0);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
+});
+
+test("amount adulterado é ignorado e PIX sandbox usa 5000 centavos", async (t) => {
+  const previousSandbox = process.env.MERCADO_PAGO_SANDBOX;
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+  resetMocks();
+  t.after(() => restoreSandbox(previousSandbox));
+
+  const response = await POST(brickRequest({ amount: 0.01 }));
+
+  assert.equal(response.status, 201);
+  assert.equal(globalThis.__brickRouteMocks.persistenceInputs[0].amountInCents, 5_000);
+  const providerInput = globalThis.__brickRouteMocks.createInputs[0];
+  assert.equal(providerInput.body.transaction_amount, 50);
+  assert.equal(providerInput.body.payment_method_id, "pix");
+  assert.equal(providerInput.body.payer.email, "test_user_br@testuser.com");
+  assert.equal(providerInput.body.payer.first_name, "APRO");
+  assert.equal(providerInput.requestOptions.idempotencyKey, "persisted-brick-idempotency-key");
+  const payload = await response.json();
+  assert.equal(payload.paymentMethod, "pix");
+  assert.equal(payload.qrCode, "safe-pix-code");
+});
+
+test("cartão exige token", async () => {
+  resetMocks();
+
+  const response = await POST(brickRequest({ method: "card", token: null }));
+
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__brickRouteMocks.persistenceInputs.length, 0);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
+});
+
+test("parcelas fora do limite são rejeitadas", async () => {
+  resetMocks();
+
+  const response = await POST(
+    brickRequest({ method: "card", installments: 13 }),
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
+});
+
+test("repetição reutiliza idempotency key e não cria novo pagamento", async () => {
+  resetMocks();
+
+  const firstResponse = await POST(brickRequest());
+  const secondResponse = await POST(brickRequest());
+
+  assert.equal(firstResponse.status, 201);
+  assert.equal(secondResponse.status, 200);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 1);
+  assert.equal(globalThis.__brickRouteMocks.getInputs.length, 1);
+  assert.equal(
+    globalThis.__brickRouteMocks.createInputs[0].requestOptions.idempotencyKey,
+    "persisted-brick-idempotency-key",
+  );
+  assert.deepEqual(globalThis.__brickRouteMocks.getInputs[0], {
+    id: "987654321",
+  });
+});
+
+test("falha da API Mercado Pago retorna erro seguro", async () => {
+  resetMocks();
+  globalThis.__brickRouteMocks.providerError = new Error("provider failure");
+
+  const response = await POST(brickRequest());
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), {
+    error: "Não foi possível processar o pagamento.",
+  });
+});
+
+test("cartão usa token sem expor token ou documento nos logs", async (t) => {
+  resetMocks();
+  const info = t.mock.method(console, "info", () => {});
+
+  const response = await POST(brickRequest({ method: "card" }));
+
+  assert.equal(response.status, 201);
+  const providerBody = globalThis.__brickRouteMocks.createInputs[0].body;
+  assert.equal(providerBody.token, cardToken);
+  assert.equal(providerBody.installments, 1);
+  assert.equal(providerBody.payer.identification.number, documentNumber);
+  const serializedLogs = info.mock.calls
+    .map(({ arguments: values }) => values.join(" "))
+    .join("\n");
+  assert.doesNotMatch(serializedLogs, new RegExp(cardToken));
+  assert.doesNotMatch(serializedLogs, new RegExp(documentNumber));
+  assert.match(serializedLogs, /"payment_method_id":"visa"/);
+  assert.match(serializedLogs, /"provider_id":"987654321"/);
+});

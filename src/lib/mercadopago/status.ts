@@ -20,6 +20,7 @@ export function normalizeMercadoPagoStatus(
     return "cancelled";
   }
   if (status === "failed" || status === "rejected") return "rejected";
+  if (status === "approved") return "approved";
   if (status === "processed" && detail === "accredited") return "approved";
   if (status === "processed" && detail === "partially_refunded") {
     return "approved";

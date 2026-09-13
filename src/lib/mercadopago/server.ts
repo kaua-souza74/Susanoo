@@ -1,8 +1,9 @@
 import "server-only";
 
-import { MercadoPagoConfig, Order } from "mercadopago";
+import { MercadoPagoConfig, Order, Payment } from "mercadopago";
 
 let orderClient: Order | undefined;
+let paymentClient: Payment | undefined;
 
 export function getMercadoPagoOrderClient(): Order {
   const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
@@ -21,6 +22,25 @@ export function getMercadoPagoOrderClient(): Order {
   }
 
   return orderClient;
+}
+
+export function getMercadoPagoPaymentClient(): Payment {
+  const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+
+  if (!accessToken) {
+    throw new MercadoPagoConfigurationError();
+  }
+
+  if (!paymentClient) {
+    const client = new MercadoPagoConfig({
+      accessToken,
+      options: { timeout: 10_000 },
+    });
+
+    paymentClient = new Payment(client);
+  }
+
+  return paymentClient;
 }
 
 export class MercadoPagoConfigurationError extends Error {

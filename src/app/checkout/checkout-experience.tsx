@@ -243,6 +243,8 @@ export function CheckoutExperience({
           <MercadoPagoPaymentBrick
             amountInCents={service.amountInCents}
             diagnosticsEnabled={brickDiagnosticsEnabled}
+            serviceId={service.id}
+            sessionScope={service.sessionScope}
           />
         ) : null}
       </div>
