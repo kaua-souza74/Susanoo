@@ -161,11 +161,12 @@ const { POST } = await import(
 );
 
 function brickRequest({
-  method = "pix",
   amount = 50,
-  installments = method === "card" ? 1 : undefined,
-  token = method === "card" ? cardToken : undefined,
+  installments = 1,
+  token = cardToken,
   email,
+  paymentMethodId = "visa",
+  issuerId = "310",
 } = {}) {
   return new Request("https://example.test/api/mercadopago/brick/payment", {
     method: "POST",
@@ -176,13 +177,12 @@ function brickRequest({
     body: JSON.stringify({
       serviceId: "site-institucional",
       checkoutSessionId,
-      selectedPaymentMethod: method === "pix" ? "bank_transfer" : "creditCard",
       formData: {
-        payment_method_id: method === "pix" ? "pix" : "visa",
+        payment_method_id: paymentMethodId,
         transaction_amount: amount,
         installments,
         token,
-        issuer_id: method === "card" ? "310" : undefined,
+        issuer_id: issuerId,
         payer: {
           email,
           identification: { type: "CPF", number: documentNumber },
@@ -221,7 +221,7 @@ test("usuário não autenticado recebe 401", async () => {
   assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
 });
 
-test("amount adulterado é ignorado e PIX sandbox usa 5000 centavos", async (t) => {
+test("amount adulterado é ignorado e preço sandbox permanece server-side", async (t) => {
   const previousSandbox = process.env.MERCADO_PAGO_SANDBOX;
   process.env.MERCADO_PAGO_SANDBOX = "true";
   resetMocks();
@@ -233,13 +233,12 @@ test("amount adulterado é ignorado e PIX sandbox usa 5000 centavos", async (t) 
   assert.equal(globalThis.__brickRouteMocks.persistenceInputs[0].amountInCents, 5_000);
   const providerInput = globalThis.__brickRouteMocks.createInputs[0];
   assert.equal(providerInput.body.transaction_amount, 50);
-  assert.equal(providerInput.body.payment_method_id, "pix");
+  assert.equal(providerInput.body.payment_method_id, "visa");
   assert.equal(providerInput.body.payer.email, "comprador@exemplo.com");
   assert.equal(providerInput.body.payer.first_name, undefined);
   assert.equal(providerInput.requestOptions.idempotencyKey, "persisted-brick-idempotency-key");
   const payload = await response.json();
-  assert.equal(payload.paymentMethod, "pix");
-  assert.equal(payload.qrCode, "safe-pix-code");
+  assert.equal(payload.paymentMethod, "card");
 });
 
 test("Brick sanitiza o email informado pelo pagador", async () => {
@@ -269,7 +268,7 @@ test("Brick rejeita email de pagador inválido", async () => {
 test("cartão exige token", async () => {
   resetMocks();
 
-  const response = await POST(brickRequest({ method: "card", token: null }));
+  const response = await POST(brickRequest({ token: null }));
 
   assert.equal(response.status, 400);
   assert.equal(globalThis.__brickRouteMocks.persistenceInputs.length, 0);
@@ -280,9 +279,37 @@ test("parcelas fora do limite são rejeitadas", async () => {
   resetMocks();
 
   const response = await POST(
-    brickRequest({ method: "card", installments: 13 }),
+    brickRequest({ installments: 13 }),
   );
 
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
+});
+
+test("parcelas menores que 1 são rejeitadas", async () => {
+  resetMocks();
+  const response = await POST(brickRequest({ installments: 0 }));
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
+});
+
+test("token com formato inválido é rejeitado", async () => {
+  resetMocks();
+  const response = await POST(brickRequest({ token: "curto" }));
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
+});
+
+test("PIX é rejeitado pelo endpoint exclusivo de cartão", async () => {
+  resetMocks();
+  const response = await POST(brickRequest({ paymentMethodId: "pix" }));
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
+});
+
+test("issuer_id inválido é rejeitado", async () => {
+  resetMocks();
+  const response = await POST(brickRequest({ issuerId: "issuer-invalido" }));
   assert.equal(response.status, 400);
   assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
 });
@@ -335,7 +362,7 @@ test("erro Mercado Pago registra somente diagnóstico sanitizado", async (t) => 
     ],
   });
 
-  const response = await POST(brickRequest({ method: "card" }));
+  const response = await POST(brickRequest());
 
   assert.equal(response.status, 502);
   const requestLog = JSON.parse(info.mock.calls[0].arguments[0]);
@@ -375,7 +402,7 @@ test("cartão usa token sem expor token ou documento nos logs", async (t) => {
   resetMocks();
   const info = t.mock.method(console, "info", () => {});
 
-  const response = await POST(brickRequest({ method: "card" }));
+  const response = await POST(brickRequest());
 
   assert.equal(response.status, 201);
   const providerBody = globalThis.__brickRouteMocks.createInputs[0].body;

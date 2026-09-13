@@ -1,14 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { initMercadoPago, Payment } from "@mercadopago/sdk-react";
+import { CardPayment, initMercadoPago } from "@mercadopago/sdk-react";
 import {
   CheckCircle2,
-  Copy,
   CreditCard,
-  FlaskConical,
-  QrCode,
   ShieldCheck,
 } from "lucide-react";
 
@@ -16,7 +12,7 @@ import type { ServiceId } from "@/lib/mercadopago/services";
 import type { BrickPaymentResponse } from "@/lib/mercadopago/types";
 import { supabase } from "@/lib/supabase";
 
-const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY;
+const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_BRICKS_PUBLIC_KEY;
 
 if (publicKey) {
   initMercadoPago(publicKey, {
@@ -25,23 +21,23 @@ if (publicKey) {
   });
 }
 
-type PaymentSubmitPayload = Parameters<
-  NonNullable<React.ComponentProps<typeof Payment>["onSubmit"]>
+type CardSubmitPayload = Parameters<
+  NonNullable<React.ComponentProps<typeof CardPayment>["onSubmit"]>
 >[0];
 
-type MercadoPagoPaymentBrickProps = {
+type MercadoPagoCardBrickProps = {
   amountInCents: number;
   diagnosticsEnabled: boolean;
   serviceId: ServiceId;
   sessionScope: string;
 };
 
-export function MercadoPagoPaymentBrick({
+export function MercadoPagoCardBrick({
   amountInCents,
   diagnosticsEnabled,
   serviceId,
   sessionScope,
-}: MercadoPagoPaymentBrickProps) {
+}: MercadoPagoCardBrickProps) {
   const [isReady, setIsReady] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
@@ -57,8 +53,8 @@ export function MercadoPagoPaymentBrick({
   const customization = useMemo(
     () => ({
       paymentMethods: {
-        bankTransfer: ["pix"],
-        creditCard: "all" as const,
+        types: { included: ["credit_card" as const] },
+        minInstallments: 1,
         maxInstallments: 12,
       },
       visual: {
@@ -81,7 +77,7 @@ export function MercadoPagoPaymentBrick({
   );
 
   const handleSubmit = useCallback(
-    async (payload: PaymentSubmitPayload) => {
+    async (formData: CardSubmitPayload) => {
       if (submitLockRef.current) return;
 
       submitLockRef.current = true;
@@ -90,17 +86,11 @@ export function MercadoPagoPaymentBrick({
       setSubmitMessage(null);
 
       if (diagnosticsEnabled) {
-        console.info("[Mercado Pago Payment Brick] onSubmit", {
-          selected_payment_method: safeString(payload.selectedPaymentMethod),
-          payment_method_id: safeString(
-            recordValue(payload.formData, "payment_method_id"),
-          ),
-          payment_type_id:
-            payload.selectedPaymentMethod === "bank_transfer"
-              ? "bank_transfer"
-              : "credit_card",
-          installments: safeNumber(recordValue(payload.formData, "installments")),
-          issuer_id: safeString(recordValue(payload.formData, "issuer_id")),
+        console.info("[Mercado Pago Card Payment Brick] onSubmit", {
+          payment_method_id: safeString(recordValue(formData, "payment_method_id")),
+          payment_type_id: "credit_card",
+          installments: safeNumber(recordValue(formData, "installments")),
+          issuer_id: safeString(recordValue(formData, "issuer_id")),
         });
       }
 
@@ -128,8 +118,7 @@ export function MercadoPagoPaymentBrick({
           body: JSON.stringify({
             serviceId,
             checkoutSessionId,
-            selectedPaymentMethod: payload.selectedPaymentMethod,
-            formData: pickSafeBrickFormData(payload.formData),
+            formData: pickSafeBrickFormData(formData),
           }),
         });
         const responseBody: unknown = await response.json();
@@ -139,11 +128,7 @@ export function MercadoPagoPaymentBrick({
         }
 
         setResult(responseBody);
-        setSubmitMessage(
-          responseBody.paymentMethod === "pix"
-            ? "PIX criado. Use o QR Code abaixo para concluir o pagamento."
-            : cardStatusMessage(responseBody.status),
-        );
+        setSubmitMessage(cardStatusMessage(responseBody.status));
       } catch (error: unknown) {
         submissionErrorRef.current = true;
         setSubmitMessage(
@@ -163,23 +148,20 @@ export function MercadoPagoPaymentBrick({
   if (!publicKey) {
     return (
       <p role="alert" className="text-sm font-medium text-amber-200/80">
-        Payment Brick indisponível: Public Key não configurada.
+        Cartão indisponível: Public Key do Bricks não configurada.
       </p>
     );
   }
 
   return (
-    <section className="border-t border-white/8 py-10 lg:py-14" aria-labelledby="payment-brick-title">
+    <section className="mt-5" aria-labelledby="card-brick-title">
       <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <span className="inline-flex items-center gap-2 rounded-full border border-violet-400/15 bg-violet-400/8 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-violet-300">
-            <FlaskConical className="h-3.5 w-3.5" /> Nova experiência em teste
-          </span>
-          <h2 id="payment-brick-title" className="mt-4 text-2xl font-black tracking-[-0.03em] sm:text-3xl">
-            Payment Brick
+          <h2 id="card-brick-title" className="text-2xl font-black tracking-[-0.03em] sm:text-3xl">
+            Pagamento com cartão
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-white/45">
-            Compare a experiência integrada do Mercado Pago. O checkout PIX atual acima continua disponível e sem alterações.
+            Preencha os dados no ambiente seguro do Mercado Pago e escolha o parcelamento.
           </p>
         </div>
         <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/35">
@@ -204,7 +186,7 @@ export function MercadoPagoPaymentBrick({
               </div>
             </div>
           ) : null}
-          <Payment
+          <CardPayment
             initialization={initialization}
             customization={customization}
             locale="pt-BR"
@@ -218,7 +200,7 @@ export function MercadoPagoPaymentBrick({
               }
               if (!submitLockRef.current) {
                 setSubmitMessage(
-                  "Não foi possível carregar o Payment Brick. Tente novamente.",
+                  "Não foi possível carregar o formulário de cartão. Tente novamente.",
                 );
               }
             }}
@@ -229,9 +211,8 @@ export function MercadoPagoPaymentBrick({
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-400/10 text-violet-300">
             <CreditCard className="h-5 w-5" />
           </div>
-          <p className="mt-4 text-sm font-black">Métodos habilitados</p>
+          <p className="mt-4 text-sm font-black">Pagamento protegido</p>
           <ul className="mt-3 space-y-2 text-xs font-medium text-white/45">
-            <li>PIX por transferência bancária</li>
             <li>Cartão de crédito</li>
             <li>Parcelamento em até 12x</li>
           </ul>
@@ -241,9 +222,7 @@ export function MercadoPagoPaymentBrick({
         </aside>
       </div>
 
-      {result?.paymentMethod === "pix" ? (
-        <BrickPixResult result={result} />
-      ) : result ? (
+      {result ? (
         <BrickCardResult result={result} />
       ) : null}
 
@@ -253,50 +232,6 @@ export function MercadoPagoPaymentBrick({
         </p>
       ) : null}
     </section>
-  );
-}
-
-function BrickPixResult({ result }: { result: BrickPaymentResponse }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copyCode() {
-    if (!result.qrCode) return;
-    await navigator.clipboard.writeText(result.qrCode);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 2_000);
-  }
-
-  return (
-    <div className="mt-5 grid gap-5 rounded-[1.75rem] border border-emerald-400/15 bg-emerald-400/[0.04] p-5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:p-6">
-      <div className="mx-auto flex h-40 w-40 items-center justify-center rounded-2xl bg-white p-3 sm:mx-0">
-        {result.qrCodeBase64 ? (
-          <Image
-            src={`data:image/png;base64,${result.qrCodeBase64}`}
-            alt="QR Code do PIX criado pelo Payment Brick"
-            width={136}
-            height={136}
-            unoptimized
-            className="h-full w-full object-contain"
-          />
-        ) : (
-          <QrCode className="h-12 w-12 text-zinc-500" />
-        )}
-      </div>
-      <div className="min-w-0">
-        <p className="text-sm font-black text-emerald-200">PIX aguardando pagamento</p>
-        <p className="mt-2 break-all rounded-xl border border-white/8 bg-black/20 p-3 font-mono text-[11px] leading-5 text-white/45">
-          {result.qrCode ?? "Código PIX em processamento."}
-        </p>
-        <button
-          type="button"
-          onClick={() => void copyCode()}
-          disabled={!result.qrCode}
-          className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-xs font-black text-[#04110b] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <Copy className="h-4 w-4" /> {copied ? "Código copiado" : "Copiar código PIX"}
-        </button>
-      </div>
-    </div>
   );
 }
 

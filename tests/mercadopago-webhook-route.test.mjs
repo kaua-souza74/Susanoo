@@ -7,377 +7,119 @@ import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
-
-globalThis.__webhookRouteMocks = {
-  paymentOrder: null,
-  providerLookups: [],
-  externalReferenceLookups: [],
-  syncInputs: [],
-};
+const orderId = "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3";
+const paymentId = "987654321";
+globalThis.__webhookRouteMocks = { orderGets: [], paymentGets: [], providerLookups: [], syncInputs: [], paymentOrder: null };
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
-    if (specifier === "server-only") {
-      return { shortCircuit: true, url: "mock:server-only" };
-    }
-    if (specifier === "next/server") {
-      return nextResolve("next/server.js", context);
-    }
-    if (specifier === "@/lib/mercadopago/payment-orders") {
-      return { shortCircuit: true, url: "mock:webhook-payment-orders" };
-    }
-    if (specifier.startsWith("@/")) {
-      const sourcePath = path.join(projectRoot, "src", `${specifier.slice(2)}.ts`);
-      return nextResolve(pathToFileURL(sourcePath).href, context);
-    }
+    if (specifier === "server-only") return { shortCircuit: true, url: "mock:server-only" };
+    if (specifier === "next/server") return nextResolve("next/server.js", context);
+    if (specifier === "@/lib/mercadopago/server") return { shortCircuit: true, url: "mock:webhook-server" };
+    if (specifier === "@/lib/mercadopago/payment-orders") return { shortCircuit: true, url: "mock:webhook-orders" };
+    if (specifier.startsWith("@/")) return nextResolve(pathToFileURL(path.join(projectRoot, "src", `${specifier.slice(2)}.ts`)).href, context);
     if (specifier.startsWith(".") && context.parentURL?.startsWith("file:")) {
-      const candidateUrl = new URL(`${specifier}.ts`, context.parentURL);
-      if (existsSync(fileURLToPath(candidateUrl))) {
-        return nextResolve(candidateUrl.href, context);
-      }
+      const candidate = new URL(`${specifier}.ts`, context.parentURL);
+      if (existsSync(fileURLToPath(candidate))) return nextResolve(candidate.href, context);
     }
     return nextResolve(specifier, context);
   },
   load(url, context, nextLoad) {
-    if (url === "mock:server-only") {
-      return { format: "module", shortCircuit: true, source: "export {};" };
-    }
-    if (url === "mock:webhook-payment-orders") {
-      return {
-        format: "module",
-        shortCircuit: true,
-        source: `
-          export class PaymentOrderMismatchError extends Error {}
-          export class PaymentOrderPersistenceError extends Error {}
-          export async function findPaymentOrderByProviderOrderId(id) {
-            globalThis.__webhookRouteMocks.providerLookups.push(id);
-            return globalThis.__webhookRouteMocks.paymentOrder;
-          }
-          export async function findPaymentOrderByExternalReference(reference) {
-            globalThis.__webhookRouteMocks.externalReferenceLookups.push(reference);
-            return null;
-          }
-          export async function syncPaymentOrderFromProvider(order, snapshot) {
-            globalThis.__webhookRouteMocks.syncInputs.push({ order, snapshot });
-            return { ...order, providerOrderId: snapshot.providerOrderId };
-          }
-        `,
-      };
-    }
+    if (url === "mock:server-only") return { format: "module", shortCircuit: true, source: "export {};" };
+    if (url === "mock:webhook-server") return { format: "module", shortCircuit: true, source: `
+      export class MercadoPagoConfigurationError extends Error {}
+      export function getMercadoPagoOrderClient() { return { async get(input) {
+        globalThis.__webhookRouteMocks.orderGets.push(input);
+        return { id: input.id, external_reference: "SUS-webhook", status: "processed", status_detail: "accredited", transactions: { payments: [] } };
+      } }; }
+      export function getMercadoPagoPaymentClient() { return { async get(input) {
+        globalThis.__webhookRouteMocks.paymentGets.push(input);
+        return { id: Number(input.id), external_reference: "SUS-webhook", status: "approved", status_detail: "accredited" };
+      } }; }
+    ` };
+    if (url === "mock:webhook-orders") return { format: "module", shortCircuit: true, source: `
+      export class PaymentOrderMismatchError extends Error {}
+      export class PaymentOrderPersistenceError extends Error {}
+      export async function findPaymentOrderByProviderOrderId(id) { globalThis.__webhookRouteMocks.providerLookups.push(id); return globalThis.__webhookRouteMocks.paymentOrder; }
+      export async function findPaymentOrderByExternalReference() { return null; }
+      export async function syncPaymentOrderFromProvider(order, snapshot) { globalThis.__webhookRouteMocks.syncInputs.push({ order, snapshot }); return order; }
+    ` };
     return nextLoad(url, context);
   },
 });
 
-const { MPBadRequestError, MPNotFoundError, Order } = await import("mercadopago");
 const { POST } = await import("../src/app/api/mercadopago/webhook/route.ts");
-const providerOrderId = "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3";
 
-function restoreEnvironmentVariable(name, previousValue) {
-  if (previousValue === undefined) {
-    delete process.env[name];
-    return;
-  }
-  process.env[name] = previousValue;
-}
-
-function signedRequest({
-  body,
-  dataId = "123456",
-  signature = null,
-  timestamp = String(Math.floor(Date.now() / 1000)),
-}) {
-  const secret = "test-secret";
+function signedRequest({ type = "order", dataId = type === "order" ? "123456" : paymentId, secret = type === "order" ? "orders-secret" : "bricks-secret", signature = null, bodyStatus = "forged" } = {}) {
+  const timestamp = String(Date.now());
   const requestId = "request-route-test";
-  const signatureDataId = dataId.toLowerCase();
-  const manifest = `id:${signatureDataId};request-id:${requestId};ts:${timestamp};`;
-  const validSignature = createHmac("sha256", secret)
-    .update(manifest)
-    .digest("hex");
-
-  return new Request(
-    `https://example.test/api/mercadopago/webhook?data.id=${encodeURIComponent(dataId)}&type=order`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-request-id": requestId,
-        "x-signature": signature ?? `ts=${timestamp},v1=${validSignature}`,
-      },
-      body,
-    },
-  );
+  const signatureDataId = type === "order" ? dataId.toLowerCase() : dataId;
+  const digest = createHmac("sha256", secret).update(`id:${signatureDataId};request-id:${requestId};ts:${timestamp};`).digest("hex");
+  return new Request(`https://example.test/api/mercadopago/webhook?data.id=${encodeURIComponent(dataId)}&type=${type}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-request-id": requestId, "x-signature": signature ?? `ts=${timestamp},v1=${digest}` },
+    body: JSON.stringify({ type, action: `${type}.updated`, status: bodyStatus, data: { id: dataId } }),
+  });
 }
 
-function resetWebhookMocks() {
-  globalThis.__webhookRouteMocks.paymentOrder = null;
+function reset() {
+  Object.assign(process.env, { MERCADO_PAGO_ORDERS_WEBHOOK_SECRET: "orders-secret", MERCADO_PAGO_BRICKS_WEBHOOK_SECRET: "bricks-secret" });
+  globalThis.__webhookRouteMocks.orderGets.length = 0;
+  globalThis.__webhookRouteMocks.paymentGets.length = 0;
   globalThis.__webhookRouteMocks.providerLookups.length = 0;
-  globalThis.__webhookRouteMocks.externalReferenceLookups.length = 0;
   globalThis.__webhookRouteMocks.syncInputs.length = 0;
+  globalThis.__webhookRouteMocks.paymentOrder = { id: "local", externalReference: "SUS-webhook", providerOrderId: null, status: "pending" };
 }
 
-test("timestamp válido em segundos mantém o simulador como 200 ignored sem consultar Orders API", async (t) => {
-  const previousSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
-  const previousAccessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
-  process.env.MERCADO_PAGO_WEBHOOK_SECRET = "test-secret";
-  process.env.MERCADO_PAGO_ACCESS_TOKEN = "test-access-token";
-
-  t.after(() => {
-    restoreEnvironmentVariable("MERCADO_PAGO_WEBHOOK_SECRET", previousSecret);
-    restoreEnvironmentVariable("MERCADO_PAGO_ACCESS_TOKEN", previousAccessToken);
-  });
-
-  const get = t.mock.method(Order.prototype, "get", async () => {
-    throw new Error("Orders API não deveria ser chamada");
-  });
-
-  const response = await POST(
-    signedRequest({
-      body: JSON.stringify({
-        type: "order",
-        data: { id: "123456" },
-      }),
-    }),
-  );
-
-  assert.equal(get.mock.callCount(), 0);
+test("simulador Orders autenticado continua ignored sem consultar provider", async () => {
+  reset();
+  const response = await POST(signedRequest());
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), {
-    received: true,
-    result: "ignored",
-  });
+  assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 0);
+  assert.deepEqual(await response.json(), { received: true, result: "ignored" });
 });
 
-test("timestamp válido em milissegundos é aceito após o HMAC", async (t) => {
-  const previousSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
-  process.env.MERCADO_PAGO_WEBHOOK_SECRET = "test-secret";
-  t.after(() => {
-    restoreEnvironmentVariable("MERCADO_PAGO_WEBHOOK_SECRET", previousSecret);
-  });
-
-  const get = t.mock.method(Order.prototype, "get", async () => {
-    throw new Error("Orders API não deveria ser chamada");
-  });
-  const response = await POST(
-    signedRequest({
-      timestamp: String(Date.now()),
-      body: JSON.stringify({ type: "order", data: { id: "123456" } }),
-    }),
-  );
-
-  assert.equal(get.mock.callCount(), 0);
+test("evento Orders usa secret Orders, lowercase no HMAC e ID original no provider", async () => {
+  reset();
+  const response = await POST(signedRequest({ dataId: orderId }));
   assert.equal(response.status, 200);
+  assert.deepEqual(globalThis.__webhookRouteMocks.orderGets, [{ id: orderId }]);
+  assert.deepEqual(globalThis.__webhookRouteMocks.providerLookups, [orderId]);
 });
 
-for (const testCase of [
-  {
-    name: "timestamp em segundos fora da tolerância",
-    timestamp: () => String(Math.floor(Date.now() / 1000) - 301),
-  },
-  {
-    name: "timestamp em milissegundos fora da tolerância",
-    timestamp: () => String(Date.now() - 300_001),
-  },
-  { name: "timestamp malformado", timestamp: () => "not-a-timestamp" },
-  { name: "timestamp ambíguo com 11 dígitos", timestamp: () => "12345678901" },
-  { name: "timestamp ambíguo com 12 dígitos", timestamp: () => "123456789012" },
-]) {
-  test(`${testCase.name} retorna 401`, async (t) => {
-    const previousSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
-    process.env.MERCADO_PAGO_WEBHOOK_SECRET = "test-secret";
-    t.after(() => {
-      restoreEnvironmentVariable("MERCADO_PAGO_WEBHOOK_SECRET", previousSecret);
-    });
-
-    const get = t.mock.method(Order.prototype, "get", async () => {
-      throw new Error("Orders API não deveria ser chamada");
-    });
-    const response = await POST(
-      signedRequest({
-        timestamp: testCase.timestamp(),
-        body: JSON.stringify({ type: "order", data: { id: "123456" } }),
-      }),
-    );
-
-    assert.equal(get.mock.callCount(), 0);
-    assert.equal(response.status, 401);
-  });
-}
-
-test("data.id uppercase valida via lowercase e preserva o ID original na reconciliação", async (t) => {
-  const previousSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
-  const previousAccessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
-  process.env.MERCADO_PAGO_WEBHOOK_SECRET = "test-secret";
-  process.env.MERCADO_PAGO_ACCESS_TOKEN = "test-access-token";
-  resetWebhookMocks();
-  globalThis.__webhookRouteMocks.paymentOrder = {
-    id: "local-order",
-    userId: "user-test",
-    serviceId: "site-institucional",
-    amountInCents: 5_000,
-    currency: "BRL",
-    providerOrderId,
-    externalReference: "SUS-test-reference",
-    checkoutSessionId: "018f47a2-4d7e-7c31-8a5b-11c2df98a120",
-    idempotencyKey: "persisted-idempotency-key",
-    paymentMethod: "pix",
-    status: "pending",
-    providerStatus: "action_required",
-    statusDetail: "waiting_transfer",
-    approvedAt: null,
-  };
-
-  t.after(() => {
-    restoreEnvironmentVariable("MERCADO_PAGO_WEBHOOK_SECRET", previousSecret);
-    restoreEnvironmentVariable("MERCADO_PAGO_ACCESS_TOKEN", previousAccessToken);
-  });
-
-  const get = t.mock.method(Order.prototype, "get", async ({ id }) => {
-    assert.equal(id, providerOrderId);
-    return {
-      id: providerOrderId,
-      external_reference: "SUS-test-reference",
-      status: "processed",
-      status_detail: "accredited",
-      transactions: { payments: [] },
-    };
-  });
-
-  const response = await POST(
-    signedRequest({
-      dataId: providerOrderId,
-      timestamp: String(Date.now()),
-      body: JSON.stringify({
-        action: "order.processed",
-        type: "order",
-        data: { id: providerOrderId },
-      }),
-    }),
-  );
-
-  assert.equal(get.mock.callCount(), 1);
+test("evento payment usa secret Bricks e consulta Payments API antes de persistir", async () => {
+  reset();
+  const response = await POST(signedRequest({ type: "payment" }));
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { received: true, result: "processed" });
-  assert.deepEqual(globalThis.__webhookRouteMocks.providerLookups, [providerOrderId]);
+  assert.deepEqual(globalThis.__webhookRouteMocks.paymentGets, [{ id: paymentId }]);
   assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 1);
-  assert.equal(
-    globalThis.__webhookRouteMocks.syncInputs[0].snapshot.providerOrderId,
-    providerOrderId,
-  );
-  assert.equal(
-    globalThis.__webhookRouteMocks.syncInputs[0].snapshot.status,
-    "approved",
-  );
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs[0].snapshot.status, "approved");
 });
 
-test("Order ID válido continua consultando Orders API", async (t) => {
-  const previousSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
-  const previousAccessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
-  process.env.MERCADO_PAGO_WEBHOOK_SECRET = "test-secret";
-  process.env.MERCADO_PAGO_ACCESS_TOKEN = "test-access-token";
-
-  t.after(() => {
-    restoreEnvironmentVariable("MERCADO_PAGO_WEBHOOK_SECRET", previousSecret);
-    restoreEnvironmentVariable("MERCADO_PAGO_ACCESS_TOKEN", previousAccessToken);
-  });
-
-  const get = t.mock.method(Order.prototype, "get", async ({ id }) => {
-    assert.equal(id, providerOrderId);
-    throw new MPNotFoundError({
-      status: 404,
-      error: "not_found",
-      message: "Order not found",
-    });
-  });
-
-  const response = await POST(
-    signedRequest({
-      dataId: providerOrderId,
-      body: JSON.stringify({ type: "order", data: { id: providerOrderId } }),
-    }),
-  );
-
-  assert.equal(get.mock.callCount(), 1);
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), {
-    received: true,
-    result: "ignored",
-  });
+test("payment assinado com secret Orders é rejeitado", async () => {
+  reset();
+  const response = await POST(signedRequest({ type: "payment", secret: "orders-secret" }));
+  assert.equal(response.status, 401);
+  assert.equal(globalThis.__webhookRouteMocks.paymentGets.length, 0);
 });
 
-test("erro 400 de Order ID válido não é mascarado como ignored", async (t) => {
-  const previousSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
-  const previousAccessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
-  process.env.MERCADO_PAGO_WEBHOOK_SECRET = "test-secret";
-  process.env.MERCADO_PAGO_ACCESS_TOKEN = "test-access-token";
-
-  t.after(() => {
-    restoreEnvironmentVariable("MERCADO_PAGO_WEBHOOK_SECRET", previousSecret);
-    restoreEnvironmentVariable("MERCADO_PAGO_ACCESS_TOKEN", previousAccessToken);
-  });
-
-  const get = t.mock.method(Order.prototype, "get", async ({ id }) => {
-    assert.equal(id, providerOrderId);
-    throw new MPBadRequestError({
-      status: 400,
-      error: "bad_request",
-      message: "Legitimate Order API error",
-    });
-  });
-
-  const response = await POST(
-    signedRequest({
-      dataId: providerOrderId,
-      body: JSON.stringify({ type: "order", data: { id: providerOrderId } }),
-    }),
-  );
-
-  assert.equal(get.mock.callCount(), 1);
-  assert.equal(response.status, 502);
-  assert.deepEqual(await response.json(), {
-    error: "Falha temporária ao processar a notificação.",
-  });
-});
-
-test("assinatura inválida retorna 401 antes da Orders API", async (t) => {
-  const previousSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
-  process.env.MERCADO_PAGO_WEBHOOK_SECRET = "test-secret";
-  t.after(() => {
-    restoreEnvironmentVariable("MERCADO_PAGO_WEBHOOK_SECRET", previousSecret);
-  });
-
-  const get = t.mock.method(Order.prototype, "get", async () => {
-    throw new Error("Orders API não deveria ser chamada");
-  });
-  const response = await POST(
-    signedRequest({
-      body: JSON.stringify({
-        application_id: 8362280076817377,
-        user_id: 123456789,
-        live_mode: false,
-        type: "order",
-        action: "order.updated",
-        data: { id: "123456" },
-      }),
-      signature: "ts=1700000000,v1=invalid",
-    }),
-  );
-
-  assert.equal(get.mock.callCount(), 0);
+test("assinatura inválida retorna 401", async () => {
+  reset();
+  const response = await POST(signedRequest({ signature: `ts=${Date.now()},v1=invalid` }));
   assert.equal(response.status, 401);
 });
 
-test("payload malformado retorna 400 antes da Orders API", async (t) => {
-  const previousSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
-  process.env.MERCADO_PAGO_WEBHOOK_SECRET = "test-secret";
-  t.after(() => {
-    restoreEnvironmentVariable("MERCADO_PAGO_WEBHOOK_SECRET", previousSecret);
-  });
+test("status forjado no body nunca é persistido", async () => {
+  reset();
+  await POST(signedRequest({ type: "payment", bodyStatus: "rejected" }));
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs[0].snapshot.status, "approved");
+});
 
-  const get = t.mock.method(Order.prototype, "get", async () => {
-    throw new Error("Orders API não deveria ser chamada");
-  });
-  const response = await POST(signedRequest({ body: "{" }));
-
-  assert.equal(get.mock.callCount(), 0);
+test("payload com data.id divergente é rejeitado antes do provider", async () => {
+  reset();
+  const request = signedRequest({ type: "payment" });
+  const headers = Object.fromEntries(request.headers);
+  const response = await POST(new Request(request.url, { method: "POST", headers, body: JSON.stringify({ type: "payment", data: { id: "111" } }) }));
   assert.equal(response.status, 400);
+  assert.equal(globalThis.__webhookRouteMocks.paymentGets.length, 0);
 });

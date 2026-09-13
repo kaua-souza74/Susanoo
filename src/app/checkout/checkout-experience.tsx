@@ -17,8 +17,7 @@ import {
 } from "lucide-react";
 
 import { Logo } from "@/components/logo";
-import { MercadoPagoPaymentBrick } from "@/components/checkout/MercadoPagoPaymentBrick";
-import { initializeMercadoPago } from "@/lib/mercadopago/client";
+import { MercadoPagoCardBrick } from "@/components/checkout/MercadoPagoCardBrick";
 import type { ServiceId } from "@/lib/mercadopago/services";
 import type { PaymentStatus } from "@/lib/mercadopago/status";
 import type { PixOrderResponse } from "@/lib/mercadopago/types";
@@ -54,13 +53,6 @@ export function CheckoutExperience({
   const checkoutSessionIdRef = useRef<string | null>(null);
   const activeOrderId = order?.orderId ?? null;
   const shouldMonitorOrder = order?.status === "pending";
-
-  useEffect(() => {
-    void initializeMercadoPago().catch(() => {
-      // O SDK de navegador será necessário para cartão. O fluxo PIX usa a
-      // Orders API exclusivamente no servidor.
-    });
-  }, []);
 
   useEffect(() => {
     if (!activeOrderId || !shouldMonitorOrder) return;
@@ -216,13 +208,23 @@ export function CheckoutExperience({
                 order={order}
               />
             ) : (
-              <PaymentSelection
-                paymentMethod={paymentMethod}
-                setPaymentMethod={(method) => {
-                  setPaymentMethod(method);
-                  setMessage(null);
-                }}
-              />
+              <>
+                <PaymentSelection
+                  paymentMethod={paymentMethod}
+                  setPaymentMethod={(method) => {
+                    setPaymentMethod(method);
+                    setMessage(null);
+                  }}
+                />
+                {paymentMethod === "card" ? (
+                  <MercadoPagoCardBrick
+                    amountInCents={service.amountInCents}
+                    diagnosticsEnabled={brickDiagnosticsEnabled}
+                    serviceId={service.id}
+                    sessionScope={service.sessionScope}
+                  />
+                ) : null}
+              </>
             )}
 
             {message ? (
@@ -236,17 +238,10 @@ export function CheckoutExperience({
             isSubmitting={isSubmitting}
             onSubmit={handleSubmit}
             order={order}
+            paymentMethod={paymentMethod}
             service={service}
           />
         </div>
-        {!order ? (
-          <MercadoPagoPaymentBrick
-            amountInCents={service.amountInCents}
-            diagnosticsEnabled={brickDiagnosticsEnabled}
-            serviceId={service.id}
-            sessionScope={service.sessionScope}
-          />
-        ) : null}
       </div>
     </main>
   );
@@ -311,7 +306,7 @@ function PaymentSelection({
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
             <PreparedField label="Dados do cartão" value="Tokenização segura" />
-            <PreparedField label="Parcelamento" value="Até 12x · em breve" />
+            <PreparedField label="Parcelamento" value="Até 12x" />
           </div>
         )}
       </div>
@@ -401,11 +396,13 @@ function OrderSummary({
   isSubmitting,
   onSubmit,
   order,
+  paymentMethod,
   service,
 }: {
   isSubmitting: boolean;
   onSubmit: () => void;
   order: PixOrderResponse | null;
+  paymentMethod: PaymentMethod;
   service: CheckoutService;
 }) {
   return (
@@ -440,7 +437,7 @@ function OrderSummary({
         <span className="text-3xl font-black tracking-[-0.04em]">{service.formattedPrice}</span>
       </div>
 
-      {!order ? (
+      {!order && paymentMethod === "pix" ? (
         <button
           type="button"
           onClick={onSubmit}

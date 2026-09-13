@@ -1,7 +1,6 @@
 const allowedRequestKeys = new Set([
   "serviceId",
   "checkoutSessionId",
-  "selectedPaymentMethod",
   "formData",
 ]);
 const allowedFormDataKeys = new Set([
@@ -23,15 +22,13 @@ const IDENTIFICATION_TYPE_PATTERN = /^[a-z0-9_-]{2,16}$/i;
 const IDENTIFICATION_NUMBER_PATTERN = /^[a-z0-9.-]{5,32}$/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export type BrickPaymentMethod = "pix" | "card";
-
 export type SafeBrickPaymentRequest = {
   serviceId: string;
   checkoutSessionId: string;
-  paymentMethod: BrickPaymentMethod;
+  paymentMethod: "card";
   paymentMethodId: string;
-  paymentTypeId: "bank_transfer" | "credit_card";
-  token: string | null;
+  paymentTypeId: "credit_card";
+  token: string;
   issuerId: number | null;
   installments: number;
   payerEmail: string | null;
@@ -69,27 +66,17 @@ export function parseBrickPaymentRequest(
     return null;
   }
 
-  const paymentMethod = readPaymentMethod(
-    value.selectedPaymentMethod,
-    paymentMethodId,
-  );
-  if (!paymentMethod) return null;
+  if (paymentMethodId === "pix") return null;
 
-  const installments = readInstallments(value.formData.installments, paymentMethod);
+  const installments = readInstallments(value.formData.installments);
   if (installments === null) return null;
 
   const token = value.formData.token;
-  if (
-    paymentMethod === "card" &&
-    (typeof token !== "string" || !CARD_TOKEN_PATTERN.test(token))
-  ) {
-    return null;
-  }
-  if (paymentMethod === "pix" && token !== undefined && token !== null) {
+  if (typeof token !== "string" || !CARD_TOKEN_PATTERN.test(token)) {
     return null;
   }
 
-  const issuerId = readIssuerId(value.formData.issuer_id, paymentMethod);
+  const issuerId = readIssuerId(value.formData.issuer_id);
   if (issuerId === undefined) return null;
 
   const identification = readIdentification(value.formData.payer);
@@ -100,11 +87,10 @@ export function parseBrickPaymentRequest(
   return {
     serviceId: value.serviceId,
     checkoutSessionId: value.checkoutSessionId,
-    paymentMethod,
+    paymentMethod: "card",
     paymentMethodId,
-    paymentTypeId:
-      paymentMethod === "pix" ? "bank_transfer" : "credit_card",
-    token: paymentMethod === "card" ? (token as string) : null,
+    paymentTypeId: "credit_card",
+    token,
     issuerId,
     installments,
     payerEmail,
@@ -112,38 +98,13 @@ export function parseBrickPaymentRequest(
   };
 }
 
-function readPaymentMethod(
-  selectedPaymentMethod: unknown,
-  paymentMethodId: string,
-): BrickPaymentMethod | null {
-  if (selectedPaymentMethod === "bank_transfer" && paymentMethodId === "pix") {
-    return "pix";
-  }
-  if (selectedPaymentMethod === "creditCard" && paymentMethodId !== "pix") {
-    return "card";
-  }
-  return null;
-}
-
-function readInstallments(
-  value: unknown,
-  paymentMethod: BrickPaymentMethod,
-): number | null {
-  if (paymentMethod === "pix") {
-    return value === undefined || value === null || value === 1 ? 1 : null;
-  }
+function readInstallments(value: unknown): number | null {
   return Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 12
     ? Number(value)
     : null;
 }
 
-function readIssuerId(
-  value: unknown,
-  paymentMethod: BrickPaymentMethod,
-): number | null | undefined {
-  if (paymentMethod === "pix") {
-    return value === undefined || value === null ? null : undefined;
-  }
+function readIssuerId(value: unknown): number | null | undefined {
   if (value === undefined || value === null || value === "") return null;
 
   const parsed = typeof value === "string" && /^\d{1,12}$/.test(value)

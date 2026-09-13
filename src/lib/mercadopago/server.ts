@@ -6,7 +6,7 @@ let orderClient: Order | undefined;
 let paymentClient: Payment | undefined;
 
 export function getMercadoPagoOrderClient(): Order {
-  const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+  const accessToken = process.env.MERCADO_PAGO_ORDERS_ACCESS_TOKEN;
 
   if (!accessToken) {
     throw new MercadoPagoConfigurationError();
@@ -25,7 +25,7 @@ export function getMercadoPagoOrderClient(): Order {
 }
 
 export function getMercadoPagoPaymentClient(): Payment {
-  const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+  const accessToken = process.env.MERCADO_PAGO_BRICKS_ACCESS_TOKEN;
 
   if (!accessToken) {
     throw new MercadoPagoConfigurationError();
