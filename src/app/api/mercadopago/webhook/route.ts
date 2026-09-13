@@ -18,6 +18,7 @@ import {
   getMercadoPagoOrderClient,
 } from "@/lib/mercadopago/server";
 import { PaymentPersistenceConfigurationError } from "@/lib/mercadopago/supabase-admin";
+import { calculateWebhookHmacDiagnostic } from "@/lib/mercadopago/webhook-signature-diagnostic";
 import {
   isProviderOrderId,
   isWebhookTimestampValid,
@@ -61,6 +62,15 @@ export async function POST(request: Request) {
     return errorResponse("Assinatura inválida.", 401);
   }
 
+  const hmacDiagnostic = calculateWebhookHmacDiagnostic({
+    dataId: queryDataId,
+    requestId: xRequestId,
+    xSignature,
+    secret,
+  });
+  let sdkValid = false;
+  let sdkValidationError: unknown;
+
   try {
     WebhookSignatureValidator.validate({
       xSignature,
@@ -68,12 +78,27 @@ export async function POST(request: Request) {
       dataId: queryDataId,
       secret,
     });
+    sdkValid = true;
   } catch (error: unknown) {
-    if (error instanceof InvalidWebhookSignatureError) {
+    sdkValidationError = error;
+  }
+
+  logWebhookDiagnostic({
+    webhook_stage: "hmac_diagnostic",
+    sdk_valid: sdkValid,
+    manual_valid: hmacDiagnostic.manualValid,
+    manifest_length: hmacDiagnostic.manifestLength,
+    data_id_length: hmacDiagnostic.dataIdLength,
+    request_id_length: hmacDiagnostic.requestIdLength,
+    ts_digits: hmacDiagnostic.tsDigits,
+  });
+
+  if (sdkValidationError) {
+    if (sdkValidationError instanceof InvalidWebhookSignatureError) {
       logWebhookDiagnostic({
         webhook_stage: "hmac_invalid",
-        error_name: error.name,
-        error_reason: error.reason,
+        error_name: sdkValidationError.name,
+        error_reason: sdkValidationError.reason,
       });
       return errorResponse("Assinatura inválida.", 401);
     }

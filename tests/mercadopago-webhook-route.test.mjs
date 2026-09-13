@@ -70,8 +70,57 @@ registerHooks({
 
 const { MPBadRequestError, MPNotFoundError, Order } = await import("mercadopago");
 const { POST } = await import("../src/app/api/mercadopago/webhook/route.ts");
+const { calculateWebhookHmacDiagnostic } = await import(
+  "../src/lib/mercadopago/webhook-signature-diagnostic.ts"
+);
 
 const providerOrderId = "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3";
+
+test("diagnóstico HMAC manual aceita o manifest oficial", () => {
+  const dataId = "ORDTST01M2C0G58E56EZ82ZXS77E11Q9";
+  const requestId = "request-real-format";
+  const timestamp = "1789308000000";
+  const secret = "test-secret";
+  const manifest = `id:${dataId};request-id:${requestId};ts:${timestamp};`;
+  const v1 = createHmac("sha256", secret).update(manifest).digest("hex");
+
+  assert.deepEqual(
+    calculateWebhookHmacDiagnostic({
+      dataId,
+      requestId,
+      xSignature: `ts=${timestamp},v1=${v1}`,
+      secret,
+    }),
+    {
+      manualValid: true,
+      manifestLength: manifest.length,
+      dataIdLength: dataId.length,
+      requestIdLength: requestId.length,
+      tsDigits: 13,
+    },
+  );
+});
+
+test("diagnóstico HMAC manual rejeita secret diferente", () => {
+  const dataId = "ORDTST01M2C0G58E56EZ82ZXS77E11Q9";
+  const requestId = "request-real-format";
+  const timestamp = "1789308000000";
+  const manifest = `id:${dataId};request-id:${requestId};ts:${timestamp};`;
+  const v1 = createHmac("sha256", "signing-secret")
+    .update(manifest)
+    .digest("hex");
+
+  const diagnostic = calculateWebhookHmacDiagnostic({
+    dataId,
+    requestId,
+    xSignature: `ts=${timestamp},v1=${v1}`,
+    secret: "different-secret",
+  });
+
+  assert.equal(diagnostic.manualValid, false);
+  assert.equal(diagnostic.manifestLength, manifest.length);
+  assert.equal(diagnostic.tsDigits, 13);
+});
 
 function restoreEnvironmentVariable(name, previousValue) {
   if (previousValue === undefined) {
