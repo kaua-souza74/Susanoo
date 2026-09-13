@@ -70,9 +70,10 @@ registerHooks({
 
 const { MPBadRequestError, MPNotFoundError, Order } = await import("mercadopago");
 const { POST } = await import("../src/app/api/mercadopago/webhook/route.ts");
-const { calculateWebhookHmacDiagnostic } = await import(
-  "../src/lib/mercadopago/webhook-signature-diagnostic.ts"
-);
+const {
+  calculateWebhookHmacDiagnostic,
+  calculateWebhookManifestDiagnostic,
+} = await import("../src/lib/mercadopago/webhook-signature-diagnostic.ts");
 
 const providerOrderId = "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3";
 
@@ -120,6 +121,67 @@ test("diagnóstico HMAC manual rejeita secret diferente", () => {
   assert.equal(diagnostic.manualValid, false);
   assert.equal(diagnostic.manifestLength, manifest.length);
   assert.equal(diagnostic.tsDigits, 13);
+});
+
+test("diagnóstico compara as quatro variantes de manifest isoladamente", () => {
+  const dataId = "ORDTST01M2C0G58E56EZ82ZXS77E11Q9";
+  const requestId = "request-real-format";
+  const timestamp = "1789308000000";
+  const secret = "test-secret";
+  const variants = [
+    {
+      key: "noSpaceOriginalValid",
+      manifest: `id:${dataId};request-id:${requestId};ts:${timestamp};`,
+    },
+    {
+      key: "spaceOriginalValid",
+      manifest: `id: ${dataId};request-id: ${requestId};ts: ${timestamp};`,
+    },
+    {
+      key: "noSpaceLowercaseValid",
+      manifest: `id:${dataId.toLowerCase()};request-id:${requestId};ts:${timestamp};`,
+    },
+    {
+      key: "spaceLowercaseValid",
+      manifest: `id: ${dataId.toLowerCase()};request-id: ${requestId};ts: ${timestamp};`,
+    },
+  ];
+
+  for (const variant of variants) {
+    const v1 = createHmac("sha256", secret)
+      .update(variant.manifest)
+      .digest("hex");
+    const diagnostic = calculateWebhookManifestDiagnostic({
+      dataId,
+      requestId,
+      xSignature: `ts=${timestamp},v1=${v1}`,
+      secret,
+    });
+
+    assert.deepEqual(diagnostic, {
+      noSpaceOriginalValid: variant.key === "noSpaceOriginalValid",
+      spaceOriginalValid: variant.key === "spaceOriginalValid",
+      noSpaceLowercaseValid: variant.key === "noSpaceLowercaseValid",
+      spaceLowercaseValid: variant.key === "spaceLowercaseValid",
+    });
+  }
+});
+
+test("diagnóstico das variantes não aceita assinatura malformada", () => {
+  assert.deepEqual(
+    calculateWebhookManifestDiagnostic({
+      dataId: "ORDTST01M2C0G58E56EZ82ZXS77E11Q9",
+      requestId: "request-real-format",
+      xSignature: "ts=1789308000000,v1=invalid",
+      secret: "test-secret",
+    }),
+    {
+      noSpaceOriginalValid: false,
+      spaceOriginalValid: false,
+      noSpaceLowercaseValid: false,
+      spaceLowercaseValid: false,
+    },
+  );
 });
 
 function restoreEnvironmentVariable(name, previousValue) {
@@ -412,6 +474,19 @@ test("assinatura inválida retorna 401 antes da Orders API", async (t) => {
   assert.equal(response.status, 401);
   const diagnosticLogs = info.mock.calls.map(({ arguments: [message] }) =>
     JSON.parse(message),
+  );
+  assert.deepEqual(
+    diagnosticLogs.find(
+      ({ webhook_stage: webhookStage }) =>
+        webhookStage === "manifest_diagnostic",
+    ),
+    {
+      webhook_stage: "manifest_diagnostic",
+      no_space_original_valid: false,
+      space_original_valid: false,
+      no_space_lowercase_valid: false,
+      space_lowercase_valid: false,
+    },
   );
   assert.deepEqual(
     diagnosticLogs.find(

@@ -17,6 +17,13 @@ export type WebhookHmacDiagnostic = {
   tsDigits: number;
 };
 
+export type WebhookManifestDiagnostic = {
+  noSpaceOriginalValid: boolean;
+  spaceOriginalValid: boolean;
+  noSpaceLowercaseValid: boolean;
+  spaceLowercaseValid: boolean;
+};
+
 export function calculateWebhookHmacDiagnostic({
   dataId,
   requestId,
@@ -30,17 +37,11 @@ export function calculateWebhookHmacDiagnostic({
       ? `id:${dataId};request-id:${requestId};ts:${timestamp};`
       : null;
 
-  let manualValid = false;
-  if (manifest && v1 && /^[a-f\d]{64}$/i.test(v1)) {
-    const calculatedHash = createHmac("sha256", secret)
-      .update(manifest)
-      .digest();
-    const receivedHash = Buffer.from(v1, "hex");
-
-    manualValid =
-      calculatedHash.length === receivedHash.length &&
-      timingSafeEqual(calculatedHash, receivedHash);
-  }
+  const receivedHash = parseReceivedHash(v1);
+  const manualValid =
+    manifest !== null &&
+    receivedHash !== null &&
+    isManifestValid(manifest, secret, receivedHash);
 
   return {
     manualValid,
@@ -49,6 +50,68 @@ export function calculateWebhookHmacDiagnostic({
     requestIdLength: requestId.length,
     tsDigits,
   };
+}
+
+export function calculateWebhookManifestDiagnostic({
+  dataId,
+  requestId,
+  xSignature,
+  secret,
+}: WebhookHmacDiagnosticInput): WebhookManifestDiagnostic {
+  const { timestamp, v1 } = parseSignatureParts(xSignature);
+  const receivedHash = parseReceivedHash(v1);
+  const invalidResult: WebhookManifestDiagnostic = {
+    noSpaceOriginalValid: false,
+    spaceOriginalValid: false,
+    noSpaceLowercaseValid: false,
+    spaceLowercaseValid: false,
+  };
+
+  if (dataId === null || timestamp === null || receivedHash === null) {
+    return invalidResult;
+  }
+
+  const lowercaseDataId = dataId.toLowerCase();
+
+  return {
+    noSpaceOriginalValid: isManifestValid(
+      `id:${dataId};request-id:${requestId};ts:${timestamp};`,
+      secret,
+      receivedHash,
+    ),
+    spaceOriginalValid: isManifestValid(
+      `id: ${dataId};request-id: ${requestId};ts: ${timestamp};`,
+      secret,
+      receivedHash,
+    ),
+    noSpaceLowercaseValid: isManifestValid(
+      `id:${lowercaseDataId};request-id:${requestId};ts:${timestamp};`,
+      secret,
+      receivedHash,
+    ),
+    spaceLowercaseValid: isManifestValid(
+      `id: ${lowercaseDataId};request-id: ${requestId};ts: ${timestamp};`,
+      secret,
+      receivedHash,
+    ),
+  };
+}
+
+function parseReceivedHash(v1: string | null) {
+  return v1 && /^[a-f\d]{64}$/i.test(v1) ? Buffer.from(v1, "hex") : null;
+}
+
+function isManifestValid(
+  manifest: string,
+  secret: string,
+  receivedHash: Buffer,
+) {
+  const calculatedHash = createHmac("sha256", secret).update(manifest).digest();
+
+  return (
+    calculatedHash.length === receivedHash.length &&
+    timingSafeEqual(calculatedHash, receivedHash)
+  );
 }
 
 function parseSignatureParts(xSignature: string | null) {

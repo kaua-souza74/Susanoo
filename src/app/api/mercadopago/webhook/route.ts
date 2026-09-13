@@ -18,7 +18,10 @@ import {
   getMercadoPagoOrderClient,
 } from "@/lib/mercadopago/server";
 import { PaymentPersistenceConfigurationError } from "@/lib/mercadopago/supabase-admin";
-import { calculateWebhookHmacDiagnostic } from "@/lib/mercadopago/webhook-signature-diagnostic";
+import {
+  calculateWebhookHmacDiagnostic,
+  calculateWebhookManifestDiagnostic,
+} from "@/lib/mercadopago/webhook-signature-diagnostic";
 import {
   isProviderOrderId,
   isWebhookTimestampValid,
@@ -68,6 +71,12 @@ export async function POST(request: Request) {
     xSignature,
     secret,
   });
+  const manifestDiagnostic = calculateWebhookManifestDiagnostic({
+    dataId: queryDataId,
+    requestId: xRequestId,
+    xSignature,
+    secret,
+  });
   let sdkValid = false;
   let sdkValidationError: unknown;
 
@@ -92,6 +101,15 @@ export async function POST(request: Request) {
     request_id_length: hmacDiagnostic.requestIdLength,
     ts_digits: hmacDiagnostic.tsDigits,
   });
+  console.info(
+    JSON.stringify({
+      webhook_stage: "manifest_diagnostic",
+      no_space_original_valid: manifestDiagnostic.noSpaceOriginalValid,
+      space_original_valid: manifestDiagnostic.spaceOriginalValid,
+      no_space_lowercase_valid: manifestDiagnostic.noSpaceLowercaseValid,
+      space_lowercase_valid: manifestDiagnostic.spaceLowercaseValid,
+    }),
+  );
 
   if (sdkValidationError) {
     if (sdkValidationError instanceof InvalidWebhookSignatureError) {
