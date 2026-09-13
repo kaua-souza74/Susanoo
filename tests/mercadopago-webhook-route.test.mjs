@@ -393,15 +393,41 @@ test("assinatura inválida retorna 401 antes da Orders API", async (t) => {
   const get = t.mock.method(Order.prototype, "get", async () => {
     throw new Error("Orders API não deveria ser chamada");
   });
+  const info = t.mock.method(console, "info", () => {});
   const response = await POST(
     signedRequest({
-      body: JSON.stringify({ type: "order", data: { id: "123456" } }),
+      body: JSON.stringify({
+        application_id: 8362280076817377,
+        user_id: 123456789,
+        live_mode: false,
+        type: "order",
+        action: "order.updated",
+        data: { id: "123456" },
+      }),
       signature: "ts=1700000000,v1=invalid",
     }),
   );
 
   assert.equal(get.mock.callCount(), 0);
   assert.equal(response.status, 401);
+  const diagnosticLogs = info.mock.calls.map(({ arguments: [message] }) =>
+    JSON.parse(message),
+  );
+  assert.deepEqual(
+    diagnosticLogs.find(
+      ({ webhook_stage: webhookStage }) =>
+        webhookStage === "body_diagnostic",
+    ),
+    {
+      webhook_stage: "body_diagnostic",
+      application_id: 8362280076817377,
+      user_id: 123456789,
+      live_mode: false,
+      type: "order",
+      action: "order.updated",
+      body_data_id_matches_query: true,
+    },
+  );
 });
 
 test("payload malformado retorna 400 antes da Orders API", async (t) => {

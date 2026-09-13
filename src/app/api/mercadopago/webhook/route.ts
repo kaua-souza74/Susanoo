@@ -100,6 +100,7 @@ export async function POST(request: Request) {
         error_name: sdkValidationError.name,
         error_reason: sdkValidationError.reason,
       });
+      await logBodyDiagnostic(request, queryDataId);
       return errorResponse("Assinatura inválida.", 401);
     }
     return errorResponse("Notificação inválida.", 400);
@@ -242,4 +243,78 @@ function getSignatureDiagnostics(
 
 function logWebhookDiagnostic(fields: Record<string, unknown>) {
   console.info(JSON.stringify({ route: "/api/mercadopago/webhook", ...fields }));
+}
+
+async function logBodyDiagnostic(request: Request, queryDataId: string | null) {
+  const rawBody = await readBodyWithinLimit(request, MAX_WEBHOOK_BYTES);
+  let body: Record<string, unknown> | null = null;
+
+  if (rawBody !== null) {
+    try {
+      const parsedBody = JSON.parse(rawBody) as unknown;
+      if (isRecord(parsedBody)) body = parsedBody;
+    } catch {
+      body = null;
+    }
+  }
+
+  const data = body && isRecord(body.data) ? body.data : null;
+  console.info(
+    JSON.stringify({
+      webhook_stage: "body_diagnostic",
+      application_id: diagnosticScalar(body?.application_id),
+      user_id: diagnosticScalar(body?.user_id),
+      live_mode: diagnosticScalar(body?.live_mode),
+      type: diagnosticScalar(body?.type),
+      action: diagnosticScalar(body?.action),
+      body_data_id_matches_query: data?.id === queryDataId,
+    }),
+  );
+}
+
+async function readBodyWithinLimit(request: Request, limit: number) {
+  if (!request.body) return "";
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      totalBytes += value.byteLength;
+      if (totalBytes > limit) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bodyBytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bodyBytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bodyBytes);
+}
+
+function diagnosticScalar(value: unknown) {
+  if (
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
