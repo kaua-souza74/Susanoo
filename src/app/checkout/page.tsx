@@ -25,9 +25,14 @@ export default function CheckoutPage() {
         description: service.description,
         deliveryLabel: service.deliveryLabel,
         formattedPrice: formatPriceInBRL(checkoutMode.amountInCents),
+        amountInCents: checkoutMode.amountInCents,
         isSandbox: checkoutMode.isSandbox,
         sessionScope: checkoutMode.sessionScope,
       }}
+      brickDiagnosticsEnabled={
+        process.env.VERCEL_ENV === "preview" ||
+        process.env.NODE_ENV === "development"
+      }
     />
   );
 }

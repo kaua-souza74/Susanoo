@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { Logo } from "@/components/logo";
+import { MercadoPagoPaymentBrick } from "@/components/checkout/MercadoPagoPaymentBrick";
 import { initializeMercadoPago } from "@/lib/mercadopago/client";
 import type { ServiceId } from "@/lib/mercadopago/services";
 import type { PaymentStatus } from "@/lib/mercadopago/status";
@@ -31,13 +32,20 @@ type CheckoutService = {
   description: string;
   deliveryLabel: string;
   formattedPrice: string;
+  amountInCents: number;
   isSandbox: boolean;
   sessionScope: string;
 };
 
 const POLLING_INTERVAL_MS = 15_000;
 
-export function CheckoutExperience({ service }: { service: CheckoutService }) {
+export function CheckoutExperience({
+  service,
+  brickDiagnosticsEnabled,
+}: {
+  service: CheckoutService;
+  brickDiagnosticsEnabled: boolean;
+}) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pix");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -231,6 +239,12 @@ export function CheckoutExperience({ service }: { service: CheckoutService }) {
             service={service}
           />
         </div>
+        {!order ? (
+          <MercadoPagoPaymentBrick
+            amountInCents={service.amountInCents}
+            diagnosticsEnabled={brickDiagnosticsEnabled}
+          />
+        ) : null}
       </div>
     </main>
   );
