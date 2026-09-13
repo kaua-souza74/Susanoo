@@ -70,119 +70,7 @@ registerHooks({
 
 const { MPBadRequestError, MPNotFoundError, Order } = await import("mercadopago");
 const { POST } = await import("../src/app/api/mercadopago/webhook/route.ts");
-const {
-  calculateWebhookHmacDiagnostic,
-  calculateWebhookManifestDiagnostic,
-} = await import("../src/lib/mercadopago/webhook-signature-diagnostic.ts");
-
 const providerOrderId = "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3";
-
-test("diagnóstico HMAC manual aceita o manifest oficial", () => {
-  const dataId = "ORDTST01M2C0G58E56EZ82ZXS77E11Q9";
-  const requestId = "request-real-format";
-  const timestamp = "1789308000000";
-  const secret = "test-secret";
-  const manifest = `id:${dataId};request-id:${requestId};ts:${timestamp};`;
-  const v1 = createHmac("sha256", secret).update(manifest).digest("hex");
-
-  assert.deepEqual(
-    calculateWebhookHmacDiagnostic({
-      dataId,
-      requestId,
-      xSignature: `ts=${timestamp},v1=${v1}`,
-      secret,
-    }),
-    {
-      manualValid: true,
-      manifestLength: manifest.length,
-      dataIdLength: dataId.length,
-      requestIdLength: requestId.length,
-      tsDigits: 13,
-    },
-  );
-});
-
-test("diagnóstico HMAC manual rejeita secret diferente", () => {
-  const dataId = "ORDTST01M2C0G58E56EZ82ZXS77E11Q9";
-  const requestId = "request-real-format";
-  const timestamp = "1789308000000";
-  const manifest = `id:${dataId};request-id:${requestId};ts:${timestamp};`;
-  const v1 = createHmac("sha256", "signing-secret")
-    .update(manifest)
-    .digest("hex");
-
-  const diagnostic = calculateWebhookHmacDiagnostic({
-    dataId,
-    requestId,
-    xSignature: `ts=${timestamp},v1=${v1}`,
-    secret: "different-secret",
-  });
-
-  assert.equal(diagnostic.manualValid, false);
-  assert.equal(diagnostic.manifestLength, manifest.length);
-  assert.equal(diagnostic.tsDigits, 13);
-});
-
-test("diagnóstico compara as quatro variantes de manifest isoladamente", () => {
-  const dataId = "ORDTST01M2C0G58E56EZ82ZXS77E11Q9";
-  const requestId = "request-real-format";
-  const timestamp = "1789308000000";
-  const secret = "test-secret";
-  const variants = [
-    {
-      key: "noSpaceOriginalValid",
-      manifest: `id:${dataId};request-id:${requestId};ts:${timestamp};`,
-    },
-    {
-      key: "spaceOriginalValid",
-      manifest: `id: ${dataId};request-id: ${requestId};ts: ${timestamp};`,
-    },
-    {
-      key: "noSpaceLowercaseValid",
-      manifest: `id:${dataId.toLowerCase()};request-id:${requestId};ts:${timestamp};`,
-    },
-    {
-      key: "spaceLowercaseValid",
-      manifest: `id: ${dataId.toLowerCase()};request-id: ${requestId};ts: ${timestamp};`,
-    },
-  ];
-
-  for (const variant of variants) {
-    const v1 = createHmac("sha256", secret)
-      .update(variant.manifest)
-      .digest("hex");
-    const diagnostic = calculateWebhookManifestDiagnostic({
-      dataId,
-      requestId,
-      xSignature: `ts=${timestamp},v1=${v1}`,
-      secret,
-    });
-
-    assert.deepEqual(diagnostic, {
-      noSpaceOriginalValid: variant.key === "noSpaceOriginalValid",
-      spaceOriginalValid: variant.key === "spaceOriginalValid",
-      noSpaceLowercaseValid: variant.key === "noSpaceLowercaseValid",
-      spaceLowercaseValid: variant.key === "spaceLowercaseValid",
-    });
-  }
-});
-
-test("diagnóstico das variantes não aceita assinatura malformada", () => {
-  assert.deepEqual(
-    calculateWebhookManifestDiagnostic({
-      dataId: "ORDTST01M2C0G58E56EZ82ZXS77E11Q9",
-      requestId: "request-real-format",
-      xSignature: "ts=1789308000000,v1=invalid",
-      secret: "test-secret",
-    }),
-    {
-      noSpaceOriginalValid: false,
-      spaceOriginalValid: false,
-      noSpaceLowercaseValid: false,
-      spaceLowercaseValid: false,
-    },
-  );
-});
 
 function restoreEnvironmentVariable(name, previousValue) {
   if (previousValue === undefined) {
@@ -200,7 +88,8 @@ function signedRequest({
 }) {
   const secret = "test-secret";
   const requestId = "request-route-test";
-  const manifest = `id:${dataId};request-id:${requestId};ts:${timestamp};`;
+  const signatureDataId = dataId.toLowerCase();
+  const manifest = `id:${signatureDataId};request-id:${requestId};ts:${timestamp};`;
   const validSignature = createHmac("sha256", secret)
     .update(manifest)
     .digest("hex");
@@ -314,7 +203,7 @@ for (const testCase of [
   });
 }
 
-test("Order real autenticada consulta a API e sincroniza a ordem local", async (t) => {
+test("data.id uppercase valida via lowercase e preserva o ID original na reconciliação", async (t) => {
   const previousSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
   const previousAccessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
   process.env.MERCADO_PAGO_WEBHOOK_SECRET = "test-secret";
@@ -370,6 +259,10 @@ test("Order real autenticada consulta a API e sincroniza a ordem local", async (
   assert.deepEqual(await response.json(), { received: true, result: "processed" });
   assert.deepEqual(globalThis.__webhookRouteMocks.providerLookups, [providerOrderId]);
   assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 1);
+  assert.equal(
+    globalThis.__webhookRouteMocks.syncInputs[0].snapshot.providerOrderId,
+    providerOrderId,
+  );
   assert.equal(
     globalThis.__webhookRouteMocks.syncInputs[0].snapshot.status,
     "approved",
@@ -455,7 +348,6 @@ test("assinatura inválida retorna 401 antes da Orders API", async (t) => {
   const get = t.mock.method(Order.prototype, "get", async () => {
     throw new Error("Orders API não deveria ser chamada");
   });
-  const info = t.mock.method(console, "info", () => {});
   const response = await POST(
     signedRequest({
       body: JSON.stringify({
@@ -472,37 +364,6 @@ test("assinatura inválida retorna 401 antes da Orders API", async (t) => {
 
   assert.equal(get.mock.callCount(), 0);
   assert.equal(response.status, 401);
-  const diagnosticLogs = info.mock.calls.map(({ arguments: [message] }) =>
-    JSON.parse(message),
-  );
-  assert.deepEqual(
-    diagnosticLogs.find(
-      ({ webhook_stage: webhookStage }) =>
-        webhookStage === "manifest_diagnostic",
-    ),
-    {
-      webhook_stage: "manifest_diagnostic",
-      no_space_original_valid: false,
-      space_original_valid: false,
-      no_space_lowercase_valid: false,
-      space_lowercase_valid: false,
-    },
-  );
-  assert.deepEqual(
-    diagnosticLogs.find(
-      ({ webhook_stage: webhookStage }) =>
-        webhookStage === "body_diagnostic",
-    ),
-    {
-      webhook_stage: "body_diagnostic",
-      application_id: 8362280076817377,
-      user_id: 123456789,
-      live_mode: false,
-      type: "order",
-      action: "order.updated",
-      body_data_id_matches_query: true,
-    },
-  );
 });
 
 test("payload malformado retorna 400 antes da Orders API", async (t) => {

@@ -19,10 +19,6 @@ import {
 } from "@/lib/mercadopago/server";
 import { PaymentPersistenceConfigurationError } from "@/lib/mercadopago/supabase-admin";
 import {
-  calculateWebhookHmacDiagnostic,
-  calculateWebhookManifestDiagnostic,
-} from "@/lib/mercadopago/webhook-signature-diagnostic";
-import {
   isProviderOrderId,
   isWebhookTimestampValid,
   parseOrderWebhookNotification,
@@ -40,76 +36,28 @@ export async function POST(request: Request) {
 
   const url = new URL(request.url);
   const queryDataId = url.searchParams.get("data.id");
-  const queryType = url.searchParams.get("type");
+  const signatureDataId = queryDataId?.toLowerCase() ?? null;
   const xSignature = request.headers.get("x-signature");
   const xRequestId = request.headers.get("x-request-id");
   const signatureDiagnostics = getSignatureDiagnostics(xSignature);
-
-  logWebhookDiagnostic({
-    webhook_stage: "received",
-    has_x_request_id: Boolean(xRequestId?.trim()),
-    x_request_id_length: xRequestId?.length ?? 0,
-    has_x_signature: Boolean(xSignature?.trim()),
-    x_signature_length: xSignature?.length ?? 0,
-    has_query_data_id: Boolean(queryDataId),
-    query_data_id: queryDataId,
-    query_type: queryType,
-    has_ts: signatureDiagnostics.hasTs,
-    ts_digits: signatureDiagnostics.tsDigits,
-    has_v1: signatureDiagnostics.hasV1,
-    v1_length: signatureDiagnostics.v1Length,
-  });
 
   if (!xRequestId?.trim()) {
     logWebhookDiagnostic({ webhook_stage: "x_request_id_missing" });
     return errorResponse("Assinatura inválida.", 401);
   }
 
-  const hmacDiagnostic = calculateWebhookHmacDiagnostic({
-    dataId: queryDataId,
-    requestId: xRequestId,
-    xSignature,
-    secret,
-  });
-  const manifestDiagnostic = calculateWebhookManifestDiagnostic({
-    dataId: queryDataId,
-    requestId: xRequestId,
-    xSignature,
-    secret,
-  });
-  let sdkValid = false;
   let sdkValidationError: unknown;
 
   try {
     WebhookSignatureValidator.validate({
       xSignature,
       xRequestId,
-      dataId: queryDataId,
+      dataId: signatureDataId,
       secret,
     });
-    sdkValid = true;
   } catch (error: unknown) {
     sdkValidationError = error;
   }
-
-  logWebhookDiagnostic({
-    webhook_stage: "hmac_diagnostic",
-    sdk_valid: sdkValid,
-    manual_valid: hmacDiagnostic.manualValid,
-    manifest_length: hmacDiagnostic.manifestLength,
-    data_id_length: hmacDiagnostic.dataIdLength,
-    request_id_length: hmacDiagnostic.requestIdLength,
-    ts_digits: hmacDiagnostic.tsDigits,
-  });
-  console.info(
-    JSON.stringify({
-      webhook_stage: "manifest_diagnostic",
-      no_space_original_valid: manifestDiagnostic.noSpaceOriginalValid,
-      space_original_valid: manifestDiagnostic.spaceOriginalValid,
-      no_space_lowercase_valid: manifestDiagnostic.noSpaceLowercaseValid,
-      space_lowercase_valid: manifestDiagnostic.spaceLowercaseValid,
-    }),
-  );
 
   if (sdkValidationError) {
     if (sdkValidationError instanceof InvalidWebhookSignatureError) {
@@ -118,13 +66,10 @@ export async function POST(request: Request) {
         error_name: sdkValidationError.name,
         error_reason: sdkValidationError.reason,
       });
-      await logBodyDiagnostic(request, queryDataId);
       return errorResponse("Assinatura inválida.", 401);
     }
     return errorResponse("Notificação inválida.", 400);
   }
-
-  logWebhookDiagnostic({ webhook_stage: "hmac_valid" });
 
   if (!isWebhookTimestampValid(xSignature)) {
     logWebhookDiagnostic({
@@ -135,8 +80,6 @@ export async function POST(request: Request) {
     });
     return errorResponse("Assinatura inválida.", 401);
   }
-
-  logWebhookDiagnostic({ webhook_stage: "timestamp_valid" });
 
   const contentLength = Number(request.headers.get("content-length") ?? 0);
   if (Number.isFinite(contentLength) && contentLength > MAX_WEBHOOK_BYTES) {
@@ -213,10 +156,7 @@ function errorResponse(message: string, status: number) {
 }
 
 type SignatureDiagnostics = {
-  hasTs: boolean;
   tsDigits: number;
-  hasV1: boolean;
-  v1Length: number;
   timestampDeltaSeconds: number | null;
 };
 
@@ -225,7 +165,6 @@ function getSignatureDiagnostics(
   nowMs = Date.now(),
 ): SignatureDiagnostics {
   let timestamp: string | null = null;
-  let v1: string | null = null;
 
   for (const part of xSignature?.split(",") ?? []) {
     const separatorIndex = part.indexOf("=");
@@ -234,7 +173,6 @@ function getSignatureDiagnostics(
     const key = part.slice(0, separatorIndex).trim().toLowerCase();
     const value = part.slice(separatorIndex + 1).trim();
     if (key === "ts" && value) timestamp = value;
-    if (key === "v1" && value) v1 = value;
   }
 
   const timestampIsDigits = Boolean(timestamp && /^\d+$/.test(timestamp));
@@ -251,88 +189,11 @@ function getSignatureDiagnostics(
   }
 
   return {
-    hasTs: Boolean(timestamp),
     tsDigits,
-    hasV1: Boolean(v1),
-    v1Length: v1?.length ?? 0,
     timestampDeltaSeconds,
   };
 }
 
 function logWebhookDiagnostic(fields: Record<string, unknown>) {
   console.info(JSON.stringify({ route: "/api/mercadopago/webhook", ...fields }));
-}
-
-async function logBodyDiagnostic(request: Request, queryDataId: string | null) {
-  const rawBody = await readBodyWithinLimit(request, MAX_WEBHOOK_BYTES);
-  let body: Record<string, unknown> | null = null;
-
-  if (rawBody !== null) {
-    try {
-      const parsedBody = JSON.parse(rawBody) as unknown;
-      if (isRecord(parsedBody)) body = parsedBody;
-    } catch {
-      body = null;
-    }
-  }
-
-  const data = body && isRecord(body.data) ? body.data : null;
-  console.info(
-    JSON.stringify({
-      webhook_stage: "body_diagnostic",
-      application_id: diagnosticScalar(body?.application_id),
-      user_id: diagnosticScalar(body?.user_id),
-      live_mode: diagnosticScalar(body?.live_mode),
-      type: diagnosticScalar(body?.type),
-      action: diagnosticScalar(body?.action),
-      body_data_id_matches_query: data?.id === queryDataId,
-    }),
-  );
-}
-
-async function readBodyWithinLimit(request: Request, limit: number) {
-  if (!request.body) return "";
-
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      totalBytes += value.byteLength;
-      if (totalBytes > limit) {
-        await reader.cancel();
-        return null;
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  const bodyBytes = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bodyBytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(bodyBytes);
-}
-
-function diagnosticScalar(value: unknown) {
-  if (
-    typeof value === "string" ||
-    typeof value === "boolean" ||
-    (typeof value === "number" && Number.isFinite(value))
-  ) {
-    return value;
-  }
-  return null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
