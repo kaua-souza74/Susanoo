@@ -210,6 +210,8 @@ function logMercadoPagoError(error: unknown) {
       api_cause_codes: isMercadoPagoError
         ? error.causes.map(toSafeApiCause).filter((cause) => cause !== null)
         : [],
+      // mercadopago@3.6.1 does not attach response headers to non-2xx errors.
+      mercadopago_request_id: null,
     }),
   );
 }

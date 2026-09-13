@@ -326,6 +326,10 @@ test("erro Mercado Pago registra somente diagnóstico sanitizado", async (t) => 
     status: 400,
     message: "Payment method is unavailable",
     error: "bad_request",
+    headers: {
+      "x-request-id": "not-exposed-by-sdk-error",
+      authorization: "Bearer secret-authorization-header",
+    },
     cause: [
       { code: "1234", description: "Invalid payment method", extra: cardToken },
     ],
@@ -356,12 +360,15 @@ test("erro Mercado Pago registra somente diagnóstico sanitizado", async (t) => 
     api_cause_codes: [
       { code: "1234", description: "Invalid payment method" },
     ],
+    mercadopago_request_id: null,
   });
   const serializedLogs = [...info.mock.calls, ...error.mock.calls]
     .map(({ arguments: values }) => values.join(" "))
     .join("\n");
   assert.doesNotMatch(serializedLogs, new RegExp(cardToken));
   assert.doesNotMatch(serializedLogs, new RegExp(documentNumber));
+  assert.doesNotMatch(serializedLogs, /secret-authorization-header/);
+  assert.doesNotMatch(serializedLogs, /authorization/i);
 });
 
 test("cartão usa token sem expor token ou documento nos logs", async (t) => {
