@@ -4,6 +4,7 @@ import { registerHooks } from "node:module";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { MPBadRequestError } from "mercadopago";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const checkoutSessionId = "018f47a2-4d7e-7c31-8a5b-11c2df98a120";
@@ -289,6 +290,52 @@ test("falha da API Mercado Pago retorna erro seguro", async () => {
   assert.deepEqual(await response.json(), {
     error: "Não foi possível processar o pagamento.",
   });
+});
+
+test("erro Mercado Pago registra somente diagnóstico sanitizado", async (t) => {
+  resetMocks();
+  const info = t.mock.method(console, "info", () => {});
+  const error = t.mock.method(console, "error", () => {});
+  globalThis.__brickRouteMocks.providerError = new MPBadRequestError({
+    status: 400,
+    message: "Payment method is unavailable",
+    error: "bad_request",
+    cause: [
+      { code: "1234", description: "Invalid payment method", extra: cardToken },
+    ],
+  });
+
+  const response = await POST(brickRequest({ method: "card" }));
+
+  assert.equal(response.status, 502);
+  const requestLog = JSON.parse(info.mock.calls[0].arguments[0]);
+  assert.deepEqual(requestLog, {
+    route: "/api/mercadopago/brick/payment",
+    stage: "brick_payment_request",
+    payment_method_id: "visa",
+    payment_type_id: "credit_card",
+    installments: 1,
+    has_token: true,
+    amount_cents: 149900,
+    sandbox: false,
+  });
+  const errorLog = JSON.parse(error.mock.calls[0].arguments[0]);
+  assert.deepEqual(errorLog, {
+    route: "/api/mercadopago/brick/payment",
+    stage: "mercadopago_error",
+    error_name: "MPBadRequestError",
+    http_status: 400,
+    api_message: "Payment method is unavailable",
+    api_error: "bad_request",
+    api_cause_codes: [
+      { code: "1234", description: "Invalid payment method" },
+    ],
+  });
+  const serializedLogs = [...info.mock.calls, ...error.mock.calls]
+    .map(({ arguments: values }) => values.join(" "))
+    .join("\n");
+  assert.doesNotMatch(serializedLogs, new RegExp(cardToken));
+  assert.doesNotMatch(serializedLogs, new RegExp(documentNumber));
 });
 
 test("cartão usa token sem expor token ou documento nos logs", async (t) => {

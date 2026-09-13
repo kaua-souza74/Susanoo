@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { MercadoPagoError } from "mercadopago";
 
 import { getAuthenticatedPayer } from "@/lib/mercadopago/auth";
 import { parseBrickPaymentRequest } from "@/lib/mercadopago/brick-payment-input";
@@ -75,31 +76,47 @@ export async function POST(request: Request) {
     }
 
     const paymentClient = getMercadoPagoPaymentClient();
-    const providerPayment = paymentOrder.providerOrderId
-      ? await paymentClient.get({ id: paymentOrder.providerOrderId })
-      : await paymentClient.create({
-          body: {
-            transaction_amount: paymentOrder.amountInCents / 100,
-            description: service.name,
-            external_reference: paymentOrder.externalReference,
-            payment_method_id: body.paymentMethodId,
-            installments: body.installments,
-            ...(body.token ? { token: body.token } : {}),
-            ...(body.issuerId ? { issuer_id: body.issuerId } : {}),
-            payer: {
-              email: providerPayer.email,
-              ...(providerPayer.firstName
-                ? { first_name: providerPayer.firstName }
-                : {}),
-              ...(body.identification
-                ? { identification: body.identification }
-                : {}),
+    logSafePaymentMetadata({
+      stage: "brick_payment_request",
+      payment_method_id: body.paymentMethodId,
+      payment_type_id: body.paymentTypeId,
+      installments: body.installments,
+      has_token: Boolean(body.token),
+      amount_cents: paymentOrder.amountInCents,
+      sandbox: checkoutMode.isSandbox,
+    });
+
+    let providerPayment;
+    try {
+      providerPayment = paymentOrder.providerOrderId
+        ? await paymentClient.get({ id: paymentOrder.providerOrderId })
+        : await paymentClient.create({
+            body: {
+              transaction_amount: paymentOrder.amountInCents / 100,
+              description: service.name,
+              external_reference: paymentOrder.externalReference,
+              payment_method_id: body.paymentMethodId,
+              installments: body.installments,
+              ...(body.token ? { token: body.token } : {}),
+              ...(body.issuerId ? { issuer_id: body.issuerId } : {}),
+              payer: {
+                email: providerPayer.email,
+                ...(providerPayer.firstName
+                  ? { first_name: providerPayer.firstName }
+                  : {}),
+                ...(body.identification
+                  ? { identification: body.identification }
+                  : {}),
+              },
             },
-          },
-          requestOptions: {
-            idempotencyKey: paymentOrder.idempotencyKey,
-          },
-        });
+            requestOptions: {
+              idempotencyKey: paymentOrder.idempotencyKey,
+            },
+          });
+    } catch (error: unknown) {
+      logMercadoPagoError(error);
+      throw error;
+    }
 
     const snapshot = extractMercadoPagoPaymentSnapshot(providerPayment);
     if (!snapshot) {
@@ -183,6 +200,35 @@ function logSafePaymentMetadata(fields: Record<string, unknown>) {
   console.info(
     JSON.stringify({ route: "/api/mercadopago/brick/payment", ...fields }),
   );
+}
+
+function logMercadoPagoError(error: unknown) {
+  const isMercadoPagoError = error instanceof MercadoPagoError;
+
+  console.error(
+    JSON.stringify({
+      route: "/api/mercadopago/brick/payment",
+      stage: "mercadopago_error",
+      error_name: error instanceof Error ? error.name : "UnknownError",
+      http_status: isMercadoPagoError ? error.status : null,
+      api_message: isMercadoPagoError ? error.message : null,
+      api_error: isMercadoPagoError ? error.error : null,
+      api_cause_codes: isMercadoPagoError
+        ? error.causes.map(toSafeApiCause).filter((cause) => cause !== null)
+        : [],
+    }),
+  );
+}
+
+function toSafeApiCause(cause: unknown) {
+  if (!cause || typeof cause !== "object") return null;
+
+  const value = cause as Record<string, unknown>;
+  return {
+    code: typeof value.code === "string" ? value.code : null,
+    description:
+      typeof value.description === "string" ? value.description : null,
+  };
 }
 
 function errorResponse(message: string, status: number) {
