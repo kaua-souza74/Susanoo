@@ -17,6 +17,8 @@ import {
 } from "@/lib/mercadopago/payment-orders";
 import {
   MercadoPagoConfigurationError,
+  MercadoPagoOrderHttpError,
+  createMercadoPagoOrder,
   getMercadoPagoOrderClient,
 } from "@/lib/mercadopago/server";
 import { getServiceById, isServiceId } from "@/lib/mercadopago/services";
@@ -91,7 +93,7 @@ export async function POST(request: Request) {
       const amount = (paymentOrder.amountInCents / 100).toFixed(2);
       providerOrder = paymentOrder.providerOrderId
         ? await orderClient.get({ id: paymentOrder.providerOrderId })
-        : await orderClient.create({
+        : await createMercadoPagoOrder({
             body: {
               type: "online",
               processing_mode: "automatic",
@@ -213,6 +215,21 @@ function logSafePaymentMetadata(fields: Record<string, unknown>) {
 }
 
 function logMercadoPagoError(error: unknown) {
+  if (error instanceof MercadoPagoOrderHttpError) {
+    console.error(
+      JSON.stringify({
+        route: "/api/mercadopago/brick/payment",
+        stage: "mercadopago_order_error",
+        http_status: error.status,
+        error_code: error.errorCode,
+        message: error.message,
+        details: error.details,
+        request_id: error.requestId,
+      }),
+    );
+    return;
+  }
+
   const isMercadoPagoError = error instanceof MercadoPagoError;
 
   console.error(

@@ -4,7 +4,6 @@ import { registerHooks } from "node:module";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { MPBadRequestError } from "mercadopago";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const checkoutSessionId = "018f47a2-4d7e-7c31-8a5b-11c2df98a120";
@@ -115,6 +114,17 @@ registerHooks({
         shortCircuit: true,
         source: `
           export class MercadoPagoConfigurationError extends Error {}
+          export class MercadoPagoOrderHttpError extends Error {
+            constructor({ status, errorCode, message, details, requestId }) {
+              super(message);
+              this.name = "MercadoPagoOrderHttpError";
+              this.status = status;
+              this.errorCode = errorCode;
+              this.details = details;
+              this.requestId = requestId;
+            }
+          }
+          globalThis.__brickRouteMocks.makeOrderHttpError = (args) => new MercadoPagoOrderHttpError(args);
           function providerResponse() {
             const order = globalThis.__brickRouteMocks.paymentOrder;
             return {
@@ -127,13 +137,6 @@ registerHooks({
           }
           export function getMercadoPagoOrderClient() {
             return {
-              async create(input) {
-                globalThis.__brickRouteMocks.createInputs.push(input);
-                if (globalThis.__brickRouteMocks.providerError) {
-                  throw globalThis.__brickRouteMocks.providerError;
-                }
-                return providerResponse();
-              },
               async get(input) {
                 globalThis.__brickRouteMocks.getInputs.push(input);
                 if (globalThis.__brickRouteMocks.providerError) {
@@ -142,6 +145,13 @@ registerHooks({
                 return providerResponse();
               },
             };
+          }
+          export async function createMercadoPagoOrder(input) {
+            globalThis.__brickRouteMocks.createInputs.push(input);
+            if (globalThis.__brickRouteMocks.providerError) {
+              throw globalThis.__brickRouteMocks.providerError;
+            }
+            return providerResponse();
           }
         `,
       };
@@ -358,20 +368,17 @@ test("falha da API Mercado Pago retorna erro seguro", async () => {
   });
 });
 
-test("erro Mercado Pago registra somente diagnóstico sanitizado", async (t) => {
+test("erro 400 de Orders registra somente diagnóstico sanitizado", async (t) => {
   resetMocks();
   const info = t.mock.method(console, "info", () => {});
   const error = t.mock.method(console, "error", () => {});
-  globalThis.__brickRouteMocks.providerError = new MPBadRequestError({
+  globalThis.__brickRouteMocks.providerError = globalThis.__brickRouteMocks.makeOrderHttpError({
     status: 400,
     message: "Payment method is unavailable",
-    error: "bad_request",
-    headers: {
-      "x-request-id": "not-exposed-by-sdk-error",
-      authorization: "Bearer secret-authorization-header",
-    },
-    cause: [
-      { code: "1234", description: "Invalid payment method", extra: cardToken },
+    errorCode: "invalid_payment_method",
+    requestId: "mp-request-id-safe",
+    details: [
+      { code: "1234", field: "transactions.payments.0.payment_method", message: "Invalid payment method" },
     ],
   });
 
@@ -392,22 +399,20 @@ test("erro Mercado Pago registra somente diagnóstico sanitizado", async (t) => 
   const errorLog = JSON.parse(error.mock.calls[0].arguments[0]);
   assert.deepEqual(errorLog, {
     route: "/api/mercadopago/brick/payment",
-    stage: "mercadopago_error",
-    error_name: "MPBadRequestError",
+    stage: "mercadopago_order_error",
     http_status: 400,
-    api_message: "Payment method is unavailable",
-    api_error: "bad_request",
-    api_cause_codes: [
-      { code: "1234", description: "Invalid payment method" },
+    error_code: "invalid_payment_method",
+    message: "Payment method is unavailable",
+    details: [
+      { code: "1234", field: "transactions.payments.0.payment_method", message: "Invalid payment method" },
     ],
-    mercadopago_request_id: null,
+    request_id: "mp-request-id-safe",
   });
   const serializedLogs = [...info.mock.calls, ...error.mock.calls]
     .map(({ arguments: values }) => values.join(" "))
     .join("\n");
   assert.doesNotMatch(serializedLogs, new RegExp(cardToken));
   assert.doesNotMatch(serializedLogs, new RegExp(documentNumber));
-  assert.doesNotMatch(serializedLogs, /secret-authorization-header/);
   assert.doesNotMatch(serializedLogs, /authorization/i);
 });
 
