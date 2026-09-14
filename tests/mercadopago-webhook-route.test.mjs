@@ -46,10 +46,9 @@ registerHooks({
 const { POST } = await import("../src/app/api/mercadopago/webhook/route.ts");
 const { getSecretFingerprint } = await import("../src/lib/mercadopago/secret-fingerprint.ts");
 
-function signedRequest({ dataId = "123456", secret = "orders-secret", signature = null, bodyStatus = "forged", type = "order" } = {}) {
-  const timestamp = String(Date.now());
+function signedRequest({ dataId = "123456", secret = "orders-secret", signature = null, bodyStatus = "forged", type = "order", timestamp = String(Date.now()) } = {}) {
   const requestId = "request-route-test";
-  const digest = createHmac("sha256", secret).update(`id:${dataId.toLowerCase()};request-id:${requestId};ts:${timestamp};`).digest("hex");
+  const digest = createHmac("sha256", secret).update(`id:${dataId};request-id:${requestId};ts:${timestamp};`).digest("hex");
   return new Request(`https://example.test/api/mercadopago/webhook?data.id=${encodeURIComponent(dataId)}&type=${type}`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-request-id": requestId, "x-signature": signature ?? `ts=${timestamp},v1=${digest}` },
@@ -113,7 +112,7 @@ test("simulador Orders autenticado continua ignored sem consultar provider", asy
   assert.deepEqual(await response.json(), { received: true, result: "ignored" });
 });
 
-test("Orders usa lowercase apenas no HMAC e preserva ID original no provider", async () => {
+test("ORDTST uppercase valida com case preservado no SDK e no provider", async () => {
   reset();
   const response = await POST(signedRequest({ dataId: orderId }));
   assert.equal(response.status, 200);
@@ -140,6 +139,14 @@ test("ordem de cartão é reconciliada pelo mesmo fluxo Orders", async () => {
 test("assinatura inválida retorna 401", async () => {
   reset();
   const response = await POST(signedRequest({ signature: `ts=${Date.now()},v1=invalid` }));
+  assert.equal(response.status, 401);
+  assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 0);
+});
+
+test("timestamp válido no HMAC mas fora da tolerância retorna 401", async () => {
+  reset();
+  const staleTimestamp = String(Date.now() - 6 * 60 * 1_000);
+  const response = await POST(signedRequest({ dataId: orderId, timestamp: staleTimestamp }));
   assert.equal(response.status, 401);
   assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 0);
 });

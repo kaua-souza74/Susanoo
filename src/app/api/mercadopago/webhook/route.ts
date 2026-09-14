@@ -51,7 +51,6 @@ export async function POST(request: Request) {
   }
 
   const queryDataId = url.searchParams.get("data.id");
-  const signatureDataId = queryDataId?.toLowerCase() ?? null;
   const xSignature = request.headers.get("x-signature");
   const xRequestId = request.headers.get("x-request-id");
   const signatureDiagnostics = getSignatureDiagnostics(xSignature);
@@ -67,7 +66,7 @@ export async function POST(request: Request) {
     WebhookSignatureValidator.validate({
       xSignature,
       xRequestId,
-      dataId: signatureDataId,
+      dataId: queryDataId,
       secret,
     });
   } catch (error: unknown) {
