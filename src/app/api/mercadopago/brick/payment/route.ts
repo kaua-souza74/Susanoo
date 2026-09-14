@@ -28,6 +28,7 @@ import type { BrickPaymentResponse } from "@/lib/mercadopago/types";
 export const runtime = "nodejs";
 
 const MAX_REQUEST_BYTES = 4_096;
+const SANDBOX_CARD_PAYER_EMAIL = "test@testuser.com";
 
 export async function POST(request: Request) {
   if (!isJsonRequest(request)) {
@@ -58,7 +59,9 @@ export async function POST(request: Request) {
 
   const service = getServiceById(body.serviceId);
   const checkoutMode = getMercadoPagoCheckoutMode(service.priceInCents);
-  const providerPayerEmail = body.payerEmail ?? payer.email;
+  const providerPayerEmail = checkoutMode.isSandbox
+    ? SANDBOX_CARD_PAYER_EMAIL
+    : payer.email;
 
   try {
     const paymentOrder = await getOrCreatePaymentOrder({

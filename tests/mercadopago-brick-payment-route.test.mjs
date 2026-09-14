@@ -247,14 +247,14 @@ test("amount adulterado é ignorado e preço sandbox permanece server-side", asy
     token: cardToken,
     installments: 1,
   });
-  assert.equal(providerInput.body.payer.email, "comprador@exemplo.com");
+  assert.equal(providerInput.body.payer.email, "test@testuser.com");
   assert.equal(providerInput.body.payer.first_name, undefined);
   assert.equal(providerInput.requestOptions.idempotencyKey, "persisted-brick-idempotency-key");
   const payload = await response.json();
   assert.equal(payload.paymentMethod, "card");
 });
 
-test("Brick sanitiza o email informado pelo pagador", async () => {
+test("modo normal usa email autenticado e ignora override do frontend", async () => {
   resetMocks();
 
   const response = await POST(
@@ -264,7 +264,24 @@ test("Brick sanitiza o email informado pelo pagador", async () => {
   assert.equal(response.status, 201);
   assert.equal(
     globalThis.__brickRouteMocks.createInputs[0].body.payer.email,
-    "comprador+brick@example.com",
+    "comprador@exemplo.com",
+  );
+});
+
+test("sandbox card não permite sobrescrever o email de teste", async (t) => {
+  const previousSandbox = process.env.MERCADO_PAGO_SANDBOX;
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+  resetMocks();
+  t.after(() => restoreSandbox(previousSandbox));
+
+  const response = await POST(
+    brickRequest({ email: "tentativa-de-override@example.com" }),
+  );
+
+  assert.equal(response.status, 201);
+  assert.equal(
+    globalThis.__brickRouteMocks.createInputs[0].body.payer.email,
+    "test@testuser.com",
   );
 });
 
