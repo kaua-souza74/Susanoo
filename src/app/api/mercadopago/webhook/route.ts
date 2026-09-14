@@ -17,6 +17,7 @@ import {
   MercadoPagoConfigurationError,
   getMercadoPagoOrderClient,
 } from "@/lib/mercadopago/server";
+import { getSecretFingerprint } from "@/lib/mercadopago/secret-fingerprint";
 import { PaymentPersistenceConfigurationError } from "@/lib/mercadopago/supabase-admin";
 import {
   isProviderOrderId,
@@ -34,6 +35,15 @@ export async function POST(request: Request) {
   const secret = process.env.MERCADO_PAGO_ORDERS_WEBHOOK_SECRET;
   if (!secret) {
     return errorResponse("Webhook indisponível.", 503);
+  }
+
+  if (process.env.VERCEL_ENV === "preview") {
+    const fingerprint = getSecretFingerprint(secret);
+    logWebhookDiagnostic({
+      webhook_stage: "secret_fingerprint",
+      secret_length: fingerprint.secretLength,
+      secret_sha256_prefix: fingerprint.sha256Prefix,
+    });
   }
 
   if (queryType !== "order") {

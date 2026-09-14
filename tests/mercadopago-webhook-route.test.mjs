@@ -44,6 +44,7 @@ registerHooks({
 });
 
 const { POST } = await import("../src/app/api/mercadopago/webhook/route.ts");
+const { getSecretFingerprint } = await import("../src/lib/mercadopago/secret-fingerprint.ts");
 
 function signedRequest({ dataId = "123456", secret = "orders-secret", signature = null, bodyStatus = "forged", type = "order" } = {}) {
   const timestamp = String(Date.now());
@@ -58,11 +59,51 @@ function signedRequest({ dataId = "123456", secret = "orders-secret", signature 
 
 function reset(paymentMethod = "pix") {
   process.env.MERCADO_PAGO_ORDERS_WEBHOOK_SECRET = "orders-secret";
+  delete process.env.VERCEL_ENV;
   globalThis.__webhookRouteMocks.orderGets.length = 0;
   globalThis.__webhookRouteMocks.providerLookups.length = 0;
   globalThis.__webhookRouteMocks.syncInputs.length = 0;
   globalThis.__webhookRouteMocks.paymentOrder = { id: "local", externalReference: "SUS-webhook", providerOrderId: null, paymentMethod, status: "pending" };
 }
+
+test("fingerprint é determinístico e nunca contém o secret", () => {
+  const secret = "secret-that-must-never-be-logged";
+  const first = getSecretFingerprint(secret);
+  const second = getSecretFingerprint(secret);
+
+  assert.deepEqual(first, second);
+  assert.equal(first.secretLength, secret.length);
+  assert.match(first.sha256Prefix, /^[a-f0-9]{8}$/);
+  assert.doesNotMatch(JSON.stringify(first), new RegExp(secret));
+});
+
+test("Preview registra somente fingerprint seguro do secret", async (t) => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  const info = t.mock.method(console, "info", () => {});
+
+  const response = await POST(signedRequest());
+
+  assert.equal(response.status, 200);
+  const fingerprintLog = JSON.parse(info.mock.calls[0].arguments[0]);
+  assert.deepEqual(fingerprintLog, {
+    route: "/api/mercadopago/webhook",
+    webhook_stage: "secret_fingerprint",
+    secret_length: "orders-secret".length,
+    secret_sha256_prefix: getSecretFingerprint("orders-secret").sha256Prefix,
+  });
+  assert.doesNotMatch(info.mock.calls[0].arguments[0], /orders-secret/);
+});
+
+test("ausência do secret continua retornando 503", async () => {
+  reset();
+  delete process.env.MERCADO_PAGO_ORDERS_WEBHOOK_SECRET;
+
+  const response = await POST(signedRequest());
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "Webhook indisponível." });
+});
 
 test("simulador Orders autenticado continua ignored sem consultar provider", async () => {
   reset();
