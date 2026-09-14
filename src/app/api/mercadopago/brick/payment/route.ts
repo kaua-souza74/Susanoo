@@ -100,6 +100,10 @@ export async function POST(request: Request) {
               external_reference: paymentOrder.externalReference,
               payer: {
                 email: providerPayerEmail,
+                identification: {
+                  type: body.identification.type,
+                  number: body.identification.number,
+                },
               },
               transactions: {
                 payments: [

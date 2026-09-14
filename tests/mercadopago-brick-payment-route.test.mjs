@@ -159,6 +159,7 @@ function brickRequest({
   installments = 1,
   token = cardToken,
   email,
+  identification = { type: "CPF", number: documentNumber },
   paymentMethodId = "visa",
   issuerId = "310",
 } = {}) {
@@ -179,7 +180,7 @@ function brickRequest({
         issuer_id: issuerId,
         payer: {
           email,
-          identification: { type: "CPF", number: documentNumber },
+          identification,
         },
       },
     }),
@@ -271,6 +272,16 @@ test("cartão exige token", async () => {
   resetMocks();
 
   const response = await POST(brickRequest({ token: null }));
+
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__brickRouteMocks.persistenceInputs.length, 0);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
+});
+
+test("cartão sem identification retorna 400 antes da Orders API", async () => {
+  resetMocks();
+
+  const response = await POST(brickRequest({ identification: null }));
 
   assert.equal(response.status, 400);
   assert.equal(globalThis.__brickRouteMocks.persistenceInputs.length, 0);
@@ -411,7 +422,10 @@ test("cartão usa token sem expor token ou documento nos logs", async (t) => {
   const paymentMethod = providerBody.transactions.payments[0].payment_method;
   assert.equal(paymentMethod.token, cardToken);
   assert.equal(paymentMethod.installments, 1);
-  assert.equal(providerBody.payer.identification, undefined);
+  assert.deepEqual(providerBody.payer.identification, {
+    type: "CPF",
+    number: documentNumber,
+  });
   const serializedLogs = info.mock.calls
     .map(({ arguments: values }) => values.join(" "))
     .join("\n");
