@@ -7,6 +7,10 @@ import {
 
 import { extractMercadoPagoOrderSnapshot } from "@/lib/mercadopago/order-snapshot";
 import {
+  extractOrderApplicationId,
+  extractWebhookApplicationContext,
+} from "@/lib/mercadopago/application-context";
+import {
   PaymentOrderMismatchError,
   PaymentOrderPersistenceError,
   findPaymentOrderByExternalReference,
@@ -91,6 +95,14 @@ export async function POST(request: Request) {
       request_id_present: matrix.requestIdPresent,
       ts_digits: matrix.tsDigits,
     });
+  }
+
+  if (
+    process.env.VERCEL_ENV === "preview" &&
+    queryDataId &&
+    isProviderOrderId(queryDataId)
+  ) {
+    await logApplicationContextDiagnostic(request, queryDataId);
   }
 
   if (sdkValidationError) {
@@ -229,4 +241,40 @@ function getSignatureDiagnostics(
 
 function logWebhookDiagnostic(fields: Record<string, unknown>) {
   console.info(JSON.stringify({ route: "/api/mercadopago/webhook", ...fields }));
+}
+
+async function logApplicationContextDiagnostic(
+  request: Request,
+  providerOrderId: string,
+) {
+  const contentLength = Number(request.headers.get("content-length") ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > MAX_WEBHOOK_BYTES) return;
+
+  const rawBody = await request.clone().text();
+  if (new TextEncoder().encode(rawBody).byteLength > MAX_WEBHOOK_BYTES) return;
+
+  const webhookContext = extractWebhookApplicationContext(rawBody);
+  if (!webhookContext) return;
+
+  let orderApplicationId: string | null = null;
+  try {
+    const providerOrder = await getMercadoPagoOrderClient().get({
+      id: providerOrderId,
+    });
+    orderApplicationId = extractOrderApplicationId(providerOrder);
+  } catch {
+    // Diagnostic only: the webhook response and authentication remain unchanged.
+  }
+
+  logWebhookDiagnostic({
+    webhook_stage: "application_context",
+    webhook_application_id: webhookContext.applicationId,
+    order_application_id: orderApplicationId,
+    application_ids_match: Boolean(
+      webhookContext.applicationId &&
+        orderApplicationId &&
+        webhookContext.applicationId === orderApplicationId,
+    ),
+    live_mode: webhookContext.liveMode,
+  });
 }

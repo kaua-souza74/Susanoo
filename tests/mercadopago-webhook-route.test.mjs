@@ -29,7 +29,7 @@ registerHooks({
       export class MercadoPagoConfigurationError extends Error {}
       export function getMercadoPagoOrderClient() { return { async get(input) {
         globalThis.__webhookRouteMocks.orderGets.push(input);
-        return { id: input.id, external_reference: "SUS-webhook", status: "processed", status_detail: "accredited", transactions: { payments: [] } };
+        return { id: input.id, external_reference: "SUS-webhook", status: "processed", status_detail: "accredited", integration_data: { application_id: "8362280076817377" }, transactions: { payments: [] } };
       } }; }
     ` };
     if (url === "mock:webhook-orders") return { format: "module", shortCircuit: true, source: `
@@ -47,13 +47,13 @@ const { POST } = await import("../src/app/api/mercadopago/webhook/route.ts");
 const { getSecretFingerprint } = await import("../src/lib/mercadopago/secret-fingerprint.ts");
 const { getWebhookSignatureMatrix } = await import("../src/lib/mercadopago/signature-matrix.ts");
 
-function signedRequest({ dataId = "123456", secret = "orders-secret", signature = null, bodyStatus = "forged", type = "order", timestamp = String(Date.now()) } = {}) {
+function signedRequest({ dataId = "123456", secret = "orders-secret", signature = null, bodyStatus = "forged", type = "order", timestamp = String(Date.now()), applicationId = "8362280076817377", liveMode = false } = {}) {
   const requestId = "request-route-test";
   const digest = createHmac("sha256", secret).update(`id:${dataId};request-id:${requestId};ts:${timestamp};`).digest("hex");
   return new Request(`https://example.test/api/mercadopago/webhook?data.id=${encodeURIComponent(dataId)}&type=${type}`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-request-id": requestId, "x-signature": signature ?? `ts=${timestamp},v1=${digest}` },
-    body: JSON.stringify({ type, action: `${type}.updated`, status: bodyStatus, data: { id: dataId } }),
+    body: JSON.stringify({ type, action: `${type}.updated`, status: bodyStatus, application_id: applicationId, live_mode: liveMode, data: { id: dataId } }),
   });
 }
 
@@ -171,6 +171,56 @@ test("log da matriz contém somente booleanos e metadados seguros", async (t) =>
   assert.doesNotMatch(serializedLogs, /request-route-test/);
   assert.doesNotMatch(serializedLogs, new RegExp(orderId));
   assert.doesNotMatch(serializedLogs, /v1=/);
+});
+
+test("Preview compara application_id sem autenticar ou reconciliar webhook inválido", async (t) => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  const info = t.mock.method(console, "info", () => {});
+
+  const response = await POST(
+    signedRequest({
+      dataId: orderId,
+      signature: `ts=${Date.now()},v1=invalid`,
+      applicationId: "8362280076817377",
+      liveMode: false,
+    }),
+  );
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(globalThis.__webhookRouteMocks.orderGets, [{ id: orderId }]);
+  assert.equal(globalThis.__webhookRouteMocks.providerLookups.length, 0);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 0);
+
+  const applicationLog = info.mock.calls
+    .map((call) => JSON.parse(call.arguments[0]))
+    .find((entry) => entry.webhook_stage === "application_context");
+  assert.deepEqual(applicationLog, {
+    route: "/api/mercadopago/webhook",
+    webhook_stage: "application_context",
+    webhook_application_id: "8362280076817377",
+    order_application_id: "8362280076817377",
+    application_ids_match: true,
+    live_mode: false,
+  });
+
+  const serializedLogs = info.mock.calls.map((call) => call.arguments[0]).join("\n");
+  assert.doesNotMatch(serializedLogs, /orders-secret/);
+  assert.doesNotMatch(serializedLogs, /request-route-test/);
+  assert.doesNotMatch(serializedLogs, /v1=/);
+});
+
+test("diagnóstico não consulta Orders para data.id não estrutural", async (t) => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  t.mock.method(console, "info", () => {});
+
+  const response = await POST(
+    signedRequest({ dataId: "123456", signature: `ts=${Date.now()},v1=invalid` }),
+  );
+
+  assert.equal(response.status, 401);
+  assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 0);
 });
 
 test("ausência do secret continua retornando 503", async () => {
