@@ -147,11 +147,22 @@ function restoreSandbox(previousValue) {
   }
 }
 
+function restoreVercelEnv(previousValue) {
+  if (previousValue === undefined) {
+    delete process.env.VERCEL_ENV;
+  } else {
+    process.env.VERCEL_ENV = previousValue;
+  }
+}
+
 test("sandbox persiste 5000 e envia o payload PIX oficial", async (t) => {
   const previousSandbox = process.env.MERCADO_PAGO_SANDBOX;
+  const previousVercelEnv = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = "preview";
   process.env.MERCADO_PAGO_SANDBOX = "true";
   resetMocks();
   t.after(() => restoreSandbox(previousSandbox));
+  t.after(() => restoreVercelEnv(previousVercelEnv));
 
   const response = await POST(orderRequest());
 
@@ -198,6 +209,8 @@ test("modo normal mantém preço do catálogo e email autenticado", async (t) =>
 
 test("sandbox não reutiliza uma ordem antiga de 149900", async (t) => {
   const previousSandbox = process.env.MERCADO_PAGO_SANDBOX;
+  const previousVercelEnv = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = "preview";
   process.env.MERCADO_PAGO_SANDBOX = "true";
   resetMocks();
   globalThis.__orderRouteMocks.paymentOrder = {
@@ -217,6 +230,7 @@ test("sandbox não reutiliza uma ordem antiga de 149900", async (t) => {
     approvedAt: null,
   };
   t.after(() => restoreSandbox(previousSandbox));
+  t.after(() => restoreVercelEnv(previousVercelEnv));
 
   const response = await POST(orderRequest());
 
@@ -224,5 +238,60 @@ test("sandbox não reutiliza uma ordem antiga de 149900", async (t) => {
   assert.equal(globalThis.__orderRouteMocks.providerInputs.length, 0);
   assert.deepEqual(await response.json(), {
     error: "Sessão de checkout conflitante.",
+  });
+});
+
+test("Production ignora sandbox=true e mantém preço e payer reais", async (t) => {
+  const previousSandbox = process.env.MERCADO_PAGO_SANDBOX;
+  const previousVercelEnv = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = "production";
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+  resetMocks();
+  t.after(() => restoreSandbox(previousSandbox));
+  t.after(() => restoreVercelEnv(previousVercelEnv));
+
+  const response = await POST(orderRequest());
+
+  assert.equal(response.status, 201);
+  assert.equal(globalThis.__orderRouteMocks.persistenceInputs[0].amountInCents, 149_900);
+  assert.equal(globalThis.__orderRouteMocks.providerInputs[0].body.total_amount, "1499.00");
+  assert.deepEqual(globalThis.__orderRouteMocks.providerInputs[0].body.payer, {
+    email: "comprador@exemplo.com",
+  });
+});
+
+test("Preview com sandbox=false mantém preço e payer reais", async (t) => {
+  const previousSandbox = process.env.MERCADO_PAGO_SANDBOX;
+  const previousVercelEnv = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = "preview";
+  process.env.MERCADO_PAGO_SANDBOX = "false";
+  resetMocks();
+  t.after(() => restoreSandbox(previousSandbox));
+  t.after(() => restoreVercelEnv(previousVercelEnv));
+
+  const response = await POST(orderRequest());
+
+  assert.equal(response.status, 201);
+  assert.equal(globalThis.__orderRouteMocks.persistenceInputs[0].amountInCents, 149_900);
+  assert.deepEqual(globalThis.__orderRouteMocks.providerInputs[0].body.payer, {
+    email: "comprador@exemplo.com",
+  });
+});
+
+test("Production com sandbox=false mantém preço e payer reais", async (t) => {
+  const previousSandbox = process.env.MERCADO_PAGO_SANDBOX;
+  const previousVercelEnv = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = "production";
+  process.env.MERCADO_PAGO_SANDBOX = "false";
+  resetMocks();
+  t.after(() => restoreSandbox(previousSandbox));
+  t.after(() => restoreVercelEnv(previousVercelEnv));
+
+  const response = await POST(orderRequest());
+
+  assert.equal(response.status, 201);
+  assert.equal(globalThis.__orderRouteMocks.persistenceInputs[0].amountInCents, 149_900);
+  assert.deepEqual(globalThis.__orderRouteMocks.providerInputs[0].body.payer, {
+    email: "comprador@exemplo.com",
   });
 });

@@ -215,6 +215,11 @@ function restoreSandbox(value) {
   else process.env.MERCADO_PAGO_SANDBOX = value;
 }
 
+function restoreVercelEnv(value) {
+  if (value === undefined) delete process.env.VERCEL_ENV;
+  else process.env.VERCEL_ENV = value;
+}
+
 test("usuário não autenticado recebe 401", async () => {
   resetMocks();
   globalThis.__brickRouteMocks.authenticatedPayer = null;
@@ -228,9 +233,12 @@ test("usuário não autenticado recebe 401", async () => {
 
 test("amount adulterado é ignorado e preço sandbox permanece server-side", async (t) => {
   const previousSandbox = process.env.MERCADO_PAGO_SANDBOX;
+  const previousVercelEnv = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = "preview";
   process.env.MERCADO_PAGO_SANDBOX = "true";
   resetMocks();
   t.after(() => restoreSandbox(previousSandbox));
+  t.after(() => restoreVercelEnv(previousVercelEnv));
 
   const response = await POST(brickRequest({ amount: 0.01 }));
 
@@ -270,9 +278,12 @@ test("modo normal usa email autenticado e ignora override do frontend", async ()
 
 test("sandbox card não permite sobrescrever o email de teste", async (t) => {
   const previousSandbox = process.env.MERCADO_PAGO_SANDBOX;
+  const previousVercelEnv = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = "preview";
   process.env.MERCADO_PAGO_SANDBOX = "true";
   resetMocks();
   t.after(() => restoreSandbox(previousSandbox));
+  t.after(() => restoreVercelEnv(previousVercelEnv));
 
   const response = await POST(
     brickRequest({ email: "tentativa-de-override@example.com" }),
@@ -283,6 +294,23 @@ test("sandbox card não permite sobrescrever o email de teste", async (t) => {
     globalThis.__brickRouteMocks.createInputs[0].body.payer.email,
     "test@testuser.com",
   );
+});
+
+test("Production ignora sandbox=true e usa preço e email autenticado", async (t) => {
+  const previousSandbox = process.env.MERCADO_PAGO_SANDBOX;
+  const previousVercelEnv = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = "production";
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+  resetMocks();
+  t.after(() => restoreSandbox(previousSandbox));
+  t.after(() => restoreVercelEnv(previousVercelEnv));
+
+  const response = await POST(brickRequest({ email: "override@example.com" }));
+
+  assert.equal(response.status, 201);
+  const providerInput = globalThis.__brickRouteMocks.createInputs[0];
+  assert.equal(providerInput.body.total_amount, "1499.00");
+  assert.equal(providerInput.body.payer.email, "comprador@exemplo.com");
 });
 
 test("Brick rejeita email de pagador inválido", async () => {

@@ -220,6 +220,7 @@ export function CheckoutExperience({
                   <MercadoPagoCardBrick
                     amountInCents={service.amountInCents}
                     diagnosticsEnabled={brickDiagnosticsEnabled}
+                    isSandbox={service.isSandbox}
                     serviceId={service.id}
                     sessionScope={service.sessionScope}
                   />

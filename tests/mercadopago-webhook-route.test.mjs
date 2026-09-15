@@ -179,6 +179,20 @@ test("Preview sandbox reconcilia HMAC inválido somente após validar a Order no
   });
 });
 
+test("Preview com sandbox=false rejeita HMAC inválido sem executar fallback", async () => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  process.env.MERCADO_PAGO_SANDBOX = "false";
+
+  const response = await POST(
+    signedRequest({ dataId: sandboxOrderId, signature: `ts=${Date.now()},v1=invalid` }),
+  );
+
+  assert.equal(response.status, 401);
+  assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 0);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 0);
+});
+
 test("Preview sandbox rejeita application_id divergente", async (t) => {
   reset();
   process.env.VERCEL_ENV = "preview";

@@ -6,6 +6,7 @@ import {
 } from "mercadopago";
 
 import { extractMercadoPagoOrderSnapshot } from "@/lib/mercadopago/order-snapshot";
+import { isMercadoPagoSandboxEnabled } from "@/lib/mercadopago/checkout-mode";
 import {
   PaymentOrderMismatchError,
   PaymentOrderPersistenceError,
@@ -72,8 +73,7 @@ export async function POST(request: Request) {
     if (sdkValidationError instanceof InvalidWebhookSignatureError) {
       if (
         sdkValidationError.reason === "SignatureMismatch" &&
-        process.env.VERCEL_ENV === "preview" &&
-        process.env.MERCADO_PAGO_SANDBOX === "true" &&
+        isMercadoPagoSandboxEnabled() &&
         queryDataId &&
         isSandboxProviderOrderId(queryDataId)
       ) {

@@ -28,6 +28,7 @@ type CardSubmitPayload = Parameters<
 type MercadoPagoCardBrickProps = {
   amountInCents: number;
   diagnosticsEnabled: boolean;
+  isSandbox: boolean;
   serviceId: ServiceId;
   sessionScope: string;
 };
@@ -35,6 +36,7 @@ type MercadoPagoCardBrickProps = {
 export function MercadoPagoCardBrick({
   amountInCents,
   diagnosticsEnabled,
+  isSandbox,
   serviceId,
   sessionScope,
 }: MercadoPagoCardBrickProps) {
@@ -164,9 +166,11 @@ export function MercadoPagoCardBrick({
             Preencha os dados no ambiente seguro do Mercado Pago e escolha o parcelamento.
           </p>
         </div>
-        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/35">
-          <ShieldCheck className="h-4 w-4 text-emerald-400" /> Ambiente de teste
-        </div>
+        {isSandbox ? (
+          <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/35">
+            <ShieldCheck className="h-4 w-4 text-emerald-400" /> Ambiente de teste
+          </div>
+        ) : null}
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_18rem]">

@@ -23,6 +23,17 @@ test("Card Brick usa a Public Key da mesma aplicação Orders", () => {
   assert.doesNotMatch(component, /NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY/);
   assert.match(checkout, /paymentMethod === "card"/);
   assert.match(checkout, /<MercadoPagoCardBrick/);
+  assert.match(checkout, /isSandbox=\{service\.isSandbox\}/);
+  assert.match(component, /\{isSandbox \? \(/);
+});
+
+test("sandbox é fail-closed e centralizado no ambiente Preview", () => {
+  const checkoutMode = read("src/lib/mercadopago/checkout-mode.ts");
+  const webhook = read("src/app/api/mercadopago/webhook/route.ts");
+  assert.match(checkoutMode, /process\.env\.VERCEL_ENV === "preview"/);
+  assert.match(checkoutMode, /process\.env\.MERCADO_PAGO_SANDBOX === "true"/);
+  assert.match(webhook, /isMercadoPagoSandboxEnabled\(\)/);
+  assert.doesNotMatch(webhook, /process\.env\.MERCADO_PAGO_SANDBOX/);
 });
 
 test("Card Brick diferencia erros críticos sem registrar dados sensíveis", () => {

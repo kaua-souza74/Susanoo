@@ -10,10 +10,17 @@ export type MercadoPagoCheckoutMode = {
   sessionScope: string;
 };
 
+export function isMercadoPagoSandboxEnabled(): boolean {
+  return (
+    process.env.VERCEL_ENV === "preview" &&
+    process.env.MERCADO_PAGO_SANDBOX === "true"
+  );
+}
+
 export function getMercadoPagoCheckoutMode(
   catalogAmountInCents: number,
 ): MercadoPagoCheckoutMode {
-  const isSandbox = process.env.MERCADO_PAGO_SANDBOX === "true";
+  const isSandbox = isMercadoPagoSandboxEnabled();
   const amountInCents = isSandbox
     ? SANDBOX_AMOUNT_IN_CENTS
     : catalogAmountInCents;
