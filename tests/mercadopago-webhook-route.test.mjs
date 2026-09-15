@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, createHmac } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import path from "node:path";
 import test from "node:test";
@@ -47,6 +47,7 @@ const { POST } = await import("../src/app/api/mercadopago/webhook/route.ts");
 const { getSecretFingerprint } = await import("../src/lib/mercadopago/secret-fingerprint.ts");
 const { getWebhookSignatureMatrix } = await import("../src/lib/mercadopago/signature-matrix.ts");
 const { getWebhookHeaderContext } = await import("../src/lib/mercadopago/header-context.ts");
+const { getWebhookTimestampContext, extractManifestTimestamp } = await import("../src/lib/mercadopago/timestamp-context.ts");
 
 function signedRequest({ dataId = "123456", secret = "orders-secret", signature = null, bodyStatus = "forged", type = "order", timestamp = String(Date.now()), applicationId = "8362280076817377", liveMode = false } = {}) {
   const requestId = "request-route-test";
@@ -137,6 +138,32 @@ test("headers duplicados consolidados não são tratados como ocorrência lógic
 
   assert.equal(context.requestIdPresent, true);
   assert.equal(context.requestIdSingleLogicalOccurrence, false);
+});
+
+for (const timestamp of ["1742505638", "1742505638683"]) {
+  test(`timestamp de ${timestamp.length} dígitos é preservado byte a byte`, () => {
+    const signature = `ts=${timestamp},v1=${"c".repeat(64)}`;
+    const context = getWebhookTimestampContext(signature);
+
+    assert.equal(extractManifestTimestamp(signature), timestamp);
+    assert.equal(context.rawTsDigits, timestamp.length);
+    assert.equal(context.parsedTsDigits, timestamp.length);
+    assert.equal(context.rawAndParsedTsMatch, true);
+    assert.equal(context.tsIsAllDigits, true);
+    assert.equal(context.parserPerformedNumericConversion, false);
+  });
+}
+
+test("parser diagnóstico de timestamp não realiza conversão numérica", () => {
+  const source = readFileSync(
+    path.join(projectRoot, "src/lib/mercadopago/timestamp-context.ts"),
+    "utf8",
+  );
+
+  assert.doesNotMatch(source, /\b(?:Number|parseInt|parseFloat)\s*\(/);
+  assert.doesNotMatch(source, /Math\.floor\s*\(/);
+  assert.doesNotMatch(source, /\/\s*(?:1000|1_000)\b/);
+  assert.doesNotMatch(source, /\bnew\s+Date\b/);
 });
 
 test("matriz identifica assinatura com case original", () => {
@@ -248,6 +275,33 @@ test("Preview registra header_context sem revelar valores dos headers", async (t
   const serializedLogs = info.mock.calls.map((call) => call.arguments[0]).join("\n");
   assert.doesNotMatch(serializedLogs, /request-route-test/);
   assert.doesNotMatch(serializedLogs, /x-signature/);
+  assert.doesNotMatch(serializedLogs, /v1=/);
+});
+
+test("Preview registra timestamp_context sem revelar ts ou assinatura", async (t) => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  const info = t.mock.method(console, "info", () => {});
+  const timestamp = "1742505638";
+
+  await POST(signedRequest({ timestamp }));
+
+  const timestampLog = info.mock.calls
+    .map((call) => JSON.parse(call.arguments[0]))
+    .find((entry) => entry.webhook_stage === "timestamp_context");
+  assert.deepEqual(timestampLog, {
+    route: "/api/mercadopago/webhook",
+    webhook_stage: "timestamp_context",
+    raw_signature_length: 81,
+    raw_ts_digits: 10,
+    parsed_ts_digits: 10,
+    raw_and_parsed_ts_match: true,
+    ts_is_all_digits: true,
+    parser_performed_numeric_conversion: false,
+  });
+
+  const serializedLogs = info.mock.calls.map((call) => call.arguments[0]).join("\n");
+  assert.doesNotMatch(serializedLogs, new RegExp(timestamp));
   assert.doesNotMatch(serializedLogs, /v1=/);
 });
 

@@ -24,6 +24,7 @@ import {
 } from "@/lib/mercadopago/server";
 import { getSecretFingerprint } from "@/lib/mercadopago/secret-fingerprint";
 import { getWebhookSignatureMatrix } from "@/lib/mercadopago/signature-matrix";
+import { getWebhookTimestampContext } from "@/lib/mercadopago/timestamp-context";
 import { PaymentPersistenceConfigurationError } from "@/lib/mercadopago/supabase-admin";
 import {
   isProviderOrderId,
@@ -59,7 +60,6 @@ export async function POST(request: Request) {
   const queryDataId = url.searchParams.get("data.id");
   const xSignature = request.headers.get("x-signature");
   const xRequestId = request.headers.get("x-request-id");
-  const signatureDiagnostics = getSignatureDiagnostics(xSignature);
 
   if (process.env.VERCEL_ENV === "preview") {
     const headerContext = getWebhookHeaderContext(request.headers);
@@ -75,6 +75,18 @@ export async function POST(request: Request) {
       signature_parts: headerContext.signatureParts,
       ts_digits: headerContext.tsDigits,
       v1_length: headerContext.v1Length,
+    });
+
+    const timestampContext = getWebhookTimestampContext(xSignature);
+    logWebhookDiagnostic({
+      webhook_stage: "timestamp_context",
+      raw_signature_length: timestampContext.rawSignatureLength,
+      raw_ts_digits: timestampContext.rawTsDigits,
+      parsed_ts_digits: timestampContext.parsedTsDigits,
+      raw_and_parsed_ts_match: timestampContext.rawAndParsedTsMatch,
+      ts_is_all_digits: timestampContext.tsIsAllDigits,
+      parser_performed_numeric_conversion:
+        timestampContext.parserPerformedNumericConversion,
     });
   }
 
@@ -135,6 +147,7 @@ export async function POST(request: Request) {
     return errorResponse("Notificação inválida.", 400);
   }
 
+  const signatureDiagnostics = getSignatureDiagnostics(xSignature);
   if (!isWebhookTimestampValid(xSignature)) {
     logWebhookDiagnostic({
       webhook_stage: "timestamp_invalid",
