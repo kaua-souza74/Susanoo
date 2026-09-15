@@ -17,12 +17,17 @@ import {
   findPaymentOrderByExternalReference,
   findPaymentOrderByProviderOrderId,
   syncPaymentOrderFromProvider,
+  type PaymentOrder,
 } from "@/lib/mercadopago/payment-orders";
 import {
   MercadoPagoConfigurationError,
   getMercadoPagoOrderClient,
 } from "@/lib/mercadopago/server";
 import { getSecretFingerprint } from "@/lib/mercadopago/secret-fingerprint";
+import {
+  DEFAULT_ORDERS_APPLICATION_ID,
+  verifySandboxProviderOrder,
+} from "@/lib/mercadopago/sandbox-webhook-fallback";
 import { getWebhookSignatureMatrix } from "@/lib/mercadopago/signature-matrix";
 import { getWebhookTimestampContext } from "@/lib/mercadopago/timestamp-context";
 import { PaymentPersistenceConfigurationError } from "@/lib/mercadopago/supabase-admin";
@@ -96,6 +101,7 @@ export async function POST(request: Request) {
   }
 
   let sdkValidationError: unknown;
+  let diagnosticProviderOrder: unknown = null;
 
   try {
     WebhookSignatureValidator.validate({
@@ -132,7 +138,10 @@ export async function POST(request: Request) {
     queryDataId &&
     isProviderOrderId(queryDataId)
   ) {
-    await logApplicationContextDiagnostic(request, queryDataId);
+    diagnosticProviderOrder = await logApplicationContextDiagnostic(
+      request,
+      queryDataId,
+    );
   }
 
   if (sdkValidationError) {
@@ -142,6 +151,17 @@ export async function POST(request: Request) {
         error_name: sdkValidationError.name,
         error_reason: sdkValidationError.reason,
       });
+      if (
+        process.env.VERCEL_ENV === "preview" &&
+        process.env.MERCADO_PAGO_SANDBOX === "true" &&
+        queryDataId &&
+        isProviderOrderId(queryDataId)
+      ) {
+        return handleSandboxProviderFallback(
+          queryDataId,
+          diagnosticProviderOrder,
+        );
+      }
       return errorResponse("Assinatura inválida.", 401);
     }
     return errorResponse("Notificação inválida.", 400);
@@ -277,19 +297,24 @@ function logWebhookDiagnostic(fields: Record<string, unknown>) {
 async function logApplicationContextDiagnostic(
   request: Request,
   providerOrderId: string,
-) {
+): Promise<unknown | null> {
   const contentLength = Number(request.headers.get("content-length") ?? 0);
-  if (Number.isFinite(contentLength) && contentLength > MAX_WEBHOOK_BYTES) return;
+  if (Number.isFinite(contentLength) && contentLength > MAX_WEBHOOK_BYTES) {
+    return null;
+  }
 
   const rawBody = await request.clone().text();
-  if (new TextEncoder().encode(rawBody).byteLength > MAX_WEBHOOK_BYTES) return;
+  if (new TextEncoder().encode(rawBody).byteLength > MAX_WEBHOOK_BYTES) {
+    return null;
+  }
 
   const webhookContext = extractWebhookApplicationContext(rawBody);
-  if (!webhookContext) return;
+  if (!webhookContext) return null;
 
   let orderApplicationId: string | null = null;
+  let providerOrder: unknown = null;
   try {
-    const providerOrder = await getMercadoPagoOrderClient().get({
+    providerOrder = await getMercadoPagoOrderClient().get({
       id: providerOrderId,
     });
     orderApplicationId = extractOrderApplicationId(providerOrder);
@@ -307,5 +332,68 @@ async function logApplicationContextDiagnostic(
         webhookContext.applicationId === orderApplicationId,
     ),
     live_mode: webhookContext.liveMode,
+  });
+
+  return providerOrder;
+}
+
+async function handleSandboxProviderFallback(
+  providerOrderId: string,
+  previouslyFetchedOrder: unknown,
+) {
+  let providerOrder = previouslyFetchedOrder;
+  let paymentOrder: PaymentOrder | null = null;
+
+  try {
+    if (!providerOrder) {
+      providerOrder = await getMercadoPagoOrderClient().get({
+        id: providerOrderId,
+      });
+    }
+
+    const snapshot = extractMercadoPagoOrderSnapshot(providerOrder);
+    if (snapshot) {
+      paymentOrder = await findPaymentOrderByExternalReference(
+        snapshot.externalReference,
+      );
+    }
+
+    const expectedApplicationId =
+      process.env.MERCADO_PAGO_ORDERS_APPLICATION_ID?.trim() ||
+      DEFAULT_ORDERS_APPLICATION_ID;
+    const verification = verifySandboxProviderOrder({
+      providerOrder,
+      requestedOrderId: providerOrderId,
+      paymentOrder,
+      expectedApplicationId,
+    });
+
+    if (!verification.valid || !verification.snapshot || !paymentOrder) {
+      logSandboxFallback(verification, false);
+      return errorResponse("Assinatura inválida.", 401);
+    }
+
+    await syncPaymentOrderFromProvider(paymentOrder, verification.snapshot);
+    logSandboxFallback(verification, true);
+    return receivedResponse("processed");
+  } catch {
+    logSandboxFallback(null, false);
+    return errorResponse("Assinatura inválida.", 401);
+  }
+}
+
+function logSandboxFallback(
+  verification: ReturnType<typeof verifySandboxProviderOrder> | null,
+  reconciled: boolean,
+) {
+  logWebhookDiagnostic({
+    webhook_stage: "sandbox_provider_verified_fallback",
+    hmac_valid: false,
+    provider_lookup_valid: verification?.providerLookupValid ?? false,
+    application_match: verification?.applicationMatch ?? false,
+    external_reference_match: verification?.externalReferenceMatch ?? false,
+    amount_match: verification?.amountMatch ?? false,
+    environment_match: verification?.environmentMatch ?? false,
+    reconciled,
   });
 }

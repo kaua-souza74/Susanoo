@@ -8,7 +8,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const orderId = "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3";
-globalThis.__webhookRouteMocks = { orderGets: [], providerLookups: [], syncInputs: [], paymentOrder: null };
+const sandboxOrderId = "ORDTST01JQ4S4KY8HWQ6NA5PXB65B3D3";
+globalThis.__webhookRouteMocks = { orderGets: [], providerLookups: [], syncInputs: [], paymentOrder: null, providerOrder: null, orderGetError: null };
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -29,14 +30,15 @@ registerHooks({
       export class MercadoPagoConfigurationError extends Error {}
       export function getMercadoPagoOrderClient() { return { async get(input) {
         globalThis.__webhookRouteMocks.orderGets.push(input);
-        return { id: input.id, external_reference: "SUS-webhook", status: "processed", status_detail: "accredited", integration_data: { application_id: "8362280076817377" }, transactions: { payments: [] } };
+        if (globalThis.__webhookRouteMocks.orderGetError) throw globalThis.__webhookRouteMocks.orderGetError;
+        return globalThis.__webhookRouteMocks.providerOrder ?? { id: input.id, external_reference: "SUS-webhook", status: "processed", status_detail: "accredited", total_amount: "50.00", currency: "BRL", description: "Site Institucional", integration_data: { application_id: "8362280076817377" }, transactions: { payments: [] } };
       } }; }
     ` };
     if (url === "mock:webhook-orders") return { format: "module", shortCircuit: true, source: `
       export class PaymentOrderMismatchError extends Error {}
       export class PaymentOrderPersistenceError extends Error {}
       export async function findPaymentOrderByProviderOrderId(id) { globalThis.__webhookRouteMocks.providerLookups.push(id); return globalThis.__webhookRouteMocks.paymentOrder; }
-      export async function findPaymentOrderByExternalReference() { return null; }
+      export async function findPaymentOrderByExternalReference(reference) { return globalThis.__webhookRouteMocks.paymentOrder?.externalReference === reference ? globalThis.__webhookRouteMocks.paymentOrder : null; }
       export async function syncPaymentOrderFromProvider(order, snapshot) { globalThis.__webhookRouteMocks.syncInputs.push({ order, snapshot }); return order; }
     ` };
     return nextLoad(url, context);
@@ -62,10 +64,14 @@ function signedRequest({ dataId = "123456", secret = "orders-secret", signature 
 function reset(paymentMethod = "pix") {
   process.env.MERCADO_PAGO_ORDERS_WEBHOOK_SECRET = "orders-secret";
   delete process.env.VERCEL_ENV;
+  delete process.env.MERCADO_PAGO_SANDBOX;
+  delete process.env.MERCADO_PAGO_ORDERS_APPLICATION_ID;
   globalThis.__webhookRouteMocks.orderGets.length = 0;
   globalThis.__webhookRouteMocks.providerLookups.length = 0;
   globalThis.__webhookRouteMocks.syncInputs.length = 0;
-  globalThis.__webhookRouteMocks.paymentOrder = { id: "local", externalReference: "SUS-webhook", providerOrderId: null, paymentMethod, status: "pending" };
+  globalThis.__webhookRouteMocks.providerOrder = null;
+  globalThis.__webhookRouteMocks.orderGetError = null;
+  globalThis.__webhookRouteMocks.paymentOrder = { id: "local", userId: "user", serviceId: "site-institucional", amountInCents: 5000, currency: "BRL", externalReference: "SUS-webhook", providerOrderId: null, checkoutSessionId: "session", idempotencyKey: "key", paymentMethod, status: "pending", providerStatus: null, statusDetail: null, approvedAt: null };
 }
 
 test("fingerprint é determinístico e nunca contém o secret", () => {
@@ -402,6 +408,130 @@ test("assinatura inválida retorna 401", async () => {
   const response = await POST(signedRequest({ signature: `ts=${Date.now()},v1=invalid` }));
   assert.equal(response.status, 401);
   assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 0);
+});
+
+test("Preview sandbox reconcilia HMAC inválido somente após validar a Order no provider", async (t) => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+  const info = t.mock.method(console, "info", () => {});
+
+  const response = await POST(
+    signedRequest({ dataId: sandboxOrderId, signature: `ts=${Date.now()},v1=invalid` }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { received: true, result: "processed" });
+  assert.deepEqual(globalThis.__webhookRouteMocks.orderGets, [{ id: sandboxOrderId }]);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 1);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs[0].snapshot.providerOrderId, sandboxOrderId);
+
+  const fallbackLog = info.mock.calls
+    .map((call) => JSON.parse(call.arguments[0]))
+    .find((entry) => entry.webhook_stage === "sandbox_provider_verified_fallback");
+  assert.deepEqual(fallbackLog, {
+    route: "/api/mercadopago/webhook",
+    webhook_stage: "sandbox_provider_verified_fallback",
+    hmac_valid: false,
+    provider_lookup_valid: true,
+    application_match: true,
+    external_reference_match: true,
+    amount_match: true,
+    environment_match: true,
+    reconciled: true,
+  });
+});
+
+test("Preview sandbox rejeita application_id divergente", async (t) => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+  globalThis.__webhookRouteMocks.providerOrder = {
+    id: sandboxOrderId, external_reference: "SUS-webhook", status: "processed", status_detail: "accredited",
+    total_amount: "50.00", currency: "BRL", description: "Site Institucional",
+    integration_data: { application_id: "other-application" }, transactions: { payments: [] },
+  };
+  t.mock.method(console, "info", () => {});
+
+  const response = await POST(signedRequest({ dataId: sandboxOrderId, signature: `ts=${Date.now()},v1=invalid` }));
+
+  assert.equal(response.status, 401);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 0);
+});
+
+test("Preview sandbox rejeita external_reference que não pertence à Susanoo", async (t) => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+  globalThis.__webhookRouteMocks.providerOrder = {
+    id: sandboxOrderId, external_reference: "SUS-outra-operacao", status: "processed", status_detail: "accredited",
+    total_amount: "50.00", currency: "BRL", description: "Site Institucional",
+    integration_data: { application_id: "8362280076817377" }, transactions: { payments: [] },
+  };
+  t.mock.method(console, "info", () => {});
+
+  const response = await POST(signedRequest({ dataId: sandboxOrderId, signature: `ts=${Date.now()},v1=invalid` }));
+
+  assert.equal(response.status, 401);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 0);
+});
+
+test("Preview sandbox rejeita amount divergente", async (t) => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+  globalThis.__webhookRouteMocks.providerOrder = {
+    id: sandboxOrderId, external_reference: "SUS-webhook", status: "processed", status_detail: "accredited",
+    total_amount: "49.99", currency: "BRL", description: "Site Institucional",
+    integration_data: { application_id: "8362280076817377" }, transactions: { payments: [] },
+  };
+  t.mock.method(console, "info", () => {});
+
+  const response = await POST(signedRequest({ dataId: sandboxOrderId, signature: `ts=${Date.now()},v1=invalid` }));
+
+  assert.equal(response.status, 401);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 0);
+});
+
+test("Preview sandbox rejeita Order inexistente", async (t) => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+  globalThis.__webhookRouteMocks.orderGetError = new Error("not found");
+  t.mock.method(console, "info", () => {});
+
+  const response = await POST(signedRequest({ dataId: sandboxOrderId, signature: `ts=${Date.now()},v1=invalid` }));
+
+  assert.equal(response.status, 401);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 0);
+});
+
+test("Production rejeita HMAC inválido sem consultar ou reconciliar", async () => {
+  reset();
+  process.env.VERCEL_ENV = "production";
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+
+  const response = await POST(signedRequest({ dataId: sandboxOrderId, signature: `ts=${Date.now()},v1=invalid` }));
+
+  assert.equal(response.status, 401);
+  assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 0);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 0);
+});
+
+test("HMAC válido mantém o fluxo atual mesmo em Preview sandbox", async (t) => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+  const info = t.mock.method(console, "info", () => {});
+
+  const response = await POST(signedRequest({ dataId: sandboxOrderId }));
+
+  assert.equal(response.status, 200);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 1);
+  const fallbackLogs = info.mock.calls
+    .map((call) => JSON.parse(call.arguments[0]))
+    .filter((entry) => entry.webhook_stage === "sandbox_provider_verified_fallback");
+  assert.equal(fallbackLogs.length, 0);
 });
 
 test("timestamp válido no HMAC mas fora da tolerância retorna 401", async () => {
