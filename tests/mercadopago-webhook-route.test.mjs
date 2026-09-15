@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { existsSync } from "node:fs";
 import { registerHooks } from "node:module";
 import path from "node:path";
@@ -46,6 +46,7 @@ registerHooks({
 const { POST } = await import("../src/app/api/mercadopago/webhook/route.ts");
 const { getSecretFingerprint } = await import("../src/lib/mercadopago/secret-fingerprint.ts");
 const { getWebhookSignatureMatrix } = await import("../src/lib/mercadopago/signature-matrix.ts");
+const { getWebhookHeaderContext } = await import("../src/lib/mercadopago/header-context.ts");
 
 function signedRequest({ dataId = "123456", secret = "orders-secret", signature = null, bodyStatus = "forged", type = "order", timestamp = String(Date.now()), applicationId = "8362280076817377", liveMode = false } = {}) {
   const requestId = "request-route-test";
@@ -93,6 +94,49 @@ test("Preview registra somente fingerprint seguro do secret", async (t) => {
     secret_sha256_prefix: getSecretFingerprint("orders-secret").sha256Prefix,
   });
   assert.doesNotMatch(info.mock.calls[0].arguments[0], /orders-secret/);
+});
+
+test("contexto dos headers gera fingerprint seguro e metadados determinísticos", () => {
+  const requestId = "request-header-context-123456789";
+  const timestamp = "1789412345678";
+  const v1 = "a".repeat(64);
+  const headers = new Headers({
+    "x-request-id": requestId,
+    "x-signature": `ts=${timestamp},v1=${v1}`,
+  });
+
+  const context = getWebhookHeaderContext(headers);
+
+  assert.deepEqual(context, {
+    requestIdPresent: true,
+    requestIdLength: requestId.length,
+    requestIdSha256Prefix: createHash("sha256")
+      .update(requestId)
+      .digest("hex")
+      .slice(0, 8),
+    requestIdHasOuterWhitespace: false,
+    requestIdSingleLogicalOccurrence: true,
+    signaturePresent: true,
+    signatureParts: 2,
+    tsDigits: 13,
+    v1Length: 64,
+  });
+  const serialized = JSON.stringify(context);
+  assert.doesNotMatch(serialized, new RegExp(requestId));
+  assert.doesNotMatch(serialized, new RegExp(v1));
+  assert.doesNotMatch(serialized, new RegExp(timestamp));
+});
+
+test("headers duplicados consolidados não são tratados como ocorrência lógica única", () => {
+  const headers = new Headers();
+  headers.append("x-request-id", "request-one");
+  headers.append("x-request-id", "request-two");
+  headers.set("x-signature", `ts=1789412345,v1=${"b".repeat(64)}`);
+
+  const context = getWebhookHeaderContext(headers);
+
+  assert.equal(context.requestIdPresent, true);
+  assert.equal(context.requestIdSingleLogicalOccurrence, false);
 });
 
 test("matriz identifica assinatura com case original", () => {
@@ -170,6 +214,40 @@ test("log da matriz contém somente booleanos e metadados seguros", async (t) =>
   assert.doesNotMatch(serializedLogs, /orders-secret/);
   assert.doesNotMatch(serializedLogs, /request-route-test/);
   assert.doesNotMatch(serializedLogs, new RegExp(orderId));
+  assert.doesNotMatch(serializedLogs, /v1=/);
+});
+
+test("Preview registra header_context sem revelar valores dos headers", async (t) => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  const info = t.mock.method(console, "info", () => {});
+
+  const response = await POST(signedRequest());
+
+  assert.equal(response.status, 200);
+  const headerLog = info.mock.calls
+    .map((call) => JSON.parse(call.arguments[0]))
+    .find((entry) => entry.webhook_stage === "header_context");
+  assert.deepEqual(headerLog, {
+    route: "/api/mercadopago/webhook",
+    webhook_stage: "header_context",
+    request_id_present: true,
+    request_id_length: "request-route-test".length,
+    request_id_sha256_prefix: createHash("sha256")
+      .update("request-route-test")
+      .digest("hex")
+      .slice(0, 8),
+    request_id_has_outer_whitespace: false,
+    request_id_single_logical_occurrence: true,
+    signature_present: true,
+    signature_parts: 2,
+    ts_digits: 13,
+    v1_length: 64,
+  });
+
+  const serializedLogs = info.mock.calls.map((call) => call.arguments[0]).join("\n");
+  assert.doesNotMatch(serializedLogs, /request-route-test/);
+  assert.doesNotMatch(serializedLogs, /x-signature/);
   assert.doesNotMatch(serializedLogs, /v1=/);
 });
 

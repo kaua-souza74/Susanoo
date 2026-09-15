@@ -10,6 +10,7 @@ import {
   extractOrderApplicationId,
   extractWebhookApplicationContext,
 } from "@/lib/mercadopago/application-context";
+import { getWebhookHeaderContext } from "@/lib/mercadopago/header-context";
 import {
   PaymentOrderMismatchError,
   PaymentOrderPersistenceError,
@@ -59,6 +60,23 @@ export async function POST(request: Request) {
   const xSignature = request.headers.get("x-signature");
   const xRequestId = request.headers.get("x-request-id");
   const signatureDiagnostics = getSignatureDiagnostics(xSignature);
+
+  if (process.env.VERCEL_ENV === "preview") {
+    const headerContext = getWebhookHeaderContext(request.headers);
+    logWebhookDiagnostic({
+      webhook_stage: "header_context",
+      request_id_present: headerContext.requestIdPresent,
+      request_id_length: headerContext.requestIdLength,
+      request_id_sha256_prefix: headerContext.requestIdSha256Prefix,
+      request_id_has_outer_whitespace: headerContext.requestIdHasOuterWhitespace,
+      request_id_single_logical_occurrence:
+        headerContext.requestIdSingleLogicalOccurrence,
+      signature_present: headerContext.signaturePresent,
+      signature_parts: headerContext.signatureParts,
+      ts_digits: headerContext.tsDigits,
+      v1_length: headerContext.v1Length,
+    });
+  }
 
   if (!xRequestId?.trim()) {
     logWebhookDiagnostic({ webhook_stage: "x_request_id_missing" });
