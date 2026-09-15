@@ -18,6 +18,7 @@ import {
   getMercadoPagoOrderClient,
 } from "@/lib/mercadopago/server";
 import { getSecretFingerprint } from "@/lib/mercadopago/secret-fingerprint";
+import { getWebhookSignatureMatrix } from "@/lib/mercadopago/signature-matrix";
 import { PaymentPersistenceConfigurationError } from "@/lib/mercadopago/supabase-admin";
 import {
   isProviderOrderId,
@@ -71,6 +72,25 @@ export async function POST(request: Request) {
     });
   } catch (error: unknown) {
     sdkValidationError = error;
+  }
+
+  if (process.env.VERCEL_ENV === "preview") {
+    const matrix = getWebhookSignatureMatrix({
+      dataId: queryDataId,
+      requestId: xRequestId,
+      xSignature,
+      secret,
+    });
+    logWebhookDiagnostic({
+      webhook_stage: "signature_matrix",
+      original_case_valid: matrix.originalCaseValid,
+      lowercase_valid: matrix.lowercaseValid,
+      sdk_valid: !sdkValidationError,
+      data_id_length: matrix.dataIdLength,
+      data_id_has_uppercase: matrix.dataIdHasUppercase,
+      request_id_present: matrix.requestIdPresent,
+      ts_digits: matrix.tsDigits,
+    });
   }
 
   if (sdkValidationError) {

@@ -45,6 +45,7 @@ registerHooks({
 
 const { POST } = await import("../src/app/api/mercadopago/webhook/route.ts");
 const { getSecretFingerprint } = await import("../src/lib/mercadopago/secret-fingerprint.ts");
+const { getWebhookSignatureMatrix } = await import("../src/lib/mercadopago/signature-matrix.ts");
 
 function signedRequest({ dataId = "123456", secret = "orders-secret", signature = null, bodyStatus = "forged", type = "order", timestamp = String(Date.now()) } = {}) {
   const requestId = "request-route-test";
@@ -92,6 +93,84 @@ test("Preview registra somente fingerprint seguro do secret", async (t) => {
     secret_sha256_prefix: getSecretFingerprint("orders-secret").sha256Prefix,
   });
   assert.doesNotMatch(info.mock.calls[0].arguments[0], /orders-secret/);
+});
+
+test("matriz identifica assinatura com case original", () => {
+  const secret = "matrix-secret-original";
+  const dataId = orderId;
+  const requestId = "request-matrix-original";
+  const timestamp = "1789412345678";
+  const digest = createHmac("sha256", secret)
+    .update(`id:${dataId};request-id:${requestId};ts:${timestamp};`)
+    .digest("hex");
+
+  assert.deepEqual(
+    getWebhookSignatureMatrix({
+      dataId,
+      requestId,
+      xSignature: `ts=${timestamp},v1=${digest}`,
+      secret,
+    }),
+    {
+      originalCaseValid: true,
+      lowercaseValid: false,
+      dataIdLength: dataId.length,
+      dataIdHasUppercase: true,
+      requestIdPresent: true,
+      tsDigits: 13,
+    },
+  );
+});
+
+test("matriz identifica assinatura com data.id lowercase", () => {
+  const secret = "matrix-secret-lowercase";
+  const dataId = orderId;
+  const requestId = "request-matrix-lowercase";
+  const timestamp = "1789412345678";
+  const digest = createHmac("sha256", secret)
+    .update(`id:${dataId.toLowerCase()};request-id:${requestId};ts:${timestamp};`)
+    .digest("hex");
+
+  const matrix = getWebhookSignatureMatrix({
+    dataId,
+    requestId,
+    xSignature: `ts=${timestamp},v1=${digest}`,
+    secret,
+  });
+
+  assert.equal(matrix.originalCaseValid, false);
+  assert.equal(matrix.lowercaseValid, true);
+});
+
+test("log da matriz contém somente booleanos e metadados seguros", async (t) => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  const info = t.mock.method(console, "info", () => {});
+  const request = signedRequest({ dataId: orderId });
+
+  const response = await POST(request);
+
+  assert.equal(response.status, 200);
+  const matrixLog = info.mock.calls
+    .map((call) => JSON.parse(call.arguments[0]))
+    .find((entry) => entry.webhook_stage === "signature_matrix");
+  assert.deepEqual(matrixLog, {
+    route: "/api/mercadopago/webhook",
+    webhook_stage: "signature_matrix",
+    original_case_valid: true,
+    lowercase_valid: false,
+    sdk_valid: true,
+    data_id_length: orderId.length,
+    data_id_has_uppercase: true,
+    request_id_present: true,
+    ts_digits: 13,
+  });
+
+  const serializedLogs = info.mock.calls.map((call) => call.arguments[0]).join("\n");
+  assert.doesNotMatch(serializedLogs, /orders-secret/);
+  assert.doesNotMatch(serializedLogs, /request-route-test/);
+  assert.doesNotMatch(serializedLogs, new RegExp(orderId));
+  assert.doesNotMatch(serializedLogs, /v1=/);
 });
 
 test("ausência do secret continua retornando 503", async () => {
