@@ -7,11 +7,6 @@ import {
 
 import { extractMercadoPagoOrderSnapshot } from "@/lib/mercadopago/order-snapshot";
 import {
-  extractOrderApplicationId,
-  extractWebhookApplicationContext,
-} from "@/lib/mercadopago/application-context";
-import { getWebhookHeaderContext } from "@/lib/mercadopago/header-context";
-import {
   PaymentOrderMismatchError,
   PaymentOrderPersistenceError,
   findPaymentOrderByExternalReference,
@@ -23,13 +18,11 @@ import {
   MercadoPagoConfigurationError,
   getMercadoPagoOrderClient,
 } from "@/lib/mercadopago/server";
-import { getSecretFingerprint } from "@/lib/mercadopago/secret-fingerprint";
 import {
   DEFAULT_ORDERS_APPLICATION_ID,
+  isSandboxProviderOrderId,
   verifySandboxProviderOrder,
 } from "@/lib/mercadopago/sandbox-webhook-fallback";
-import { getWebhookSignatureMatrix } from "@/lib/mercadopago/signature-matrix";
-import { getWebhookTimestampContext } from "@/lib/mercadopago/timestamp-context";
 import { PaymentPersistenceConfigurationError } from "@/lib/mercadopago/supabase-admin";
 import {
   isProviderOrderId,
@@ -49,15 +42,6 @@ export async function POST(request: Request) {
     return errorResponse("Webhook indisponível.", 503);
   }
 
-  if (process.env.VERCEL_ENV === "preview") {
-    const fingerprint = getSecretFingerprint(secret);
-    logWebhookDiagnostic({
-      webhook_stage: "secret_fingerprint",
-      secret_length: fingerprint.secretLength,
-      secret_sha256_prefix: fingerprint.sha256Prefix,
-    });
-  }
-
   if (queryType !== "order") {
     return errorResponse("Notificação inválida.", 400);
   }
@@ -66,42 +50,12 @@ export async function POST(request: Request) {
   const xSignature = request.headers.get("x-signature");
   const xRequestId = request.headers.get("x-request-id");
 
-  if (process.env.VERCEL_ENV === "preview") {
-    const headerContext = getWebhookHeaderContext(request.headers);
-    logWebhookDiagnostic({
-      webhook_stage: "header_context",
-      request_id_present: headerContext.requestIdPresent,
-      request_id_length: headerContext.requestIdLength,
-      request_id_sha256_prefix: headerContext.requestIdSha256Prefix,
-      request_id_has_outer_whitespace: headerContext.requestIdHasOuterWhitespace,
-      request_id_single_logical_occurrence:
-        headerContext.requestIdSingleLogicalOccurrence,
-      signature_present: headerContext.signaturePresent,
-      signature_parts: headerContext.signatureParts,
-      ts_digits: headerContext.tsDigits,
-      v1_length: headerContext.v1Length,
-    });
-
-    const timestampContext = getWebhookTimestampContext(xSignature);
-    logWebhookDiagnostic({
-      webhook_stage: "timestamp_context",
-      raw_signature_length: timestampContext.rawSignatureLength,
-      raw_ts_digits: timestampContext.rawTsDigits,
-      parsed_ts_digits: timestampContext.parsedTsDigits,
-      raw_and_parsed_ts_match: timestampContext.rawAndParsedTsMatch,
-      ts_is_all_digits: timestampContext.tsIsAllDigits,
-      parser_performed_numeric_conversion:
-        timestampContext.parserPerformedNumericConversion,
-    });
-  }
-
   if (!xRequestId?.trim()) {
     logWebhookDiagnostic({ webhook_stage: "x_request_id_missing" });
     return errorResponse("Assinatura inválida.", 401);
   }
 
   let sdkValidationError: unknown;
-  let diagnosticProviderOrder: unknown = null;
 
   try {
     WebhookSignatureValidator.validate({
@@ -114,54 +68,21 @@ export async function POST(request: Request) {
     sdkValidationError = error;
   }
 
-  if (process.env.VERCEL_ENV === "preview") {
-    const matrix = getWebhookSignatureMatrix({
-      dataId: queryDataId,
-      requestId: xRequestId,
-      xSignature,
-      secret,
-    });
-    logWebhookDiagnostic({
-      webhook_stage: "signature_matrix",
-      original_case_valid: matrix.originalCaseValid,
-      lowercase_valid: matrix.lowercaseValid,
-      sdk_valid: !sdkValidationError,
-      data_id_length: matrix.dataIdLength,
-      data_id_has_uppercase: matrix.dataIdHasUppercase,
-      request_id_present: matrix.requestIdPresent,
-      ts_digits: matrix.tsDigits,
-    });
-  }
-
-  if (
-    process.env.VERCEL_ENV === "preview" &&
-    queryDataId &&
-    isProviderOrderId(queryDataId)
-  ) {
-    diagnosticProviderOrder = await logApplicationContextDiagnostic(
-      request,
-      queryDataId,
-    );
-  }
-
   if (sdkValidationError) {
     if (sdkValidationError instanceof InvalidWebhookSignatureError) {
-      logWebhookDiagnostic({
-        webhook_stage: "hmac_invalid",
-        error_name: sdkValidationError.name,
-        error_reason: sdkValidationError.reason,
-      });
       if (
+        sdkValidationError.reason === "SignatureMismatch" &&
         process.env.VERCEL_ENV === "preview" &&
         process.env.MERCADO_PAGO_SANDBOX === "true" &&
         queryDataId &&
-        isProviderOrderId(queryDataId)
+        isSandboxProviderOrderId(queryDataId)
       ) {
-        return handleSandboxProviderFallback(
-          queryDataId,
-          diagnosticProviderOrder,
-        );
+        return handleSandboxProviderFallback(queryDataId);
       }
+      logWebhookDiagnostic({
+        webhook_stage: "hmac_invalid",
+        error_reason: sdkValidationError.reason,
+      });
       return errorResponse("Assinatura inválida.", 401);
     }
     return errorResponse("Notificação inválida.", 400);
@@ -294,62 +215,13 @@ function logWebhookDiagnostic(fields: Record<string, unknown>) {
   console.info(JSON.stringify({ route: "/api/mercadopago/webhook", ...fields }));
 }
 
-async function logApplicationContextDiagnostic(
-  request: Request,
-  providerOrderId: string,
-): Promise<unknown | null> {
-  const contentLength = Number(request.headers.get("content-length") ?? 0);
-  if (Number.isFinite(contentLength) && contentLength > MAX_WEBHOOK_BYTES) {
-    return null;
-  }
-
-  const rawBody = await request.clone().text();
-  if (new TextEncoder().encode(rawBody).byteLength > MAX_WEBHOOK_BYTES) {
-    return null;
-  }
-
-  const webhookContext = extractWebhookApplicationContext(rawBody);
-  if (!webhookContext) return null;
-
-  let orderApplicationId: string | null = null;
-  let providerOrder: unknown = null;
-  try {
-    providerOrder = await getMercadoPagoOrderClient().get({
-      id: providerOrderId,
-    });
-    orderApplicationId = extractOrderApplicationId(providerOrder);
-  } catch {
-    // Diagnostic only: the webhook response and authentication remain unchanged.
-  }
-
-  logWebhookDiagnostic({
-    webhook_stage: "application_context",
-    webhook_application_id: webhookContext.applicationId,
-    order_application_id: orderApplicationId,
-    application_ids_match: Boolean(
-      webhookContext.applicationId &&
-        orderApplicationId &&
-        webhookContext.applicationId === orderApplicationId,
-    ),
-    live_mode: webhookContext.liveMode,
-  });
-
-  return providerOrder;
-}
-
-async function handleSandboxProviderFallback(
-  providerOrderId: string,
-  previouslyFetchedOrder: unknown,
-) {
-  let providerOrder = previouslyFetchedOrder;
+async function handleSandboxProviderFallback(providerOrderId: string) {
   let paymentOrder: PaymentOrder | null = null;
 
   try {
-    if (!providerOrder) {
-      providerOrder = await getMercadoPagoOrderClient().get({
-        id: providerOrderId,
-      });
-    }
+    const providerOrder = await getMercadoPagoOrderClient().get({
+      id: providerOrderId,
+    });
 
     const snapshot = extractMercadoPagoOrderSnapshot(providerOrder);
     if (snapshot) {

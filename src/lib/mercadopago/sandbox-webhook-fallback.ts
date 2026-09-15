@@ -1,6 +1,5 @@
 import "server-only";
 
-import { extractOrderApplicationId } from "./application-context";
 import {
   extractMercadoPagoOrderSnapshot,
   type MercadoPagoOrderSnapshot,
@@ -9,6 +8,7 @@ import type { PaymentOrder } from "./payment-orders";
 import { getServiceById } from "./services";
 
 export const DEFAULT_ORDERS_APPLICATION_ID = "8362280076817377";
+const SANDBOX_ORDER_ID_PATTERN = /^ORDTST[A-Za-z0-9]{8,58}$/;
 
 export type SandboxProviderVerification = {
   snapshot: MercadoPagoOrderSnapshot | null;
@@ -19,6 +19,10 @@ export type SandboxProviderVerification = {
   environmentMatch: boolean;
   valid: boolean;
 };
+
+export function isSandboxProviderOrderId(value: string): boolean {
+  return SANDBOX_ORDER_ID_PATTERN.test(value);
+}
 
 export function verifySandboxProviderOrder(input: {
   providerOrder: unknown;
@@ -35,7 +39,7 @@ export function verifySandboxProviderOrder(input: {
   const applicationMatch =
     extractOrderApplicationId(input.providerOrder) === input.expectedApplicationId;
   const environmentMatch = Boolean(
-    snapshot && /^ORDTST[A-Za-z0-9]{8,58}$/.test(snapshot.providerOrderId),
+    snapshot && isSandboxProviderOrderId(snapshot.providerOrderId),
   );
   const externalReferenceMatch = Boolean(
     snapshot &&
@@ -99,4 +103,21 @@ function readAmountInCents(value: unknown): number | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function extractOrderApplicationId(value: unknown): string | null {
+  if (!isRecord(value) || !isRecord(value.integration_data)) return null;
+  const applicationId = value.integration_data.application_id;
+
+  if (
+    typeof applicationId === "number" &&
+    Number.isSafeInteger(applicationId) &&
+    applicationId >= 0
+  ) {
+    return String(applicationId);
+  }
+
+  if (typeof applicationId !== "string") return null;
+  const candidate = applicationId.trim();
+  return /^\d{1,32}$/.test(candidate) ? candidate : null;
 }

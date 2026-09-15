@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, createHmac } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import path from "node:path";
@@ -46,10 +46,6 @@ registerHooks({
 });
 
 const { POST } = await import("../src/app/api/mercadopago/webhook/route.ts");
-const { getSecretFingerprint } = await import("../src/lib/mercadopago/secret-fingerprint.ts");
-const { getWebhookSignatureMatrix } = await import("../src/lib/mercadopago/signature-matrix.ts");
-const { getWebhookHeaderContext } = await import("../src/lib/mercadopago/header-context.ts");
-const { getWebhookTimestampContext, extractManifestTimestamp } = await import("../src/lib/mercadopago/timestamp-context.ts");
 
 function signedRequest({ dataId = "123456", secret = "orders-secret", signature = null, bodyStatus = "forged", type = "order", timestamp = String(Date.now()), applicationId = "8362280076817377", liveMode = false } = {}) {
   const requestId = "request-route-test";
@@ -74,283 +70,10 @@ function reset(paymentMethod = "pix") {
   globalThis.__webhookRouteMocks.paymentOrder = { id: "local", userId: "user", serviceId: "site-institucional", amountInCents: 5000, currency: "BRL", externalReference: "SUS-webhook", providerOrderId: null, checkoutSessionId: "session", idempotencyKey: "key", paymentMethod, status: "pending", providerStatus: null, statusDetail: null, approvedAt: null };
 }
 
-test("fingerprint é determinístico e nunca contém o secret", () => {
-  const secret = "secret-that-must-never-be-logged";
-  const first = getSecretFingerprint(secret);
-  const second = getSecretFingerprint(secret);
-
-  assert.deepEqual(first, second);
-  assert.equal(first.secretLength, secret.length);
-  assert.match(first.sha256Prefix, /^[a-f0-9]{8}$/);
-  assert.doesNotMatch(JSON.stringify(first), new RegExp(secret));
-});
-
-test("Preview registra somente fingerprint seguro do secret", async (t) => {
+test("fallback não consulta Orders para data.id não estrutural", async (t) => {
   reset();
   process.env.VERCEL_ENV = "preview";
-  const info = t.mock.method(console, "info", () => {});
-
-  const response = await POST(signedRequest());
-
-  assert.equal(response.status, 200);
-  const fingerprintLog = JSON.parse(info.mock.calls[0].arguments[0]);
-  assert.deepEqual(fingerprintLog, {
-    route: "/api/mercadopago/webhook",
-    webhook_stage: "secret_fingerprint",
-    secret_length: "orders-secret".length,
-    secret_sha256_prefix: getSecretFingerprint("orders-secret").sha256Prefix,
-  });
-  assert.doesNotMatch(info.mock.calls[0].arguments[0], /orders-secret/);
-});
-
-test("contexto dos headers gera fingerprint seguro e metadados determinísticos", () => {
-  const requestId = "request-header-context-123456789";
-  const timestamp = "1789412345678";
-  const v1 = "a".repeat(64);
-  const headers = new Headers({
-    "x-request-id": requestId,
-    "x-signature": `ts=${timestamp},v1=${v1}`,
-  });
-
-  const context = getWebhookHeaderContext(headers);
-
-  assert.deepEqual(context, {
-    requestIdPresent: true,
-    requestIdLength: requestId.length,
-    requestIdSha256Prefix: createHash("sha256")
-      .update(requestId)
-      .digest("hex")
-      .slice(0, 8),
-    requestIdHasOuterWhitespace: false,
-    requestIdSingleLogicalOccurrence: true,
-    signaturePresent: true,
-    signatureParts: 2,
-    tsDigits: 13,
-    v1Length: 64,
-  });
-  const serialized = JSON.stringify(context);
-  assert.doesNotMatch(serialized, new RegExp(requestId));
-  assert.doesNotMatch(serialized, new RegExp(v1));
-  assert.doesNotMatch(serialized, new RegExp(timestamp));
-});
-
-test("headers duplicados consolidados não são tratados como ocorrência lógica única", () => {
-  const headers = new Headers();
-  headers.append("x-request-id", "request-one");
-  headers.append("x-request-id", "request-two");
-  headers.set("x-signature", `ts=1789412345,v1=${"b".repeat(64)}`);
-
-  const context = getWebhookHeaderContext(headers);
-
-  assert.equal(context.requestIdPresent, true);
-  assert.equal(context.requestIdSingleLogicalOccurrence, false);
-});
-
-for (const timestamp of ["1742505638", "1742505638683"]) {
-  test(`timestamp de ${timestamp.length} dígitos é preservado byte a byte`, () => {
-    const signature = `ts=${timestamp},v1=${"c".repeat(64)}`;
-    const context = getWebhookTimestampContext(signature);
-
-    assert.equal(extractManifestTimestamp(signature), timestamp);
-    assert.equal(context.rawTsDigits, timestamp.length);
-    assert.equal(context.parsedTsDigits, timestamp.length);
-    assert.equal(context.rawAndParsedTsMatch, true);
-    assert.equal(context.tsIsAllDigits, true);
-    assert.equal(context.parserPerformedNumericConversion, false);
-  });
-}
-
-test("parser diagnóstico de timestamp não realiza conversão numérica", () => {
-  const source = readFileSync(
-    path.join(projectRoot, "src/lib/mercadopago/timestamp-context.ts"),
-    "utf8",
-  );
-
-  assert.doesNotMatch(source, /\b(?:Number|parseInt|parseFloat)\s*\(/);
-  assert.doesNotMatch(source, /Math\.floor\s*\(/);
-  assert.doesNotMatch(source, /\/\s*(?:1000|1_000)\b/);
-  assert.doesNotMatch(source, /\bnew\s+Date\b/);
-});
-
-test("matriz identifica assinatura com case original", () => {
-  const secret = "matrix-secret-original";
-  const dataId = orderId;
-  const requestId = "request-matrix-original";
-  const timestamp = "1789412345678";
-  const digest = createHmac("sha256", secret)
-    .update(`id:${dataId};request-id:${requestId};ts:${timestamp};`)
-    .digest("hex");
-
-  assert.deepEqual(
-    getWebhookSignatureMatrix({
-      dataId,
-      requestId,
-      xSignature: `ts=${timestamp},v1=${digest}`,
-      secret,
-    }),
-    {
-      originalCaseValid: true,
-      lowercaseValid: false,
-      dataIdLength: dataId.length,
-      dataIdHasUppercase: true,
-      requestIdPresent: true,
-      tsDigits: 13,
-    },
-  );
-});
-
-test("matriz identifica assinatura com data.id lowercase", () => {
-  const secret = "matrix-secret-lowercase";
-  const dataId = orderId;
-  const requestId = "request-matrix-lowercase";
-  const timestamp = "1789412345678";
-  const digest = createHmac("sha256", secret)
-    .update(`id:${dataId.toLowerCase()};request-id:${requestId};ts:${timestamp};`)
-    .digest("hex");
-
-  const matrix = getWebhookSignatureMatrix({
-    dataId,
-    requestId,
-    xSignature: `ts=${timestamp},v1=${digest}`,
-    secret,
-  });
-
-  assert.equal(matrix.originalCaseValid, false);
-  assert.equal(matrix.lowercaseValid, true);
-});
-
-test("log da matriz contém somente booleanos e metadados seguros", async (t) => {
-  reset();
-  process.env.VERCEL_ENV = "preview";
-  const info = t.mock.method(console, "info", () => {});
-  const request = signedRequest({ dataId: orderId });
-
-  const response = await POST(request);
-
-  assert.equal(response.status, 200);
-  const matrixLog = info.mock.calls
-    .map((call) => JSON.parse(call.arguments[0]))
-    .find((entry) => entry.webhook_stage === "signature_matrix");
-  assert.deepEqual(matrixLog, {
-    route: "/api/mercadopago/webhook",
-    webhook_stage: "signature_matrix",
-    original_case_valid: true,
-    lowercase_valid: false,
-    sdk_valid: true,
-    data_id_length: orderId.length,
-    data_id_has_uppercase: true,
-    request_id_present: true,
-    ts_digits: 13,
-  });
-
-  const serializedLogs = info.mock.calls.map((call) => call.arguments[0]).join("\n");
-  assert.doesNotMatch(serializedLogs, /orders-secret/);
-  assert.doesNotMatch(serializedLogs, /request-route-test/);
-  assert.doesNotMatch(serializedLogs, new RegExp(orderId));
-  assert.doesNotMatch(serializedLogs, /v1=/);
-});
-
-test("Preview registra header_context sem revelar valores dos headers", async (t) => {
-  reset();
-  process.env.VERCEL_ENV = "preview";
-  const info = t.mock.method(console, "info", () => {});
-
-  const response = await POST(signedRequest());
-
-  assert.equal(response.status, 200);
-  const headerLog = info.mock.calls
-    .map((call) => JSON.parse(call.arguments[0]))
-    .find((entry) => entry.webhook_stage === "header_context");
-  assert.deepEqual(headerLog, {
-    route: "/api/mercadopago/webhook",
-    webhook_stage: "header_context",
-    request_id_present: true,
-    request_id_length: "request-route-test".length,
-    request_id_sha256_prefix: createHash("sha256")
-      .update("request-route-test")
-      .digest("hex")
-      .slice(0, 8),
-    request_id_has_outer_whitespace: false,
-    request_id_single_logical_occurrence: true,
-    signature_present: true,
-    signature_parts: 2,
-    ts_digits: 13,
-    v1_length: 64,
-  });
-
-  const serializedLogs = info.mock.calls.map((call) => call.arguments[0]).join("\n");
-  assert.doesNotMatch(serializedLogs, /request-route-test/);
-  assert.doesNotMatch(serializedLogs, /x-signature/);
-  assert.doesNotMatch(serializedLogs, /v1=/);
-});
-
-test("Preview registra timestamp_context sem revelar ts ou assinatura", async (t) => {
-  reset();
-  process.env.VERCEL_ENV = "preview";
-  const info = t.mock.method(console, "info", () => {});
-  const timestamp = "1742505638";
-
-  await POST(signedRequest({ timestamp }));
-
-  const timestampLog = info.mock.calls
-    .map((call) => JSON.parse(call.arguments[0]))
-    .find((entry) => entry.webhook_stage === "timestamp_context");
-  assert.deepEqual(timestampLog, {
-    route: "/api/mercadopago/webhook",
-    webhook_stage: "timestamp_context",
-    raw_signature_length: 81,
-    raw_ts_digits: 10,
-    parsed_ts_digits: 10,
-    raw_and_parsed_ts_match: true,
-    ts_is_all_digits: true,
-    parser_performed_numeric_conversion: false,
-  });
-
-  const serializedLogs = info.mock.calls.map((call) => call.arguments[0]).join("\n");
-  assert.doesNotMatch(serializedLogs, new RegExp(timestamp));
-  assert.doesNotMatch(serializedLogs, /v1=/);
-});
-
-test("Preview compara application_id sem autenticar ou reconciliar webhook inválido", async (t) => {
-  reset();
-  process.env.VERCEL_ENV = "preview";
-  const info = t.mock.method(console, "info", () => {});
-
-  const response = await POST(
-    signedRequest({
-      dataId: orderId,
-      signature: `ts=${Date.now()},v1=invalid`,
-      applicationId: "8362280076817377",
-      liveMode: false,
-    }),
-  );
-
-  assert.equal(response.status, 401);
-  assert.deepEqual(globalThis.__webhookRouteMocks.orderGets, [{ id: orderId }]);
-  assert.equal(globalThis.__webhookRouteMocks.providerLookups.length, 0);
-  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 0);
-
-  const applicationLog = info.mock.calls
-    .map((call) => JSON.parse(call.arguments[0]))
-    .find((entry) => entry.webhook_stage === "application_context");
-  assert.deepEqual(applicationLog, {
-    route: "/api/mercadopago/webhook",
-    webhook_stage: "application_context",
-    webhook_application_id: "8362280076817377",
-    order_application_id: "8362280076817377",
-    application_ids_match: true,
-    live_mode: false,
-  });
-
-  const serializedLogs = info.mock.calls.map((call) => call.arguments[0]).join("\n");
-  assert.doesNotMatch(serializedLogs, /orders-secret/);
-  assert.doesNotMatch(serializedLogs, /request-route-test/);
-  assert.doesNotMatch(serializedLogs, /v1=/);
-});
-
-test("diagnóstico não consulta Orders para data.id não estrutural", async (t) => {
-  reset();
-  process.env.VERCEL_ENV = "preview";
+  process.env.MERCADO_PAGO_SANDBOX = "true";
   t.mock.method(console, "info", () => {});
 
   const response = await POST(
@@ -408,6 +131,20 @@ test("assinatura inválida retorna 401", async () => {
   const response = await POST(signedRequest({ signature: `ts=${Date.now()},v1=invalid` }));
   assert.equal(response.status, 401);
   assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 0);
+});
+
+test("Preview sandbox não usa fallback quando x-signature está ausente", async () => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+  const request = signedRequest({ dataId: sandboxOrderId });
+  request.headers.delete("x-signature");
+
+  const response = await POST(request);
+
+  assert.equal(response.status, 401);
+  assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 0);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 0);
 });
 
 test("Preview sandbox reconcilia HMAC inválido somente após validar a Order no provider", async (t) => {
@@ -493,6 +230,23 @@ test("Preview sandbox rejeita amount divergente", async (t) => {
   assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 0);
 });
 
+test("Preview sandbox rejeita moeda divergente", async (t) => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+  globalThis.__webhookRouteMocks.providerOrder = {
+    id: sandboxOrderId, external_reference: "SUS-webhook", status: "processed", status_detail: "accredited",
+    total_amount: "50.00", currency: "USD", description: "Site Institucional",
+    integration_data: { application_id: "8362280076817377" }, transactions: { payments: [] },
+  };
+  t.mock.method(console, "info", () => {});
+
+  const response = await POST(signedRequest({ dataId: sandboxOrderId, signature: `ts=${Date.now()},v1=invalid` }));
+
+  assert.equal(response.status, 401);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 0);
+});
+
 test("Preview sandbox rejeita Order inexistente", async (t) => {
   reset();
   process.env.VERCEL_ENV = "preview";
@@ -532,6 +286,35 @@ test("HMAC válido mantém o fluxo atual mesmo em Preview sandbox", async (t) =>
     .map((call) => JSON.parse(call.arguments[0]))
     .filter((entry) => entry.webhook_stage === "sandbox_provider_verified_fallback");
   assert.equal(fallbackLogs.length, 0);
+});
+
+test("webhook não mantém diagnósticos antigos nem expõe credenciais nos logs", async (t) => {
+  reset();
+  process.env.VERCEL_ENV = "preview";
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+  const info = t.mock.method(console, "info", () => {});
+
+  await POST(signedRequest({ dataId: sandboxOrderId, signature: `ts=${Date.now()},v1=invalid` }));
+
+  const routeSource = readFileSync(
+    path.join(projectRoot, "src/app/api/mercadopago/webhook/route.ts"),
+    "utf8",
+  );
+  const logs = info.mock.calls.map((call) => call.arguments[0]).join("\n");
+  for (const removedStage of [
+    "secret_fingerprint",
+    "header_context",
+    "timestamp_context",
+    "signature_matrix",
+    "application_context",
+  ]) {
+    assert.doesNotMatch(routeSource, new RegExp(removedStage));
+    assert.doesNotMatch(logs, new RegExp(removedStage));
+  }
+  assert.doesNotMatch(logs, /orders-secret/);
+  assert.doesNotMatch(logs, /request-route-test/);
+  assert.doesNotMatch(logs, /v1=/);
+  assert.doesNotMatch(logs, /Authorization/i);
 });
 
 test("timestamp válido no HMAC mas fora da tolerância retorna 401", async () => {
