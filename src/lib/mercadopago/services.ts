@@ -9,17 +9,33 @@ export const services = {
   },
 } as const;
 
-export type ServiceId = keyof typeof services;
-export type Service = (typeof services)[ServiceId];
+// Temporary internal item: deliberately excluded from the public catalog above.
+const internalServices = {
+  "internal-production-test": {
+    id: "internal-production-test",
+    name: "Teste interno de pagamento",
+    description: "Operação interna e temporária para validar o pagamento real de R$ 1,00.",
+    priceInCents: 100,
+    deliveryLabel: "Teste interno — não inclui um projeto",
+  },
+} as const;
+
+export type ServiceId = keyof typeof services | keyof typeof internalServices;
+export type Service =
+  | (typeof services)[keyof typeof services]
+  | (typeof internalServices)[keyof typeof internalServices];
 
 export const defaultServiceId: ServiceId = "site-institucional";
 
 export function isServiceId(value: unknown): value is ServiceId {
-  return typeof value === "string" && value in services;
+  return typeof value === "string" &&
+    (Object.hasOwn(services, value) || Object.hasOwn(internalServices, value));
 }
 
 export function getServiceById(serviceId: ServiceId): Service {
-  return services[serviceId];
+  return serviceId === "internal-production-test"
+    ? internalServices[serviceId]
+    : services[serviceId];
 }
 
 export function formatPriceInBRL(priceInCents: number): string {

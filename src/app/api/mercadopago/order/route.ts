@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getAuthenticatedPayer } from "@/lib/mercadopago/auth";
+import { canPurchaseService } from "@/lib/mercadopago/service-access";
 import {
   getMercadoPagoCheckoutMode,
   getMercadoPagoPayer,
@@ -57,6 +58,10 @@ export async function POST(request: Request) {
   );
   if (!payer) {
     return errorResponse("Sessão inválida ou expirada.", 401);
+  }
+
+  if (!canPurchaseService(body.serviceId, payer.userId)) {
+    return errorResponse("Serviço indisponível para esta conta.", 403);
   }
 
   if (body.paymentMethod === "card") {

@@ -165,6 +165,7 @@ const { POST } = await import(
 );
 
 function brickRequest({
+  serviceId = "site-institucional",
   amount = 50,
   installments = 1,
   token = cardToken,
@@ -180,7 +181,7 @@ function brickRequest({
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      serviceId: "site-institucional",
+      serviceId,
       checkoutSessionId,
       formData: {
         payment_method_id: paymentMethodId,
@@ -219,6 +220,33 @@ function restoreVercelEnv(value) {
   if (value === undefined) delete process.env.VERCEL_ENV;
   else process.env.VERCEL_ENV = value;
 }
+
+test("cartão interno bloqueia cliente comum antes de criar registro ou Order", async (t) => {
+  const previousEnv = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = "production";
+  t.after(() => restoreVercelEnv(previousEnv));
+  resetMocks();
+  const response = await POST(brickRequest({ serviceId: "internal-production-test" }));
+  assert.equal(response.status, 403);
+  assert.equal(globalThis.__brickRouteMocks.persistenceInputs.length, 0);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
+});
+
+test("cartão interno autorizado ignora amount adulterado e usa o fluxo Orders de 100 cents", async (t) => {
+  const previousEnv = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = "production";
+  t.after(() => restoreVercelEnv(previousEnv));
+  resetMocks();
+  globalThis.__brickRouteMocks.authenticatedPayer.userId = "dd69d348-16b5-4ff8-9bdb-619126c6a734";
+  const response = await POST(brickRequest({ serviceId: "internal-production-test", amount: 0.01 }));
+  assert.equal(response.status, 201);
+  assert.equal(globalThis.__brickRouteMocks.persistenceInputs[0].amountInCents, 100);
+  const input = globalThis.__brickRouteMocks.createInputs[0];
+  assert.equal(input.body.total_amount, "1.00");
+  assert.equal(input.body.transactions.payments[0].amount, "1.00");
+  assert.equal(input.requestOptions.idempotencyKey, "persisted-brick-idempotency-key");
+  assert.equal(input.body.payer.email, "comprador@exemplo.com");
+});
 
 test("usuário não autenticado recebe 401", async () => {
   resetMocks();

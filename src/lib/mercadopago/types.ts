@@ -1,6 +1,17 @@
 import type { ServiceId } from "./services";
 import type { PaymentStatus } from "./status";
 
+export type InternalCheckoutConfiguration = {
+  id: "internal-production-test";
+  name: string;
+  description: string;
+  deliveryLabel: string;
+  formattedPrice: string;
+  amountInCents: number;
+  isSandbox: false;
+  sessionScope: string;
+};
+
 export type PixOrderResponse = {
   orderId: string;
   serviceId: ServiceId;

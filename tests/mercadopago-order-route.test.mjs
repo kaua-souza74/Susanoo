@@ -10,6 +10,7 @@ const providerOrderId = "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3";
 const checkoutSessionId = "018f47a2-4d7e-7c31-8a5b-11c2df98a120";
 
 globalThis.__orderRouteMocks = {
+  authenticatedPayer: { userId: "user-test", email: "comprador@exemplo.com" },
   paymentOrder: null,
   persistenceInputs: [],
   providerInputs: [],
@@ -53,7 +54,7 @@ registerHooks({
         format: "module",
         shortCircuit: true,
         source: `export async function getAuthenticatedPayer() {
-          return { userId: "user-test", email: "comprador@exemplo.com" };
+          return globalThis.__orderRouteMocks.authenticatedPayer;
         }`,
       };
     }
@@ -118,7 +119,7 @@ registerHooks({
 
 const { POST } = await import("../src/app/api/mercadopago/order/route.ts");
 
-function orderRequest(sessionId = checkoutSessionId) {
+function orderRequest(sessionId = checkoutSessionId, serviceId = "site-institucional", extra = {}) {
   return new Request("https://example.test/api/mercadopago/order", {
     method: "POST",
     headers: {
@@ -126,18 +127,59 @@ function orderRequest(sessionId = checkoutSessionId) {
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      serviceId: "site-institucional",
+      serviceId,
       paymentMethod: "pix",
       checkoutSessionId: sessionId,
+      ...extra,
     }),
   });
 }
 
 function resetMocks() {
+  globalThis.__orderRouteMocks.authenticatedPayer = { userId: "user-test", email: "comprador@exemplo.com" };
   globalThis.__orderRouteMocks.paymentOrder = null;
   globalThis.__orderRouteMocks.persistenceInputs.length = 0;
   globalThis.__orderRouteMocks.providerInputs.length = 0;
 }
+
+test("PIX interno exige a conta autorizada antes de persistir ou consultar provider", async (t) => {
+  const previousEnv = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = "production";
+  t.after(() => restoreVercelEnv(previousEnv));
+  resetMocks();
+  const response = await POST(orderRequest(checkoutSessionId, "internal-production-test"));
+  assert.equal(response.status, 403);
+  assert.equal(globalThis.__orderRouteMocks.persistenceInputs.length, 0);
+  assert.equal(globalThis.__orderRouteMocks.providerInputs.length, 0);
+});
+
+test("PIX interno autorizado usa 100 cents e a idempotency persistida no fluxo Orders", async (t) => {
+  const previousEnv = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = "production";
+  t.after(() => restoreVercelEnv(previousEnv));
+  resetMocks();
+  globalThis.__orderRouteMocks.authenticatedPayer.userId = "dd69d348-16b5-4ff8-9bdb-619126c6a734";
+  const response = await POST(orderRequest(checkoutSessionId, "internal-production-test"));
+  assert.equal(response.status, 201);
+  assert.equal(globalThis.__orderRouteMocks.persistenceInputs[0].amountInCents, 100);
+  const input = globalThis.__orderRouteMocks.providerInputs[0];
+  assert.equal(input.body.total_amount, "1.00");
+  assert.equal(input.body.transactions.payments[0].amount, "1.00");
+  assert.equal(input.requestOptions.idempotencyKey, "persisted-idempotency-key");
+  assert.equal(input.body.payer.email, "comprador@exemplo.com");
+});
+
+test("PIX interno rejeita amount enviado pelo cliente sem criar operação", async (t) => {
+  const previousEnv = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = "production";
+  t.after(() => restoreVercelEnv(previousEnv));
+  resetMocks();
+  globalThis.__orderRouteMocks.authenticatedPayer.userId = "dd69d348-16b5-4ff8-9bdb-619126c6a734";
+  const response = await POST(orderRequest(checkoutSessionId, "internal-production-test", { amount: 0.01 }));
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__orderRouteMocks.persistenceInputs.length, 0);
+  assert.equal(globalThis.__orderRouteMocks.providerInputs.length, 0);
+});
 
 function restoreSandbox(previousValue) {
   if (previousValue === undefined) {

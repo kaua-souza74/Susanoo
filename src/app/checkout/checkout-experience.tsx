@@ -75,7 +75,7 @@ export function CheckoutExperience({
         );
         const payload: unknown = await response.json();
 
-        if (active && response.ok && isPixOrderResponse(payload)) {
+        if (active && response.ok && isPixOrderResponse(payload, service.id)) {
           setOrder(payload);
           if (payload.status === "approved") {
             sessionStorage.removeItem(
@@ -143,7 +143,7 @@ export function CheckoutExperience({
 
       const payload: unknown = await response.json();
 
-      if (!response.ok || !isPixOrderResponse(payload)) {
+      if (!response.ok || !isPixOrderResponse(payload, service.id)) {
         setMessage(readSafeError(payload));
         return;
       }
@@ -558,12 +558,12 @@ function checkoutStorageKey(
   return `susanoo_mp_checkout_${serviceId}_${sessionScope}`;
 }
 
-function isPixOrderResponse(value: unknown): value is PixOrderResponse {
+function isPixOrderResponse(value: unknown, expectedServiceId: ServiceId): value is PixOrderResponse {
   if (!isRecord(value)) return false;
 
   return (
     typeof value.orderId === "string" &&
-    value.serviceId === "site-institucional" &&
+    value.serviceId === expectedServiceId &&
     typeof value.amountInCents === "number" &&
     value.currency === "BRL" &&
     isPaymentStatus(value.status) &&
