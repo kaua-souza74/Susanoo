@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { SiteNavbar } from "@/components/SiteNavbar";
 import { CartProvider } from "@/components/CartContext";
 import { CartSidebar } from "@/components/CartSidebar";
+import AdminSessionSync from "@/components/admin/AdminSessionSync";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -30,6 +31,7 @@ export default function RootLayout({
     <html lang="pt-BR" className={inter.variable} suppressHydrationWarning>
       <body className="antialiased min-h-screen flex flex-col bg-background text-foreground" suppressHydrationWarning>
         <CartProvider>
+          <AdminSessionSync />
           <ThemeProvider>
             <SiteNavbar />
             <CartSidebar />

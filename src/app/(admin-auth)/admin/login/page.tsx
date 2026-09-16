@@ -1,7 +1,6 @@
 "use client";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
 import { ShieldAlert, KeyRound } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -9,32 +8,25 @@ export default function AdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
-
-  const ADM_EMAILS = ['davi@susanoo.com', 'vinicius172321@gmail.com', 'limasilvallsss@gmail.com', 'kauasesi156@gmail.com'];
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    let { error } = await supabase.auth.signInWithPassword({ email, password });
-    
-    // Provisão Automática MVP para evitar dor de cabeça manual na criação da startup
-    if (error && ADM_EMAILS.includes(email.toLowerCase())) {
-        const { error: signErr } = await supabase.auth.signUp({ 
-           email, password, options: { data: { full_name: email.split('@')[0], role: 'admin' } } 
-        });
-        if (!signErr) error = null;
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error || !data.session) throw new Error("unauthorized");
+      const response = await fetch("/api/admin/session", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${data.session.access_token}` },
+      });
+      if (!response.ok) throw new Error("unauthorized");
+      window.location.assign("/admin");
+    } catch {
+      alert("Acesso administrativo não autorizado ou credenciais inválidas.");
+    } finally {
+      setLoading(false);
     }
-
-    if (error && !ADM_EMAILS.includes(email.toLowerCase())) {
-       alert("Acesso exclusivo para Operadores Susanoo. Credencial inválida.");
-    } else if (error) {
-       alert("Erro interno na rede: " + error.message);
-    } else {
-       router.push("/admin");
-    }
-    setLoading(false);
   };
 
   return (
