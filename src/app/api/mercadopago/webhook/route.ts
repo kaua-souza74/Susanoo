@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { logProductionSignatureDiagnostics, logProductionApplicationContext } from "@/lib/mercadopago/production-signature-diagnostics";
 import {
   InvalidWebhookSignatureError,
   MPNotFoundError,
@@ -49,6 +48,8 @@ export async function POST(request: Request) {
   }
 
   const queryDataId = url.searchParams.get("data.id");
+  // Normalize only the cryptographic input; provider IDs remain case-sensitive.
+  const signatureDataId = queryDataId?.toLowerCase();
   const xSignature = request.headers.get("x-signature");
   const xRequestId = request.headers.get("x-request-id");
 
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
     WebhookSignatureValidator.validate({
       xSignature,
       xRequestId,
-      dataId: queryDataId,
+      dataId: signatureDataId,
       secret,
     });
   } catch (error: unknown) {
@@ -72,10 +73,6 @@ export async function POST(request: Request) {
 
   if (sdkValidationError) {
     if (sdkValidationError instanceof InvalidWebhookSignatureError) {
-      logProductionSignatureDiagnostics({ secret, xSignature, xRequestId, dataId: queryDataId, sdkValid: false });
-      if (sdkValidationError.reason === "SignatureMismatch") {
-        await logProductionApplicationContext(request, queryDataId);
-      }
       if (
         sdkValidationError.reason === "SignatureMismatch" &&
         isMercadoPagoSandboxEnabled() &&

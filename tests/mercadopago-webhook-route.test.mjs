@@ -46,11 +46,10 @@ registerHooks({
 });
 
 const { POST } = await import("../src/app/api/mercadopago/webhook/route.ts");
-const { logProductionSignatureDiagnostics } = await import("../src/lib/mercadopago/production-signature-diagnostics.ts");
 
-function signedRequest({ dataId = "123456", secret = "orders-secret", signature = null, bodyStatus = "forged", type = "order", timestamp = String(Date.now()), applicationId = "8362280076817377", liveMode = false } = {}) {
+function signedRequest({ dataId = "123456", secret = "orders-secret", signature = null, bodyStatus = "forged", type = "order", timestamp = String(Date.now()), applicationId = "8362280076817377", liveMode = false, signatureDataId = dataId.toLowerCase() } = {}) {
   const requestId = "request-route-test";
-  const digest = createHmac("sha256", secret).update(`id:${dataId};request-id:${requestId};ts:${timestamp};`).digest("hex");
+  const digest = createHmac("sha256", secret).update(`id:${signatureDataId};request-id:${requestId};ts:${timestamp};`).digest("hex");
   return new Request(`https://example.test/api/mercadopago/webhook?data.id=${encodeURIComponent(dataId)}&type=${type}`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-request-id": requestId, "x-signature": signature ?? `ts=${timestamp},v1=${digest}` },
@@ -103,7 +102,7 @@ test("simulador Orders autenticado continua ignored sem consultar provider", asy
   assert.deepEqual(await response.json(), { received: true, result: "ignored" });
 });
 
-test("ORDTST uppercase valida com case preservado no SDK e no provider", async () => {
+test("Order uppercase valida com lowercase no HMAC e case preservado no provider", async () => {
   reset();
   const response = await POST(signedRequest({ dataId: orderId }));
   assert.equal(response.status, 200);
@@ -353,78 +352,56 @@ test("status forjado no body nunca é persistido", async () => {
   assert.equal(globalThis.__webhookRouteMocks.syncInputs[0].snapshot.status, "approved");
 });
 
-for (const timestamp of ["1789584000", "1789584000123"]) {
-  for (const lowercase of [false, true]) {
-    test(`Production matrix preserves ${timestamp.length} digit ts, lowercase=${lowercase}`, (t) => {
-      reset();
-      process.env.VERCEL_ENV = "production";
-      const info = t.mock.method(console, "info", () => {});
-      const requestId = "sensitive-request-id";
-      const digest = createHmac("sha256", "orders-secret")
-        .update(`id:${lowercase ? orderId.toLowerCase() : orderId};request-id:${requestId};ts:${timestamp};`).digest("hex");
-      logProductionSignatureDiagnostics({
-        secret: "orders-secret", xSignature: `ts=${timestamp},v1=${digest}`,
-        xRequestId: requestId, dataId: orderId, sdkValid: !lowercase,
-      });
-      const entries = info.mock.calls.map(call => JSON.parse(call.arguments[0]));
-      const matrix = entries.find(entry => entry.webhook_stage === "signature_matrix");
-      assert.equal(matrix.original_case_valid, !lowercase);
-      assert.equal(matrix.lowercase_valid, lowercase);
-      assert.equal(matrix.sdk_valid, !lowercase);
-      const context = entries.find(entry => entry.webhook_stage === "timestamp_context");
-      assert.equal(context.raw_ts_digits, timestamp.length);
-      assert.equal(context.parsed_ts_digits, timestamp.length);
-      assert.equal(context.raw_and_parsed_ts_match, true);
-      assert.equal(context.parser_performed_numeric_conversion, false);
-      const logs = JSON.stringify(entries);
-      for (const forbidden of ["orders-secret", digest, requestId, timestamp, orderId, "Authorization"]) {
-        assert.equal(logs.includes(forbidden), false);
-      }
-    });
-  }
-}
-
-test("Production invalid HMAC: read-only application context, still 401, never reconciles", async (t) => {
+test("Production accepts lowercase HMAC while SDK receives lowercase and provider keeps original ID", async (t) => {
   reset();
   process.env.VERCEL_ENV = "production";
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+  const { WebhookSignatureValidator } = await import("mercadopago");
+  const validate = WebhookSignatureValidator.validate.bind(WebhookSignatureValidator);
+  const validator = t.mock.method(WebhookSignatureValidator, "validate", options => validate(options));
   const info = t.mock.method(console, "info", () => {});
-  const response = await POST(signedRequest({ dataId: orderId, secret: "wrong-secret", liveMode: true }));
-  assert.equal(response.status, 401);
-  assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 1);
-  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 0);
-  const entries = info.mock.calls.map(call => JSON.parse(call.arguments[0]));
-  const context = entries.find(entry => entry.webhook_stage === "application_context");
-  assert.equal(context.application_ids_match, true);
-  assert.equal(context.live_mode, true);
-  assert.deepEqual(await response.json(), { error: "Assinatura inválida." });
+  const response = await POST(signedRequest({ dataId: orderId, liveMode: true }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { received: true, result: "processed" });
+  assert.equal(validator.mock.calls[0].arguments[0].dataId, orderId.toLowerCase());
+  assert.deepEqual(globalThis.__webhookRouteMocks.orderGets, [{ id: orderId }]);
+  assert.deepEqual(globalThis.__webhookRouteMocks.providerLookups, [orderId]);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs[0].snapshot.providerOrderId, orderId);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 1);
+  assert.equal(info.mock.calls.length, 0);
 });
 
-test("Production unknown Order does not trigger diagnostic provider GET", async (t) => {
+test("Production rejects original-case HMAC without lookup or fallback, even with sandbox=true", async (t) => {
   reset();
   process.env.VERCEL_ENV = "production";
-  globalThis.__webhookRouteMocks.paymentOrder = null;
+  process.env.MERCADO_PAGO_SANDBOX = "true";
+  const info = t.mock.method(console, "info", () => {});
+  const response = await POST(signedRequest({ dataId: orderId, signatureDataId: orderId }));
+  assert.equal(response.status, 401);
+  assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 0);
+  assert.equal(globalThis.__webhookRouteMocks.providerLookups.length, 0);
+  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 0);
+  assert.doesNotMatch(JSON.stringify(info.mock.calls), /sandbox_provider_verified_fallback/);
+});
+
+test("Production wrong secret is rejected before lookup or reconciliation", async (t) => {
+  reset();
+  process.env.VERCEL_ENV = "production";
   t.mock.method(console, "info", () => {});
-  assert.equal((await POST(signedRequest({ dataId: orderId, secret: "wrong-secret" }))).status, 401);
+  assert.equal((await POST(signedRequest({ dataId: orderId, secret: "incorrect-secret" }))).status, 401);
   assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 0);
   assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 0);
 });
 
-test("Production diagnostic GET error does not change 401 or leak raw error", async (t) => {
+test("Production lowercase HMAC does not bypass timestamp validation", async (t) => {
   reset();
   process.env.VERCEL_ENV = "production";
-  globalThis.__webhookRouteMocks.orderGetError = new Error("Access Token sensitive-email@example.com CPF card-token");
-  const info = t.mock.method(console, "info", () => {});
-  assert.equal((await POST(signedRequest({ dataId: orderId, secret: "wrong-secret" }))).status, 401);
+  t.mock.method(console, "info", () => {});
+  assert.equal((await POST(signedRequest({ dataId: orderId, timestamp: String(Date.now() - 360000) }))).status, 401);
+  assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 0);
   assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 0);
-  assert.doesNotMatch(JSON.stringify(info.mock.calls), /Access Token|sensitive-email|CPF|card-token/);
 });
 
-test("Production valid HMAC preserves normal flow without temporary diagnostics", async (t) => {
-  reset();
-  process.env.VERCEL_ENV = "production";
-  const info = t.mock.method(console, "info", () => {});
-  assert.equal((await POST(signedRequest({ dataId: orderId }))).status, 200);
-  assert.equal(globalThis.__webhookRouteMocks.orderGets.length, 1);
-  assert.equal(globalThis.__webhookRouteMocks.syncInputs.length, 1);
-  assert.equal(info.mock.calls.length, 0);
+test("temporary Production diagnostic helper is removed", () => {
+  assert.equal(existsSync(path.join(projectRoot, "src/lib/mercadopago/production-signature-diagnostics.ts")), false);
 });
