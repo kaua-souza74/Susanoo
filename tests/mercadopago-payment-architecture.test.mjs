@@ -36,6 +36,17 @@ test("Card Brick preserva o tipo detectado pelo provider sem forçar crédito", 
   assert.doesNotMatch(component, /payment_type_id: "credit_card"/);
 });
 
+test("Card Brick cria nova tentativa explícita após rejeição e remonta para novo token", () => {
+  const component = read("src/components/checkout/MercadoPagoCardBrick.tsx");
+  assert.match(component, /result\?\.status === "rejected"/);
+  assert.match(component, /Tentar novamente/);
+  assert.match(component, /beginNewCardAttempt/);
+  assert.match(component, /key=\{brickAttemptKey\}/);
+  assert.match(component, /setBrickAttemptKey\(\(current\) => current \+ 1\)/);
+  assert.match(component, /additionalData\?: CardSubmitAdditionalData/);
+  assert.doesNotMatch(component, /payment_type_id: "debit_card"/);
+});
+
 test("sandbox é fail-closed e centralizado no ambiente Preview", () => {
   const checkoutMode = read("src/lib/mercadopago/checkout-mode.ts");
   const webhook = read("src/app/api/mercadopago/webhook/route.ts");

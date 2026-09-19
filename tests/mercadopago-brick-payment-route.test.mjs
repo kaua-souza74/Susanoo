@@ -16,6 +16,7 @@ globalThis.__brickRouteMocks = {
     email: "comprador@exemplo.com",
   },
   paymentOrder: null,
+  paymentOrders: new Map(),
   persistenceInputs: [],
   createInputs: [],
   getInputs: [],
@@ -80,9 +81,10 @@ registerHooks({
           export class PaymentOrderPersistenceError extends Error {}
           export async function getOrCreatePaymentOrder(input) {
             globalThis.__brickRouteMocks.persistenceInputs.push(input);
-            if (!globalThis.__brickRouteMocks.paymentOrder) {
-              globalThis.__brickRouteMocks.paymentOrder = {
-                id: "local-brick-order",
+            let order = globalThis.__brickRouteMocks.paymentOrders.get(input.checkoutSessionId);
+            if (!order) {
+              order = {
+                id: "local-brick-order-" + input.checkoutSessionId,
                 userId: input.userId,
                 serviceId: input.serviceId,
                 amountInCents: input.amountInCents,
@@ -90,15 +92,23 @@ registerHooks({
                 providerOrderId: null,
                 externalReference: "SUS-brick-reference",
                 checkoutSessionId: input.checkoutSessionId,
-                idempotencyKey: "persisted-brick-idempotency-key",
+                idempotencyKey:
+                  input.checkoutSessionId === "018f47a2-4d7e-7c31-8a5b-11c2df98a120"
+                    ? "persisted-brick-idempotency-key"
+                    : "persisted-" + input.checkoutSessionId,
                 paymentMethod: input.paymentMethod,
                 status: "pending",
                 providerStatus: null,
                 statusDetail: null,
                 approvedAt: null,
               };
+              globalThis.__brickRouteMocks.paymentOrders.set(
+                input.checkoutSessionId,
+                order,
+              );
             }
-            return globalThis.__brickRouteMocks.paymentOrder;
+            globalThis.__brickRouteMocks.paymentOrder = order;
+            return order;
           }
           export async function syncPaymentOrderFromProvider(order, snapshot) {
             globalThis.__brickRouteMocks.syncInputs.push({ order, snapshot });
@@ -109,6 +119,10 @@ registerHooks({
               providerStatus: snapshot.providerStatus,
               statusDetail: snapshot.providerStatusDetail,
             };
+            globalThis.__brickRouteMocks.paymentOrders.set(
+              order.checkoutSessionId,
+              globalThis.__brickRouteMocks.paymentOrder,
+            );
             return globalThis.__brickRouteMocks.paymentOrder;
           }
         `,
@@ -185,6 +199,7 @@ function brickRequest({
   paymentMethodId = "visa",
   paymentTypeId = "credit_card",
   issuerId = "310",
+  sessionId = checkoutSessionId,
 } = {}) {
   return new Request("https://example.test/api/mercadopago/brick/payment", {
     method: "POST",
@@ -194,7 +209,7 @@ function brickRequest({
     },
     body: JSON.stringify({
       serviceId,
-      checkoutSessionId,
+      checkoutSessionId: sessionId,
       formData: {
         payment_method_id: paymentMethodId,
         payment_type_id: paymentTypeId,
@@ -217,6 +232,7 @@ function resetMocks() {
     email: "comprador@exemplo.com",
   };
   globalThis.__brickRouteMocks.paymentOrder = null;
+  globalThis.__brickRouteMocks.paymentOrders.clear();
   globalThis.__brickRouteMocks.persistenceInputs.length = 0;
   globalThis.__brickRouteMocks.createInputs.length = 0;
   globalThis.__brickRouteMocks.getInputs.length = 0;
@@ -530,6 +546,28 @@ test("cartão usa token sem expor token ou documento nos logs", async (t) => {
   assert.doesNotMatch(serializedLogs, new RegExp(documentNumber));
   assert.match(serializedLogs, /"payment_method_id":"visa"/);
   assert.match(serializedLogs, /"provider_id":"ORD01JQ4S4KY8HWQ6NA5PXB65B3D3"/);
+});
+
+test("nova sessão após rejeição preserva a tentativa antiga e cria nova Order", async () => {
+  resetMocks();
+
+  const firstResponse = await POST(brickRequest());
+  const firstOrder = globalThis.__brickRouteMocks.paymentOrder;
+  const nextSessionId = "118f47a2-4d7e-7c31-8a5b-11c2df98a121";
+  const secondResponse = await POST(brickRequest({ sessionId: nextSessionId }));
+
+  assert.equal(firstResponse.status, 201);
+  assert.equal(secondResponse.status, 201);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 2);
+  assert.equal(globalThis.__brickRouteMocks.paymentOrders.size, 2);
+  assert.equal(
+    globalThis.__brickRouteMocks.paymentOrders.get(checkoutSessionId),
+    firstOrder,
+  );
+  assert.notEqual(
+    globalThis.__brickRouteMocks.createInputs[0].requestOptions.idempotencyKey,
+    globalThis.__brickRouteMocks.createInputs[1].requestOptions.idempotencyKey,
+  );
 });
 
 test("cartão de débito suportado preserva o tipo real na Order", async () => {

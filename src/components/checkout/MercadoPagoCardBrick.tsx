@@ -5,9 +5,15 @@ import { CardPayment, initMercadoPago } from "@mercadopago/sdk-react";
 import {
   CheckCircle2,
   CreditCard,
+  RotateCcw,
   ShieldCheck,
 } from "lucide-react";
 
+import {
+  beginNewCardAttempt,
+  getOrCreateCardAttemptSessionId,
+  markCardAttemptRejected,
+} from "@/lib/mercadopago/card-attempt";
 import type { ServiceId } from "@/lib/mercadopago/services";
 import type { BrickPaymentResponse } from "@/lib/mercadopago/types";
 import { supabase } from "@/lib/supabase";
@@ -47,6 +53,7 @@ export function MercadoPagoCardBrick({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const [result, setResult] = useState<BrickPaymentResponse | null>(null);
+  const [brickAttemptKey, setBrickAttemptKey] = useState(0);
   const submitLockRef = useRef(false);
   const submissionErrorRef = useRef(false);
   const checkoutSessionIdRef = useRef<string | null>(null);
@@ -118,7 +125,12 @@ export function MercadoPagoCardBrick({
 
         const checkoutSessionId =
           checkoutSessionIdRef.current ??
-          getOrCreateBrickCheckoutSessionId(serviceId, sessionScope);
+          getOrCreateCardAttemptSessionId({
+            storage: sessionStorage,
+            serviceId,
+            sessionScope,
+            randomUUID: () => crypto.randomUUID(),
+          });
         checkoutSessionIdRef.current = checkoutSessionId;
 
         const response = await fetch("/api/mercadopago/brick/payment", {
@@ -141,6 +153,13 @@ export function MercadoPagoCardBrick({
 
         setResult(responseBody);
         setSubmitMessage(cardStatusMessage(responseBody.status));
+        if (responseBody.status === "rejected") {
+          markCardAttemptRejected(
+            sessionStorage,
+            { serviceId, sessionScope },
+            checkoutSessionId,
+          );
+        }
       } catch (error: unknown) {
         submissionErrorRef.current = true;
         setSubmitMessage(
@@ -156,6 +175,20 @@ export function MercadoPagoCardBrick({
     },
     [diagnosticsEnabled, serviceId, sessionScope],
   );
+
+  const handleExplicitRetry = useCallback(() => {
+    checkoutSessionIdRef.current = beginNewCardAttempt({
+      storage: sessionStorage,
+      serviceId,
+      sessionScope,
+      randomUUID: () => crypto.randomUUID(),
+    });
+    submissionErrorRef.current = false;
+    setResult(null);
+    setSubmitMessage(null);
+    setIsReady(false);
+    setBrickAttemptKey((current) => current + 1);
+  }, [serviceId, sessionScope]);
 
   if (!publicKey) {
     return (
@@ -201,6 +234,7 @@ export function MercadoPagoCardBrick({
             </div>
           ) : null}
           <CardPayment
+            key={brickAttemptKey}
             initialization={initialization}
             customization={customization}
             locale="pt-BR"
@@ -249,6 +283,17 @@ export function MercadoPagoCardBrick({
 
       {result ? (
         <BrickCardResult result={result} />
+      ) : null}
+
+      {result?.status === "rejected" ? (
+        <button
+          type="button"
+          onClick={handleExplicitRetry}
+          className="mt-4 inline-flex items-center gap-2 rounded-xl border border-violet-300/20 bg-violet-400/10 px-4 py-3 text-sm font-black text-violet-100 transition hover:border-violet-300/35 hover:bg-violet-400/15"
+        >
+          <RotateCcw className="h-4 w-4" />
+          Tentar novamente
+        </button>
       ) : null}
 
       {submitMessage ? (
@@ -319,19 +364,6 @@ function safeString(value: unknown): string | null {
 
 function safeNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function getOrCreateBrickCheckoutSessionId(
-  serviceId: ServiceId,
-  sessionScope: string,
-) {
-  const storageKey = `susanoo_mp_brick_${serviceId}_${sessionScope}`;
-  const storedId = sessionStorage.getItem(storageKey);
-  if (storedId) return storedId;
-
-  const checkoutSessionId = crypto.randomUUID();
-  sessionStorage.setItem(storageKey, checkoutSessionId);
-  return checkoutSessionId;
 }
 
 function isBrickPaymentResponse(value: unknown): value is BrickPaymentResponse {
