@@ -163,6 +163,7 @@ registerHooks({
 const { POST } = await import(
   "../src/app/api/mercadopago/brick/payment/route.ts"
 );
+const { MPPaymentError } = await import("mercadopago");
 
 function brickRequest({
   serviceId = "site-institucional",
@@ -511,4 +512,97 @@ test("cartão usa token sem expor token ou documento nos logs", async (t) => {
   assert.doesNotMatch(serializedLogs, new RegExp(documentNumber));
   assert.match(serializedLogs, /"payment_method_id":"visa"/);
   assert.match(serializedLogs, /"provider_id":"ORD01JQ4S4KY8HWQ6NA5PXB65B3D3"/);
+});
+
+test("SDK 402 error is classified without relying on a minified name", async (t) => {
+  resetMocks();
+  const errorLog = t.mock.method(console, "error", () => {});
+  t.mock.method(console, "info", () => {});
+  globalThis.__brickRouteMocks.providerError = new MPPaymentError({
+    status: 402,
+    message: "MercadoPago API error",
+    error: "",
+    cause: [],
+  });
+
+  const response = await POST(brickRequest());
+
+  assert.equal(response.status, 502);
+  const entry = JSON.parse(errorLog.mock.calls[0].arguments[0]);
+  assert.equal(entry.error_name, "MPPaymentError");
+  assert.equal(entry.http_status, 402);
+  assert.equal(entry.response_body, null);
+  assert.equal(entry.mercadopago_request_id, null);
+  assert.deepEqual(entry.sdk_fields_present, [
+    "status",
+    "message",
+    "error",
+    "causes",
+  ]);
+});
+
+test("logger allowlists response data and redacts sensitive values", async (t) => {
+  resetMocks();
+  const errorLog = t.mock.method(console, "error", () => {});
+  t.mock.method(console, "info", () => {});
+  const providerError = new MPPaymentError({
+    status: 402,
+    message: `Rejected ${cardToken} for comprador@exemplo.com`,
+    error: "payment_required",
+    cause: [{
+      code: "cc_rejected_other_reason",
+      description: `CPF ${documentNumber}; CVV 123`,
+    }],
+  });
+  Object.assign(providerError, {
+    response: {
+      status: 402,
+      headers: { "x-request-id": ["mp-request-id-safe"] },
+      data: {
+        id: "ORD01SAFE",
+        status: "failed",
+        status_detail: "cc_rejected_other_reason",
+        message: `Rejected ${cardToken}`,
+        payer: { email: "comprador@exemplo.com" },
+        authorization: "must-not-be-logged",
+        transactions: {
+          payments: [{
+            id: "PAY01SAFE",
+            status: "rejected",
+            status_detail: "cc_rejected_other_reason",
+            payment_method: {
+              id: "master",
+              token: cardToken,
+              security_code: "123",
+            },
+          }],
+        },
+      },
+    },
+  });
+  globalThis.__brickRouteMocks.providerError = providerError;
+
+  const response = await POST(brickRequest());
+
+  assert.equal(response.status, 502);
+  const entry = JSON.parse(errorLog.mock.calls[0].arguments[0]);
+  assert.equal(entry.error_name, "MPPaymentError");
+  assert.equal(entry.http_status, 402);
+  assert.equal(entry.provider_status, "failed");
+  assert.equal(entry.provider_status_detail, "cc_rejected_other_reason");
+  assert.equal(entry.mercadopago_request_id, "mp-request-id-safe");
+  assert.deepEqual(entry.response_body.payments, [{
+    id: "PAY01SAFE",
+    status: "rejected",
+    status_detail: "cc_rejected_other_reason",
+    payment_method_id: "master",
+  }]);
+  const serialized = JSON.stringify(entry);
+  assert.doesNotMatch(serialized, new RegExp(cardToken));
+  assert.doesNotMatch(serialized, new RegExp(documentNumber));
+  assert.doesNotMatch(serialized, /comprador@exemplo\.com/);
+  assert.doesNotMatch(serialized, /must-not-be-logged/);
+  assert.doesNotMatch(serialized, /authorization|security_code/i);
+  assert.match(serialized, /\[redacted\]/);
+  assert.match(serialized, /\[redacted-security-code\]/);
 });
