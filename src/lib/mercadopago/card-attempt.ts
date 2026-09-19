@@ -17,12 +17,18 @@ type PollCardAttemptDependencies<T extends { status: string }> = {
   intervalMs?: number;
 };
 
+const TRANSIENT_CARD_STATUSES = new Set(["pending", "in_review"]);
+
 const TERMINAL_CARD_STATUSES = new Set([
   "approved",
   "rejected",
   "cancelled",
   "refunded",
 ]);
+
+export function isTransientCardAttemptStatus(status: string): boolean {
+  return TRANSIENT_CARD_STATUSES.has(status);
+}
 
 export async function pollCardAttemptStatus<T extends { status: string }>({
   readStatus,

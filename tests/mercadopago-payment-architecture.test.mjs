@@ -53,6 +53,7 @@ test("Card Brick reconcilia resposta incerta por leitura autenticada e limitada"
   const polling = read("src/lib/mercadopago/card-attempt.ts");
   assert.match(component, /response\.status >= 500/);
   assert.match(component, /pollCardAttemptStatus/);
+  assert.match(component, /isTransientCardAttemptStatus\(responseBody\.status\)/);
   assert.match(component, /brick\/payment\/attempt/);
   assert.match(component, /onStatusChange\?\./);
   assert.match(component, /onStatusChange\?\.\(null\)/);

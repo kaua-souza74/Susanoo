@@ -12,6 +12,7 @@ import {
 import {
   beginNewCardAttempt,
   getOrCreateCardAttemptSessionId,
+  isTransientCardAttemptStatus,
   markCardAttemptRejected,
   pollCardAttemptStatus,
 } from "@/lib/mercadopago/card-attempt";
@@ -190,6 +191,19 @@ export function MercadoPagoCardBrick({
         }
 
         applyAttemptStatus(responseBody);
+
+        if (isTransientCardAttemptStatus(responseBody.status)) {
+          const reconciledAttempt = await pollCardAttemptStatus({
+            readStatus: () =>
+              readCardAttemptStatus(session.access_token, checkoutSessionId),
+            wait: (milliseconds) =>
+              new Promise((resolve) => window.setTimeout(resolve, milliseconds)),
+          });
+
+          if (reconciledAttempt) {
+            applyAttemptStatus(reconciledAttempt);
+          }
+        }
       } catch (error: unknown) {
         submissionErrorRef.current = true;
         onStatusChange?.(null);

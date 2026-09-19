@@ -21,6 +21,7 @@ registerHooks({
 const {
   beginNewCardAttempt,
   getOrCreateCardAttemptSessionId,
+  isTransientCardAttemptStatus,
   markCardAttemptRejected,
   pollCardAttemptStatus,
 } = await import("../src/lib/mercadopago/card-attempt.ts");
@@ -133,6 +134,112 @@ test("polling termina em approved mesmo após resposta inicial incerta", async (
 
   assert.equal(result?.status, "approved");
   assert.equal(reads, 2);
+});
+
+test("pending e in_review são transitórios", () => {
+  assert.equal(isTransientCardAttemptStatus("pending"), true);
+  assert.equal(isTransientCardAttemptStatus("in_review"), true);
+  assert.equal(isTransientCardAttemptStatus("approved"), false);
+  assert.equal(isTransientCardAttemptStatus("rejected"), false);
+});
+
+test("polling continua de in_review até rejected", async () => {
+  const statuses = [{ status: "in_review" }, { status: "rejected" }];
+  let reads = 0;
+  let waits = 0;
+  const result = await pollCardAttemptStatus({
+    readStatus: async () => statuses[reads++] ?? null,
+    wait: async () => {
+      waits += 1;
+    },
+  });
+
+  assert.equal(result?.status, "rejected");
+  assert.equal(reads, 2);
+  assert.equal(waits, 1);
+});
+
+test("polling continua de in_review até approved", async () => {
+  const statuses = [{ status: "in_review" }, { status: "approved" }];
+  let reads = 0;
+  const result = await pollCardAttemptStatus({
+    readStatus: async () => statuses[reads++] ?? null,
+    wait: async () => {},
+  });
+
+  assert.equal(result?.status, "approved");
+  assert.equal(reads, 2);
+});
+
+test("polling percorre pending e in_review antes de approved", async () => {
+  const statuses = [
+    { status: "pending" },
+    { status: "in_review" },
+    { status: "approved" },
+  ];
+  let reads = 0;
+  const result = await pollCardAttemptStatus({
+    readStatus: async () => statuses[reads++] ?? null,
+    wait: async () => {},
+  });
+
+  assert.equal(result?.status, "approved");
+  assert.equal(reads, 3);
+});
+
+test("polling percorre pending e in_review antes de rejected", async () => {
+  const statuses = [
+    { status: "pending" },
+    { status: "in_review" },
+    { status: "rejected" },
+  ];
+  let reads = 0;
+  const result = await pollCardAttemptStatus({
+    readStatus: async () => statuses[reads++] ?? null,
+    wait: async () => {},
+  });
+
+  assert.equal(result?.status, "rejected");
+  assert.equal(reads, 3);
+});
+
+test("polling em in_review termina somente pelo limite e mantém processamento", async () => {
+  let reads = 0;
+  let waits = 0;
+  const result = await pollCardAttemptStatus({
+    readStatus: async () => {
+      reads += 1;
+      return { status: "in_review" };
+    },
+    wait: async () => {
+      waits += 1;
+    },
+    maxAttempts: 8,
+  });
+
+  assert.equal(result?.status, "in_review");
+  assert.equal(reads, 8);
+  assert.equal(waits, 7);
+});
+
+test("status terminal encerra polling imediatamente", async () => {
+  for (const status of ["approved", "rejected", "cancelled", "refunded"]) {
+    let reads = 0;
+    let waits = 0;
+    const result = await pollCardAttemptStatus({
+      readStatus: async () => {
+        reads += 1;
+        return { status };
+      },
+      wait: async () => {
+        waits += 1;
+      },
+    });
+
+    assert.equal(result?.status, status);
+    assert.equal(reads, 1);
+    assert.equal(waits, 0);
+  }
 });
 
 test("polling pending é limitado e não executa criação de pagamento", async () => {
