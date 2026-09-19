@@ -23,8 +23,12 @@ export function extractMercadoPagoOrderSnapshot(
 
   const payment = readFirstPayment(value.transactions);
   const providerStatus = readString(value.status) ?? readString(payment?.status);
-  const providerStatusDetail =
-    readString(value.status_detail) ?? readString(payment?.status_detail);
+  const providerStatusDetail = selectProviderStatusDetail(
+    readString(value.status),
+    readString(value.status_detail),
+    readString(payment?.status),
+    readString(payment?.status_detail),
+  );
   const paymentMethod = isRecord(payment?.payment_method)
     ? payment.payment_method
     : null;
@@ -39,6 +43,45 @@ export function extractMercadoPagoOrderSnapshot(
     qrCodeBase64: readBase64Png(paymentMethod?.qr_code_base64),
     ticketUrl: readHttpsUrl(paymentMethod?.ticket_url),
   };
+}
+
+function selectProviderStatusDetail(
+  orderStatus: string | null,
+  orderStatusDetail: string | null,
+  paymentStatus: string | null,
+  paymentStatusDetail: string | null,
+): string | null {
+  if (!paymentStatusDetail) return orderStatusDetail;
+  if (!orderStatusDetail) return paymentStatusDetail;
+
+  const normalizedOrderDetail = orderStatusDetail.toLowerCase();
+  const normalizedPaymentDetail = paymentStatusDetail.toLowerCase();
+  if (normalizedOrderDetail === normalizedPaymentDetail) {
+    return orderStatusDetail;
+  }
+
+  if (
+    isGenericStatusDetail(orderStatus, normalizedOrderDetail) &&
+    !isGenericStatusDetail(paymentStatus, normalizedPaymentDetail)
+  ) {
+    return paymentStatusDetail;
+  }
+
+  return orderStatusDetail;
+}
+
+function isGenericStatusDetail(
+  providerStatus: string | null,
+  normalizedStatusDetail: string,
+): boolean {
+  const normalizedStatus = providerStatus?.toLowerCase();
+  if (!normalizedStatus) return false;
+  if (normalizedStatus === normalizedStatusDetail) return true;
+
+  return (
+    (normalizedStatus === "canceled" && normalizedStatusDetail === "cancelled") ||
+    (normalizedStatus === "cancelled" && normalizedStatusDetail === "canceled")
+  );
 }
 
 function readFirstPayment(transactions: unknown): Record<string, unknown> | null {
