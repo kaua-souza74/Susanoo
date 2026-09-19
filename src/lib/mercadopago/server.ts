@@ -1,8 +1,9 @@
 import "server-only";
 
-import { MercadoPagoConfig, Order } from "mercadopago";
+import { MercadoPagoConfig, Order, PaymentMethod } from "mercadopago";
 
 let orderClient: Order | undefined;
+let paymentMethodClient: PaymentMethod | undefined;
 const MERCADO_PAGO_ORDERS_URL = "https://api.mercadopago.com/v1/orders";
 
 type OrderCreateInput = Parameters<Order["create"]>[0];
@@ -26,6 +27,29 @@ export function getMercadoPagoOrderClient(): Order {
   }
 
   return orderClient;
+}
+
+export async function isMercadoPagoCardPaymentMethodAvailable(
+  paymentMethodId: string,
+  paymentTypeId: "credit_card" | "debit_card",
+): Promise<boolean> {
+  const accessToken = getOrdersAccessToken();
+
+  if (!paymentMethodClient) {
+    const client = new MercadoPagoConfig({
+      accessToken,
+      options: { timeout: 10_000 },
+    });
+    paymentMethodClient = new PaymentMethod(client);
+  }
+
+  const methods = await paymentMethodClient.get();
+  return methods.some(
+    (method) =>
+      method.id === paymentMethodId &&
+      method.payment_type_id === paymentTypeId &&
+      method.status === "active",
+  );
 }
 
 export async function createMercadoPagoOrder(

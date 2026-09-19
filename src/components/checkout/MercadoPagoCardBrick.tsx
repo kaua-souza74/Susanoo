@@ -24,6 +24,9 @@ if (publicKey) {
 type CardSubmitPayload = Parameters<
   NonNullable<React.ComponentProps<typeof CardPayment>["onSubmit"]>
 >[0];
+type CardSubmitAdditionalData = Parameters<
+  NonNullable<React.ComponentProps<typeof CardPayment>["onSubmit"]>
+>[1];
 
 type MercadoPagoCardBrickProps = {
   amountInCents: number;
@@ -55,7 +58,7 @@ export function MercadoPagoCardBrick({
   const customization = useMemo(
     () => ({
       paymentMethods: {
-        types: { included: ["credit_card" as const] },
+        types: { excluded: ["prepaid_card" as const] },
         minInstallments: 1,
         maxInstallments: 12,
       },
@@ -79,7 +82,10 @@ export function MercadoPagoCardBrick({
   );
 
   const handleSubmit = useCallback(
-    async (formData: CardSubmitPayload) => {
+    async (
+      formData: CardSubmitPayload,
+      additionalData?: CardSubmitAdditionalData,
+    ) => {
       if (submitLockRef.current) return;
 
       submitLockRef.current = true;
@@ -87,10 +93,14 @@ export function MercadoPagoCardBrick({
       setIsSubmitting(true);
       setSubmitMessage(null);
 
+      const paymentTypeId = safeString(
+        recordValue(additionalData, "paymentTypeId"),
+      );
+
       if (diagnosticsEnabled) {
         console.info("[Mercado Pago Card Payment Brick] onSubmit", {
           payment_method_id: safeString(recordValue(formData, "payment_method_id")),
-          payment_type_id: "credit_card",
+          payment_type_id: paymentTypeId,
           installments: safeNumber(recordValue(formData, "installments")),
           issuer_id: safeString(recordValue(formData, "issuer_id")),
         });
@@ -120,7 +130,7 @@ export function MercadoPagoCardBrick({
           body: JSON.stringify({
             serviceId,
             checkoutSessionId,
-            formData: pickSafeBrickFormData(formData),
+            formData: pickSafeBrickFormData(formData, paymentTypeId),
           }),
         });
         const responseBody: unknown = await response.json();
@@ -228,8 +238,8 @@ export function MercadoPagoCardBrick({
           </div>
           <p className="mt-4 text-sm font-black">Pagamento protegido</p>
           <ul className="mt-3 space-y-2 text-xs font-medium text-white/45">
-            <li>Cartão de crédito</li>
-            <li>Parcelamento em até 12x</li>
+            <li>Cartão de crédito ou débito</li>
+            <li>Crédito em até 12x, quando disponível</li>
           </ul>
           <p className="mt-5 border-t border-white/8 pt-4 text-[11px] leading-5 text-white/30">
             O pagamento só é criado após você preencher o Brick e pressionar Pagar.
@@ -275,7 +285,10 @@ function recordValue(value: unknown, key: string): unknown {
   return isRecord(value) ? value[key] : undefined;
 }
 
-function pickSafeBrickFormData(value: unknown) {
+function pickSafeBrickFormData(
+  value: unknown,
+  paymentTypeId: string | null,
+) {
   const payer = recordValue(value, "payer");
   const identification = recordValue(payer, "identification");
 
@@ -283,6 +296,7 @@ function pickSafeBrickFormData(value: unknown) {
     token: recordValue(value, "token"),
     issuer_id: recordValue(value, "issuer_id"),
     payment_method_id: recordValue(value, "payment_method_id"),
+    payment_type_id: paymentTypeId,
     transaction_amount: recordValue(value, "transaction_amount"),
     installments: recordValue(value, "installments"),
     payer: isRecord(identification)

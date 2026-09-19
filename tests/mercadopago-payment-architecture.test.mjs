@@ -27,6 +27,15 @@ test("Card Brick usa a Public Key da mesma aplicação Orders", () => {
   assert.match(component, /\{isSandbox \? \(/);
 });
 
+test("Card Brick preserva o tipo detectado pelo provider sem forçar crédito", () => {
+  const component = read("src/components/checkout/MercadoPagoCardBrick.tsx");
+  assert.match(component, /additionalData\?: CardSubmitAdditionalData/);
+  assert.match(component, /recordValue\(additionalData, "paymentTypeId"\)/);
+  assert.match(component, /payment_type_id: paymentTypeId/);
+  assert.match(component, /excluded: \["prepaid_card" as const\]/);
+  assert.doesNotMatch(component, /payment_type_id: "credit_card"/);
+});
+
 test("sandbox é fail-closed e centralizado no ambiente Preview", () => {
   const checkoutMode = read("src/lib/mercadopago/checkout-mode.ts");
   const webhook = read("src/app/api/mercadopago/webhook/route.ts");

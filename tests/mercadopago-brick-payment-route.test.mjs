@@ -20,6 +20,12 @@ globalThis.__brickRouteMocks = {
   createInputs: [],
   getInputs: [],
   syncInputs: [],
+  paymentMethodChecks: [],
+  availablePaymentMethods: new Set([
+    "visa:credit_card",
+    "master:credit_card",
+    "debelo:debit_card",
+  ]),
   providerError: null,
 };
 
@@ -153,6 +159,10 @@ registerHooks({
             }
             return providerResponse();
           }
+          export async function isMercadoPagoCardPaymentMethodAvailable(id, type) {
+            globalThis.__brickRouteMocks.paymentMethodChecks.push({ id, type });
+            return globalThis.__brickRouteMocks.availablePaymentMethods.has(id + ":" + type);
+          }
         `,
       };
     }
@@ -173,6 +183,7 @@ function brickRequest({
   email,
   identification = { type: "CPF", number: documentNumber },
   paymentMethodId = "visa",
+  paymentTypeId = "credit_card",
   issuerId = "310",
 } = {}) {
   return new Request("https://example.test/api/mercadopago/brick/payment", {
@@ -186,6 +197,7 @@ function brickRequest({
       checkoutSessionId,
       formData: {
         payment_method_id: paymentMethodId,
+        payment_type_id: paymentTypeId,
         transaction_amount: amount,
         installments,
         token,
@@ -209,6 +221,12 @@ function resetMocks() {
   globalThis.__brickRouteMocks.createInputs.length = 0;
   globalThis.__brickRouteMocks.getInputs.length = 0;
   globalThis.__brickRouteMocks.syncInputs.length = 0;
+  globalThis.__brickRouteMocks.paymentMethodChecks.length = 0;
+  globalThis.__brickRouteMocks.availablePaymentMethods = new Set([
+    "visa:credit_card",
+    "master:credit_card",
+    "debelo:debit_card",
+  ]);
   globalThis.__brickRouteMocks.providerError = null;
 }
 
@@ -512,6 +530,69 @@ test("cartão usa token sem expor token ou documento nos logs", async (t) => {
   assert.doesNotMatch(serializedLogs, new RegExp(documentNumber));
   assert.match(serializedLogs, /"payment_method_id":"visa"/);
   assert.match(serializedLogs, /"provider_id":"ORD01JQ4S4KY8HWQ6NA5PXB65B3D3"/);
+});
+
+test("cartão de débito suportado preserva o tipo real na Order", async () => {
+  resetMocks();
+
+  const response = await POST(brickRequest({
+    paymentMethodId: "debelo",
+    paymentTypeId: "debit_card",
+    installments: 1,
+  }));
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(globalThis.__brickRouteMocks.paymentMethodChecks[0], {
+    id: "debelo",
+    type: "debit_card",
+  });
+  assert.equal(
+    globalThis.__brickRouteMocks.createInputs[0].body.transactions.payments[0]
+      .payment_method.type,
+    "debit_card",
+  );
+});
+
+test("tipo arbitrário é rejeitado antes de consultar ou criar Order", async () => {
+  resetMocks();
+
+  const response = await POST(brickRequest({ paymentTypeId: "bitcoin" }));
+
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__brickRouteMocks.paymentMethodChecks.length, 0);
+  assert.equal(globalThis.__brickRouteMocks.persistenceInputs.length, 0);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
+});
+
+test("combinação de método e tipo manipulada é rejeitada pelo catálogo do provider", async () => {
+  resetMocks();
+
+  const response = await POST(brickRequest({
+    paymentMethodId: "master",
+    paymentTypeId: "debit_card",
+  }));
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(globalThis.__brickRouteMocks.paymentMethodChecks[0], {
+    id: "master",
+    type: "debit_card",
+  });
+  assert.equal(globalThis.__brickRouteMocks.persistenceInputs.length, 0);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
+});
+
+test("débito não aceita parcelamento de crédito", async () => {
+  resetMocks();
+
+  const response = await POST(brickRequest({
+    paymentMethodId: "debelo",
+    paymentTypeId: "debit_card",
+    installments: 2,
+  }));
+
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__brickRouteMocks.paymentMethodChecks.length, 0);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
 });
 
 test("SDK 402 error is classified without relying on a minified name", async (t) => {

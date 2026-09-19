@@ -7,6 +7,7 @@ const allowedFormDataKeys = new Set([
   "token",
   "issuer_id",
   "payment_method_id",
+  "payment_type_id",
   "transaction_amount",
   "installments",
   "payer",
@@ -27,7 +28,7 @@ export type SafeBrickPaymentRequest = {
   checkoutSessionId: string;
   paymentMethod: "card";
   paymentMethodId: string;
-  paymentTypeId: "credit_card";
+  paymentTypeId: "credit_card" | "debit_card";
   token: string;
   issuerId: number | null;
   installments: number;
@@ -68,8 +69,14 @@ export function parseBrickPaymentRequest(
 
   if (paymentMethodId === "pix") return null;
 
+  const paymentTypeId = value.formData.payment_type_id;
+  if (paymentTypeId !== "credit_card" && paymentTypeId !== "debit_card") {
+    return null;
+  }
+
   const installments = readInstallments(value.formData.installments);
   if (installments === null) return null;
+  if (paymentTypeId === "debit_card" && installments !== 1) return null;
 
   const token = value.formData.token;
   if (typeof token !== "string" || !CARD_TOKEN_PATTERN.test(token)) {
@@ -89,7 +96,7 @@ export function parseBrickPaymentRequest(
     checkoutSessionId: value.checkoutSessionId,
     paymentMethod: "card",
     paymentMethodId,
-    paymentTypeId: "credit_card",
+    paymentTypeId,
     token,
     issuerId,
     installments,

@@ -21,6 +21,7 @@ import {
   MercadoPagoOrderHttpError,
   createMercadoPagoOrder,
   getMercadoPagoOrderClient,
+  isMercadoPagoCardPaymentMethodAvailable,
 } from "@/lib/mercadopago/server";
 import { getServiceById, isServiceId } from "@/lib/mercadopago/services";
 import { PaymentPersistenceConfigurationError } from "@/lib/mercadopago/supabase-admin";
@@ -69,6 +70,15 @@ export async function POST(request: Request) {
     : payer.email;
 
   try {
+    const isPaymentMethodAvailable =
+      await isMercadoPagoCardPaymentMethodAvailable(
+        body.paymentMethodId,
+        body.paymentTypeId,
+      );
+    if (!isPaymentMethodAvailable) {
+      return errorResponse("Meio de pagamento indisponível.", 400);
+    }
+
     const paymentOrder = await getOrCreatePaymentOrder({
       userId: payer.userId,
       serviceId: service.id,
@@ -121,7 +131,7 @@ export async function POST(request: Request) {
                     amount,
                     payment_method: {
                       id: body.paymentMethodId,
-                      type: "credit_card",
+                      type: body.paymentTypeId,
                       token: body.token,
                       installments: body.installments,
                     },
