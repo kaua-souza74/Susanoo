@@ -13,9 +13,13 @@ import {
   beginNewCardAttempt,
   getOrCreateCardAttemptSessionId,
   markCardAttemptRejected,
+  pollCardAttemptStatus,
 } from "@/lib/mercadopago/card-attempt";
 import type { ServiceId } from "@/lib/mercadopago/services";
-import type { BrickPaymentResponse } from "@/lib/mercadopago/types";
+import type {
+  BrickPaymentResponse,
+  CardAttemptStatusResponse,
+} from "@/lib/mercadopago/types";
 import { supabase } from "@/lib/supabase";
 
 const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_ORDERS_PUBLIC_KEY;
@@ -40,6 +44,7 @@ type MercadoPagoCardBrickProps = {
   isSandbox: boolean;
   serviceId: ServiceId;
   sessionScope: string;
+  onStatusChange?: (status: BrickPaymentResponse["status"] | null) => void;
 };
 
 export function MercadoPagoCardBrick({
@@ -48,11 +53,14 @@ export function MercadoPagoCardBrick({
   isSandbox,
   serviceId,
   sessionScope,
+  onStatusChange,
 }: MercadoPagoCardBrickProps) {
   const [isReady, setIsReady] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
-  const [result, setResult] = useState<BrickPaymentResponse | null>(null);
+  const [result, setResult] = useState<
+    BrickPaymentResponse | CardAttemptStatusResponse | null
+  >(null);
   const [brickAttemptKey, setBrickAttemptKey] = useState(0);
   const submitLockRef = useRef(false);
   const submissionErrorRef = useRef(false);
@@ -86,6 +94,22 @@ export function MercadoPagoCardBrick({
       },
     }),
     [],
+  );
+
+  const applyAttemptStatus = useCallback(
+    (attempt: BrickPaymentResponse | CardAttemptStatusResponse) => {
+      setResult(attempt);
+      setSubmitMessage(cardStatusMessage(attempt.status));
+      onStatusChange?.(attempt.status);
+      if (attempt.status === "rejected" && checkoutSessionIdRef.current) {
+        markCardAttemptRejected(
+          sessionStorage,
+          { serviceId, sessionScope },
+          checkoutSessionIdRef.current,
+        );
+      }
+    },
+    [onStatusChange, serviceId, sessionScope],
   );
 
   const handleSubmit = useCallback(
@@ -132,6 +156,7 @@ export function MercadoPagoCardBrick({
             randomUUID: () => crypto.randomUUID(),
           });
         checkoutSessionIdRef.current = checkoutSessionId;
+        onStatusChange?.("pending");
 
         const response = await fetch("/api/mercadopago/brick/payment", {
           method: "POST",
@@ -148,20 +173,26 @@ export function MercadoPagoCardBrick({
         const responseBody: unknown = await response.json();
 
         if (!response.ok || !isBrickPaymentResponse(responseBody)) {
+          if (response.status >= 500) {
+            const reconciledAttempt = await pollCardAttemptStatus({
+              readStatus: () =>
+                readCardAttemptStatus(session.access_token, checkoutSessionId),
+              wait: (milliseconds) =>
+                new Promise((resolve) => window.setTimeout(resolve, milliseconds)),
+            });
+
+            if (reconciledAttempt) {
+              applyAttemptStatus(reconciledAttempt);
+              return;
+            }
+          }
           throw new BrickSubmissionError(readSafeError(responseBody));
         }
 
-        setResult(responseBody);
-        setSubmitMessage(cardStatusMessage(responseBody.status));
-        if (responseBody.status === "rejected") {
-          markCardAttemptRejected(
-            sessionStorage,
-            { serviceId, sessionScope },
-            checkoutSessionId,
-          );
-        }
+        applyAttemptStatus(responseBody);
       } catch (error: unknown) {
         submissionErrorRef.current = true;
+        onStatusChange?.(null);
         setSubmitMessage(
           error instanceof BrickSubmissionError
             ? error.message
@@ -173,7 +204,13 @@ export function MercadoPagoCardBrick({
         setIsSubmitting(false);
       }
     },
-    [diagnosticsEnabled, serviceId, sessionScope],
+    [
+      applyAttemptStatus,
+      diagnosticsEnabled,
+      onStatusChange,
+      serviceId,
+      sessionScope,
+    ],
   );
 
   const handleExplicitRetry = useCallback(() => {
@@ -186,9 +223,10 @@ export function MercadoPagoCardBrick({
     submissionErrorRef.current = false;
     setResult(null);
     setSubmitMessage(null);
+    onStatusChange?.(null);
     setIsReady(false);
     setBrickAttemptKey((current) => current + 1);
-  }, [serviceId, sessionScope]);
+  }, [onStatusChange, serviceId, sessionScope]);
 
   if (!publicKey) {
     return (
@@ -305,7 +343,11 @@ export function MercadoPagoCardBrick({
   );
 }
 
-function BrickCardResult({ result }: { result: BrickPaymentResponse }) {
+function BrickCardResult({
+  result,
+}: {
+  result: BrickPaymentResponse | CardAttemptStatusResponse;
+}) {
   return (
     <div className="mt-5 flex items-start gap-4 rounded-[1.75rem] border border-white/10 bg-white/[0.025] p-5 sm:p-6">
       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-400/10 text-violet-300">
@@ -314,12 +356,33 @@ function BrickCardResult({ result }: { result: BrickPaymentResponse }) {
       <div>
         <p className="text-sm font-black">Status do cartão: {statusLabel(result.status)}</p>
         <p className="mt-1 text-xs text-white/40">
-          Referência Mercado Pago: {result.providerId}
+          {result.providerId
+            ? `Referência Mercado Pago: ${result.providerId}`
+            : "Aguardando atualização do Mercado Pago"}
           {result.statusDetail ? ` · ${result.statusDetail}` : ""}
         </p>
       </div>
     </div>
   );
+}
+
+async function readCardAttemptStatus(
+  accessToken: string,
+  checkoutSessionId: string,
+): Promise<CardAttemptStatusResponse | null> {
+  try {
+    const response = await fetch(
+      `/api/mercadopago/brick/payment/attempt/${encodeURIComponent(checkoutSessionId)}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+      },
+    );
+    const payload: unknown = await response.json();
+    return response.ok && isCardAttemptStatusResponse(payload) ? payload : null;
+  } catch {
+    return null;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -380,6 +443,19 @@ function isBrickPaymentResponse(value: unknown): value is BrickPaymentResponse {
   );
 }
 
+function isCardAttemptStatusResponse(
+  value: unknown,
+): value is CardAttemptStatusResponse {
+  return (
+    isRecord(value) &&
+    typeof value.localOrderId === "string" &&
+    (typeof value.providerId === "string" || value.providerId === null) &&
+    isPaymentStatus(value.status) &&
+    (typeof value.statusDetail === "string" || value.statusDetail === null) &&
+    value.paymentMethod === "card"
+  );
+}
+
 function isPaymentStatus(value: unknown) {
   return (
     value === "pending" ||
@@ -399,12 +475,13 @@ function readSafeError(value: unknown) {
 function cardStatusMessage(status: BrickPaymentResponse["status"]) {
   if (status === "approved") return "Pagamento com cartão aprovado.";
   if (status === "rejected") return "Pagamento rejeitado. Revise os dados e tente novamente.";
-  return "Pagamento recebido e aguardando confirmação.";
+  if (status === "pending") return "Pagamento em processamento.";
+  return "Status do pagamento atualizado.";
 }
 
 function statusLabel(status: BrickPaymentResponse["status"]) {
   const labels: Record<BrickPaymentResponse["status"], string> = {
-    pending: "aguardando confirmação",
+    pending: "em processamento",
     approved: "aprovado",
     rejected: "rejeitado",
     cancelled: "cancelado",

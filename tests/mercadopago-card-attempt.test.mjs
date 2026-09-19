@@ -22,6 +22,7 @@ const {
   beginNewCardAttempt,
   getOrCreateCardAttemptSessionId,
   markCardAttemptRejected,
+  pollCardAttemptStatus,
 } = await import("../src/lib/mercadopago/card-attempt.ts");
 
 const context = {
@@ -103,4 +104,52 @@ test("tentativa aprovada não é rotacionada implicitamente", () => {
   const approvedAttempt = getOrCreateCardAttemptSessionId(dependencies);
   assert.equal(getOrCreateCardAttemptSessionId(dependencies), approvedAttempt);
   assert.equal(generated, 1);
+});
+
+test("polling termina em rejected sem criar nova operação", async () => {
+  const statuses = [{ status: "pending" }, { status: "rejected" }];
+  let reads = 0;
+  let waits = 0;
+  const result = await pollCardAttemptStatus({
+    readStatus: async () => statuses[reads++] ?? null,
+    wait: async () => {
+      waits += 1;
+    },
+    maxAttempts: 8,
+  });
+
+  assert.equal(result?.status, "rejected");
+  assert.equal(reads, 2);
+  assert.equal(waits, 1);
+});
+
+test("polling termina em approved mesmo após resposta inicial incerta", async () => {
+  const statuses = [{ status: "pending" }, { status: "approved" }];
+  let reads = 0;
+  const result = await pollCardAttemptStatus({
+    readStatus: async () => statuses[reads++] ?? null,
+    wait: async () => {},
+  });
+
+  assert.equal(result?.status, "approved");
+  assert.equal(reads, 2);
+});
+
+test("polling pending é limitado e não executa criação de pagamento", async () => {
+  let reads = 0;
+  let waits = 0;
+  const result = await pollCardAttemptStatus({
+    readStatus: async () => {
+      reads += 1;
+      return { status: "pending" };
+    },
+    wait: async () => {
+      waits += 1;
+    },
+    maxAttempts: 3,
+  });
+
+  assert.equal(result?.status, "pending");
+  assert.equal(reads, 3);
+  assert.equal(waits, 2);
 });

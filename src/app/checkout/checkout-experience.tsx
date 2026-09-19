@@ -49,6 +49,7 @@ export function CheckoutExperience({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [order, setOrder] = useState<PixOrderResponse | null>(null);
+  const [cardStatus, setCardStatus] = useState<PaymentStatus | null>(null);
   const [copied, setCopied] = useState(false);
   const checkoutSessionIdRef = useRef<string | null>(null);
   const activeOrderId = order?.orderId ?? null;
@@ -214,6 +215,7 @@ export function CheckoutExperience({
                   setPaymentMethod={(method) => {
                     setPaymentMethod(method);
                     setMessage(null);
+                    if (method !== "card") setCardStatus(null);
                   }}
                 />
                 {paymentMethod === "card" ? (
@@ -223,6 +225,7 @@ export function CheckoutExperience({
                     isSandbox={service.isSandbox}
                     serviceId={service.id}
                     sessionScope={service.sessionScope}
+                    onStatusChange={setCardStatus}
                   />
                 ) : null}
               </>
@@ -239,6 +242,7 @@ export function CheckoutExperience({
             isSubmitting={isSubmitting}
             onSubmit={handleSubmit}
             order={order}
+            cardStatus={cardStatus}
             paymentMethod={paymentMethod}
             service={service}
           />
@@ -397,12 +401,14 @@ function OrderSummary({
   isSubmitting,
   onSubmit,
   order,
+  cardStatus,
   paymentMethod,
   service,
 }: {
   isSubmitting: boolean;
   onSubmit: () => void;
   order: PixOrderResponse | null;
+  cardStatus: PaymentStatus | null;
   paymentMethod: PaymentMethod;
   service: CheckoutService;
 }) {
@@ -428,8 +434,14 @@ function OrderSummary({
         </div>
         <div className="flex items-center justify-between gap-4 text-white/45">
           <span>Status</span>
-          <span className={order ? "font-bold text-amber-300" : "font-bold text-white/75"}>
-            {order ? statusLabel(order.status) : "Aguardando confirmação"}
+          <span className={order || cardStatus ? "font-bold text-amber-300" : "font-bold text-white/75"}>
+            {order
+              ? statusLabel(order.status)
+              : cardStatus
+                ? cardStatusLabel(cardStatus)
+                : paymentMethod === "card"
+                  ? "Pronto para pagar"
+                  : "Aguardando confirmação"}
           </span>
         </div>
       </div>
@@ -594,6 +606,10 @@ function statusLabel(status: PaymentStatus): string {
   };
 
   return labels[status];
+}
+
+function cardStatusLabel(status: PaymentStatus): string {
+  return status === "pending" ? "Pagamento em processamento" : statusLabel(status);
 }
 
 function readSafeError(value: unknown): string {

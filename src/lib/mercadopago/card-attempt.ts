@@ -10,6 +10,41 @@ type CardAttemptDependencies = CardAttemptContext & {
   randomUUID: () => string;
 };
 
+type PollCardAttemptDependencies<T extends { status: string }> = {
+  readStatus: () => Promise<T | null>;
+  wait: (milliseconds: number) => Promise<void>;
+  maxAttempts?: number;
+  intervalMs?: number;
+};
+
+const TERMINAL_CARD_STATUSES = new Set([
+  "approved",
+  "rejected",
+  "cancelled",
+  "refunded",
+]);
+
+export async function pollCardAttemptStatus<T extends { status: string }>({
+  readStatus,
+  wait,
+  maxAttempts = 8,
+  intervalMs = 1_500,
+}: PollCardAttemptDependencies<T>) {
+  let latestStatus: T | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    latestStatus = (await readStatus()) ?? latestStatus;
+    if (latestStatus && TERMINAL_CARD_STATUSES.has(latestStatus.status)) {
+      return latestStatus;
+    }
+    if (attempt < maxAttempts - 1) {
+      await wait(intervalMs);
+    }
+  }
+
+  return latestStatus;
+}
+
 export function getOrCreateCardAttemptSessionId({
   storage,
   randomUUID,

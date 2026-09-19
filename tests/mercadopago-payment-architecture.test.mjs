@@ -47,6 +47,20 @@ test("Card Brick cria nova tentativa explícita após rejeição e remonta para 
   assert.doesNotMatch(component, /payment_type_id: "debit_card"/);
 });
 
+test("Card Brick reconcilia resposta incerta por leitura autenticada e limitada", () => {
+  const component = read("src/components/checkout/MercadoPagoCardBrick.tsx");
+  const checkout = read("src/app/checkout/checkout-experience.tsx");
+  const polling = read("src/lib/mercadopago/card-attempt.ts");
+  assert.match(component, /response\.status >= 500/);
+  assert.match(component, /pollCardAttemptStatus/);
+  assert.match(component, /brick\/payment\/attempt/);
+  assert.match(component, /onStatusChange\?\./);
+  assert.match(component, /onStatusChange\?\.\(null\)/);
+  assert.match(checkout, /cardStatus/);
+  assert.match(polling, /maxAttempts = 8/);
+  assert.doesNotMatch(polling, /method:\s*"POST"/);
+});
+
 test("sandbox é fail-closed e centralizado no ambiente Preview", () => {
   const checkoutMode = read("src/lib/mercadopago/checkout-mode.ts");
   const webhook = read("src/app/api/mercadopago/webhook/route.ts");

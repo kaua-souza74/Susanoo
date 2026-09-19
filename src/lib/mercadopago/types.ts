@@ -34,3 +34,11 @@ export type BrickPaymentResponse = {
   qrCodeBase64: string | null;
   ticketUrl: string | null;
 };
+
+export type CardAttemptStatusResponse = {
+  localOrderId: string;
+  providerId: string | null;
+  status: PaymentStatus;
+  statusDetail: string | null;
+  paymentMethod: "card";
+};
