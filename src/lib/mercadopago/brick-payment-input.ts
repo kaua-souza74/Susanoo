@@ -36,7 +36,7 @@ export type SafeBrickPaymentRequest = {
   token: string;
   issuerId: number | null;
   installments: number;
-  payerEmail: string | null;
+  payerEmail: string;
   identification: { type: string; number: string };
 };
 
@@ -93,7 +93,7 @@ export function parseBrickPaymentRequest(
   const identification = readIdentification(value.formData.payer);
   if (!identification) return null;
   const payerEmail = readPayerEmail(value.formData.payer);
-  if (payerEmail === undefined) return null;
+  if (!payerEmail) return null;
   const deviceSessionId = readDeviceSessionId(value.deviceSessionId);
   if (deviceSessionId === undefined) return null;
 
@@ -171,7 +171,7 @@ function readIdentification(
 
 function readPayerEmail(
   payer: unknown,
-): SafeBrickPaymentRequest["payerEmail"] | undefined {
+): SafeBrickPaymentRequest["payerEmail"] | null | undefined {
   if (payer === undefined || payer === null) return null;
   if (!isRecord(payer) || hasUnknownKeys(payer, allowedPayerKeys)) return undefined;
   if (payer.email === undefined || payer.email === null) return null;

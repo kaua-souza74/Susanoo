@@ -67,7 +67,7 @@ export async function POST(request: Request) {
   const checkoutMode = getMercadoPagoCheckoutMode(service.priceInCents);
   const providerPayerEmail = checkoutMode.isSandbox
     ? SANDBOX_CARD_PAYER_EMAIL
-    : payer.email;
+    : body.payerEmail;
 
   try {
     const isPaymentMethodAvailable =
@@ -103,6 +103,8 @@ export async function POST(request: Request) {
       installments: body.installments,
       has_token: Boolean(body.token),
       has_device_session_id: Boolean(body.deviceSessionId),
+      has_identification: Boolean(body.identification),
+      has_payer_email: Boolean(body.payerEmail),
       amount_cents: paymentOrder.amountInCents,
       sandbox: checkoutMode.isSandbox,
     });

@@ -36,6 +36,18 @@ test("Card Brick preserva o tipo detectado pelo provider sem forçar crédito", 
   assert.doesNotMatch(component, /payment_type_id: "credit_card"/);
 });
 
+test("Card Brick separa owner autenticado dos dados do pagador aceitos por Orders", () => {
+  const component = read("src/components/checkout/MercadoPagoCardBrick.tsx");
+  const route = read("src/app/api/mercadopago/brick/payment/route.ts");
+  assert.match(component, /email: recordValue\(payer, "email"\)/);
+  assert.match(component, /number: identification\.number/);
+  assert.match(route, /userId: payer\.userId/);
+  assert.match(route, /email: providerPayerEmail/);
+  assert.match(route, /: body\.payerEmail/);
+  assert.match(route, /number: body\.identification\.number/);
+  assert.doesNotMatch(route, /cardholderName|first_name|last_name/);
+});
+
 test("Card Brick transporta o Device ID somente para o endpoint de cartão", () => {
   const component = read("src/components/checkout/MercadoPagoCardBrick.tsx");
   const checkout = read("src/app/checkout/checkout-experience.tsx");

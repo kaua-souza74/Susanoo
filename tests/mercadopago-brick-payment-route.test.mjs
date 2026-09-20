@@ -195,7 +195,7 @@ function brickRequest({
   amount = 50,
   installments = 1,
   token = cardToken,
-  email,
+  email = "titular@pagador.com",
   identification = { type: "CPF", number: documentNumber },
   paymentMethodId = "visa",
   paymentTypeId = "credit_card",
@@ -284,7 +284,7 @@ test("cartão interno autorizado ignora amount adulterado e usa o fluxo Orders d
   assert.equal(input.body.transactions.payments[0].amount, "1.00");
   assert.equal(input.requestOptions.idempotencyKey, "persisted-brick-idempotency-key");
   assert.equal(input.requestOptions.meliSessionId, deviceSessionId);
-  assert.equal(input.body.payer.email, "comprador@exemplo.com");
+  assert.equal(input.body.payer.email, "titular@pagador.com");
 });
 
 test("usuário não autenticado recebe 401", async () => {
@@ -329,7 +329,7 @@ test("amount adulterado é ignorado e preço sandbox permanece server-side", asy
   assert.equal(payload.paymentMethod, "card");
 });
 
-test("modo normal usa email autenticado e ignora override do frontend", async () => {
+test("modo normal usa email do pagador validado pelo Brick sem alterar ownership", async () => {
   resetMocks();
 
   const response = await POST(
@@ -339,8 +339,9 @@ test("modo normal usa email autenticado e ignora override do frontend", async ()
   assert.equal(response.status, 201);
   assert.equal(
     globalThis.__brickRouteMocks.createInputs[0].body.payer.email,
-    "comprador@exemplo.com",
+    "comprador+brick@example.com",
   );
+  assert.equal(globalThis.__brickRouteMocks.persistenceInputs[0].userId, "user-test");
 });
 
 test("sandbox card não permite sobrescrever o email de teste", async (t) => {
@@ -363,7 +364,7 @@ test("sandbox card não permite sobrescrever o email de teste", async (t) => {
   );
 });
 
-test("Production ignora sandbox=true e usa preço e email autenticado", async (t) => {
+test("Production ignora sandbox=true e usa preço real e email do Brick", async (t) => {
   const previousSandbox = process.env.MERCADO_PAGO_SANDBOX;
   const previousVercelEnv = process.env.VERCEL_ENV;
   process.env.VERCEL_ENV = "production";
@@ -377,7 +378,7 @@ test("Production ignora sandbox=true e usa preço e email autenticado", async (t
   assert.equal(response.status, 201);
   const providerInput = globalThis.__brickRouteMocks.createInputs[0];
   assert.equal(providerInput.body.total_amount, "1499.00");
-  assert.equal(providerInput.body.payer.email, "comprador@exemplo.com");
+  assert.equal(providerInput.body.payer.email, "override@example.com");
 });
 
 test("Brick rejeita email de pagador inválido", async () => {
@@ -506,6 +507,8 @@ test("erro 400 de Orders registra somente diagnóstico sanitizado", async (t) =>
     installments: 1,
     has_token: true,
     has_device_session_id: true,
+    has_identification: true,
+    has_payer_email: true,
     amount_cents: 149900,
     sandbox: false,
   });
@@ -527,6 +530,7 @@ test("erro 400 de Orders registra somente diagnóstico sanitizado", async (t) =>
   assert.doesNotMatch(serializedLogs, new RegExp(cardToken));
   assert.doesNotMatch(serializedLogs, new RegExp(documentNumber));
   assert.doesNotMatch(serializedLogs, new RegExp(deviceSessionId));
+  assert.doesNotMatch(serializedLogs, /titular@pagador\.com/i);
   assert.doesNotMatch(serializedLogs, /authorization/i);
 });
 
@@ -551,6 +555,7 @@ test("cartão usa token sem expor token ou documento nos logs", async (t) => {
   assert.doesNotMatch(serializedLogs, new RegExp(cardToken));
   assert.doesNotMatch(serializedLogs, new RegExp(documentNumber));
   assert.doesNotMatch(serializedLogs, new RegExp(deviceSessionId));
+  assert.doesNotMatch(serializedLogs, /titular@pagador\.com/i);
   assert.match(serializedLogs, /"payment_method_id":"visa"/);
   assert.match(serializedLogs, /"provider_id":"ORD01JQ4S4KY8HWQ6NA5PXB65B3D3"/);
 });
@@ -585,6 +590,37 @@ test("Device ID com tipo inválido é rejeitado antes da Orders API", async () =
 
   assert.equal(response.status, 400);
   assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
+});
+
+test("Brick exige email do pagador antes de criar registro ou Order", async () => {
+  resetMocks();
+
+  const response = await POST(brickRequest({ email: null }));
+
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__brickRouteMocks.persistenceInputs.length, 0);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
+});
+
+test("titular diferente do usuário autenticado preserva owner e documento do Brick", async () => {
+  resetMocks();
+  const titularDocument = "98765432100";
+
+  const response = await POST(
+    brickRequest({
+      email: "titular.cartao@example.com",
+      identification: { type: "CPF", number: titularDocument },
+    }),
+  );
+
+  assert.equal(response.status, 201);
+  assert.equal(globalThis.__brickRouteMocks.persistenceInputs[0].userId, "user-test");
+  const providerPayer = globalThis.__brickRouteMocks.createInputs[0].body.payer;
+  assert.equal(providerPayer.email, "titular.cartao@example.com");
+  assert.deepEqual(providerPayer.identification, {
+    type: "CPF",
+    number: titularDocument,
+  });
 });
 
 test("Device ID com caractere de controle é rejeitado", async () => {
