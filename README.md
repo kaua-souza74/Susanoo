@@ -24,7 +24,7 @@ Para que o sistema funcione, você deve criar um arquivo `.env.local` na raiz do
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-chave-anon-aqui
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sua-chave-publicavel-aqui
 VERCEL_TOKEN=seu-token-de-acesso-pessoal-da-vercel
 ```
 

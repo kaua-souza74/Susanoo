@@ -32,7 +32,7 @@ const { isAuthenticatedAdmin } = await import("../src/lib/admin/auth.ts");
 const { POST, DELETE } = await import("../src/app/api/admin/session/route.ts");
 const { NextRequest } = await import("next/server.js");
 process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
-process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-public-key";
+process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = "test-public-key";
 function request(token = "valid", origin = "https://susanoo.com.br") {
   return new NextRequest("https://susanoo.com.br/api/admin/session", {
     method: "POST", headers: { origin, authorization: `Bearer ${token}` },
