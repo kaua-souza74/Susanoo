@@ -66,6 +66,7 @@ export function MercadoPagoCardBrick({
   const submitLockRef = useRef(false);
   const submissionErrorRef = useRef(false);
   const checkoutSessionIdRef = useRef<string | null>(null);
+  const deviceSessionIdRef = useRef<string | null>(null);
 
   const initialization = useMemo(
     () => ({ amount: amountInCents / 100 }),
@@ -168,6 +169,8 @@ export function MercadoPagoCardBrick({
           body: JSON.stringify({
             serviceId,
             checkoutSessionId,
+            deviceSessionId:
+              deviceSessionIdRef.current ?? readMercadoPagoDeviceSessionId(),
             formData: pickSafeBrickFormData(formData, paymentTypeId),
           }),
         });
@@ -290,7 +293,10 @@ export function MercadoPagoCardBrick({
             initialization={initialization}
             customization={customization}
             locale="pt-BR"
-            onReady={() => setIsReady(true)}
+            onReady={() => {
+              deviceSessionIdRef.current = readMercadoPagoDeviceSessionId();
+              setIsReady(true);
+            }}
             onSubmit={handleSubmit}
             onError={(error) => {
               setIsReady(true);
@@ -405,6 +411,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function recordValue(value: unknown, key: string): unknown {
   return isRecord(value) ? value[key] : undefined;
+}
+
+function readMercadoPagoDeviceSessionId(): string | null {
+  const mercadoPagoWindow = window as Window & {
+    MP_DEVICE_SESSION_ID?: unknown;
+  };
+  const value = mercadoPagoWindow.MP_DEVICE_SESSION_ID;
+
+  return typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 256 &&
+    !/[\u0000-\u001f\u007f-\u009f]/.test(value)
+    ? value
+    : null;
 }
 
 function pickSafeBrickFormData(

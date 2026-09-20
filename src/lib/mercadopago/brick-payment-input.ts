@@ -1,6 +1,7 @@
 const allowedRequestKeys = new Set([
   "serviceId",
   "checkoutSessionId",
+  "deviceSessionId",
   "formData",
 ]);
 const allowedFormDataKeys = new Set([
@@ -22,10 +23,13 @@ const CARD_TOKEN_PATTERN = /^[a-z0-9._-]{10,512}$/i;
 const IDENTIFICATION_TYPE_PATTERN = /^[a-z0-9_-]{2,16}$/i;
 const IDENTIFICATION_NUMBER_PATTERN = /^[a-z0-9.-]{5,32}$/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DEVICE_SESSION_ID_MAX_LENGTH = 256;
+const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f-\u009f]/;
 
 export type SafeBrickPaymentRequest = {
   serviceId: string;
   checkoutSessionId: string;
+  deviceSessionId: string | null;
   paymentMethod: "card";
   paymentMethodId: string;
   paymentTypeId: "credit_card" | "debit_card";
@@ -90,10 +94,13 @@ export function parseBrickPaymentRequest(
   if (!identification) return null;
   const payerEmail = readPayerEmail(value.formData.payer);
   if (payerEmail === undefined) return null;
+  const deviceSessionId = readDeviceSessionId(value.deviceSessionId);
+  if (deviceSessionId === undefined) return null;
 
   return {
     serviceId: value.serviceId,
     checkoutSessionId: value.checkoutSessionId,
+    deviceSessionId,
     paymentMethod: "card",
     paymentMethodId,
     paymentTypeId,
@@ -103,6 +110,21 @@ export function parseBrickPaymentRequest(
     payerEmail,
     identification,
   };
+}
+
+function readDeviceSessionId(value: unknown): string | null | undefined {
+  // The SDK may not expose a Device ID in every browser, so absence is allowed.
+  if (value === undefined || value === null) return null;
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > DEVICE_SESSION_ID_MAX_LENGTH ||
+    CONTROL_CHARACTER_PATTERN.test(value)
+  ) {
+    return undefined;
+  }
+
+  return value;
 }
 
 function readInstallments(value: unknown): number | null {

@@ -56,7 +56,15 @@ export async function createMercadoPagoOrder(
   input: OrderCreateInput,
 ): Promise<unknown> {
   if (process.env.VERCEL_ENV !== "preview") {
-    return getMercadoPagoOrderClient().create(input);
+    return getMercadoPagoOrderClient().create({
+      ...input,
+      requestOptions: {
+        ...input.requestOptions,
+        // The SDK merges options into a reused client, so explicitly clear a
+        // previous Device ID when the current request does not provide one.
+        meliSessionId: input.requestOptions?.meliSessionId,
+      },
+    });
   }
 
   const response = await fetch(MERCADO_PAGO_ORDERS_URL, {
@@ -65,6 +73,9 @@ export async function createMercadoPagoOrder(
       Authorization: `Bearer ${getOrdersAccessToken()}`,
       "Content-Type": "application/json",
       "X-Idempotency-Key": input.requestOptions?.idempotencyKey ?? "",
+      ...(input.requestOptions?.meliSessionId
+        ? { "X-Meli-Session-Id": input.requestOptions.meliSessionId }
+        : {}),
     },
     body: JSON.stringify(input.body),
     signal: AbortSignal.timeout(10_000),

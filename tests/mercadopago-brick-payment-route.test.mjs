@@ -9,6 +9,7 @@ const projectRoot = path.resolve(import.meta.dirname, "..");
 const checkoutSessionId = "018f47a2-4d7e-7c31-8a5b-11c2df98a120";
 const cardToken = "card-token-sensitive-1234567890";
 const documentNumber = "12345678909";
+const deviceSessionId = "device-session-sensitive-1234567890";
 
 globalThis.__brickRouteMocks = {
   authenticatedPayer: {
@@ -200,6 +201,7 @@ function brickRequest({
   paymentTypeId = "credit_card",
   issuerId = "310",
   sessionId = checkoutSessionId,
+  deviceId = deviceSessionId,
 } = {}) {
   return new Request("https://example.test/api/mercadopago/brick/payment", {
     method: "POST",
@@ -210,6 +212,7 @@ function brickRequest({
     body: JSON.stringify({
       serviceId,
       checkoutSessionId: sessionId,
+      ...(deviceId === null ? {} : { deviceSessionId: deviceId }),
       formData: {
         payment_method_id: paymentMethodId,
         payment_type_id: paymentTypeId,
@@ -280,6 +283,7 @@ test("cartão interno autorizado ignora amount adulterado e usa o fluxo Orders d
   assert.equal(input.body.total_amount, "1.00");
   assert.equal(input.body.transactions.payments[0].amount, "1.00");
   assert.equal(input.requestOptions.idempotencyKey, "persisted-brick-idempotency-key");
+  assert.equal(input.requestOptions.meliSessionId, deviceSessionId);
   assert.equal(input.body.payer.email, "comprador@exemplo.com");
 });
 
@@ -501,6 +505,7 @@ test("erro 400 de Orders registra somente diagnóstico sanitizado", async (t) =>
     payment_type_id: "credit_card",
     installments: 1,
     has_token: true,
+    has_device_session_id: true,
     amount_cents: 149900,
     sandbox: false,
   });
@@ -521,6 +526,7 @@ test("erro 400 de Orders registra somente diagnóstico sanitizado", async (t) =>
     .join("\n");
   assert.doesNotMatch(serializedLogs, new RegExp(cardToken));
   assert.doesNotMatch(serializedLogs, new RegExp(documentNumber));
+  assert.doesNotMatch(serializedLogs, new RegExp(deviceSessionId));
   assert.doesNotMatch(serializedLogs, /authorization/i);
 });
 
@@ -544,8 +550,59 @@ test("cartão usa token sem expor token ou documento nos logs", async (t) => {
     .join("\n");
   assert.doesNotMatch(serializedLogs, new RegExp(cardToken));
   assert.doesNotMatch(serializedLogs, new RegExp(documentNumber));
+  assert.doesNotMatch(serializedLogs, new RegExp(deviceSessionId));
   assert.match(serializedLogs, /"payment_method_id":"visa"/);
   assert.match(serializedLogs, /"provider_id":"ORD01JQ4S4KY8HWQ6NA5PXB65B3D3"/);
+});
+
+test("Device ID opcional é encaminhado ao SDK sem alterar idempotência", async () => {
+  resetMocks();
+
+  const response = await POST(brickRequest());
+
+  assert.equal(response.status, 201);
+  const requestOptions = globalThis.__brickRouteMocks.createInputs[0].requestOptions;
+  assert.equal(requestOptions.meliSessionId, deviceSessionId);
+  assert.equal(requestOptions.idempotencyKey, "persisted-brick-idempotency-key");
+});
+
+test("ausência de Device ID não bloqueia o pagamento", async () => {
+  resetMocks();
+
+  const response = await POST(brickRequest({ deviceId: null }));
+
+  assert.equal(response.status, 201);
+  assert.equal(
+    globalThis.__brickRouteMocks.createInputs[0].requestOptions.meliSessionId,
+    undefined,
+  );
+});
+
+test("Device ID com tipo inválido é rejeitado antes da Orders API", async () => {
+  resetMocks();
+
+  const response = await POST(brickRequest({ deviceId: { value: "invalid" } }));
+
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
+});
+
+test("Device ID com caractere de controle é rejeitado", async () => {
+  resetMocks();
+
+  const response = await POST(brickRequest({ deviceId: "device\u0000session" }));
+
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
+});
+
+test("Device ID acima do limite é rejeitado", async () => {
+  resetMocks();
+
+  const response = await POST(brickRequest({ deviceId: "d".repeat(257) }));
+
+  assert.equal(response.status, 400);
+  assert.equal(globalThis.__brickRouteMocks.createInputs.length, 0);
 });
 
 test("nova sessão após rejeição preserva a tentativa antiga e cria nova Order", async () => {

@@ -24,6 +24,7 @@ const {
 
 const cardToken = "card-token-sensitive-1234567890";
 const documentNumber = "12345678909";
+const deviceSessionId = "device-session-sensitive-1234567890";
 
 test("cliente Preview preserva payload e extrai erro real de Orders", async (t) => {
   const previousVercelEnv = process.env.VERCEL_ENV;
@@ -33,6 +34,7 @@ test("cliente Preview preserva payload e extrai erro real de Orders", async (t) 
 
   const fetchMock = t.mock.method(globalThis, "fetch", async (_url, init) => {
     assert.equal(init.headers["X-Idempotency-Key"], "persisted-idempotency-key");
+    assert.equal(init.headers["X-Meli-Session-Id"], deviceSessionId);
     const sentBody = JSON.parse(init.body);
     assert.equal(sentBody.transactions.payments[0].payment_method.token, cardToken);
     assert.equal(sentBody.payer.identification.number, documentNumber);
@@ -88,7 +90,10 @@ test("cliente Preview preserva payload e extrai erro real de Orders", async (t) 
         }],
       },
     },
-    requestOptions: { idempotencyKey: "persisted-idempotency-key" },
+    requestOptions: {
+      idempotencyKey: "persisted-idempotency-key",
+      meliSessionId: deviceSessionId,
+    },
   };
 
   await assert.rejects(

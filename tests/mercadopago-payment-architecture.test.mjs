@@ -36,6 +36,32 @@ test("Card Brick preserva o tipo detectado pelo provider sem forçar crédito", 
   assert.doesNotMatch(component, /payment_type_id: "credit_card"/);
 });
 
+test("Card Brick transporta o Device ID somente para o endpoint de cartão", () => {
+  const component = read("src/components/checkout/MercadoPagoCardBrick.tsx");
+  const checkout = read("src/app/checkout/checkout-experience.tsx");
+  assert.match(component, /advancedFraudPrevention: true/);
+  assert.match(component, /MP_DEVICE_SESSION_ID/);
+  assert.match(component, /deviceSessionId:/);
+  assert.doesNotMatch(component, /localStorage/);
+  const pixSubmitBlock = checkout.slice(
+    checkout.indexOf('fetch("/api/mercadopago/order"'),
+    checkout.indexOf("const startPolling"),
+  );
+  assert.doesNotMatch(
+    pixSubmitBlock,
+    /deviceSessionId|MP_DEVICE_SESSION_ID|X-Meli-Session-Id/,
+  );
+});
+
+test("Orders envia Device ID pelo suporte nativo do SDK e pelo cliente Preview", () => {
+  const route = read("src/app/api/mercadopago/brick/payment/route.ts");
+  const server = read("src/lib/mercadopago/server.ts");
+  assert.match(route, /meliSessionId: body\.deviceSessionId/);
+  assert.match(server, /"X-Meli-Session-Id"/);
+  assert.match(server, /meliSessionId: input\.requestOptions\?\.meliSessionId/);
+  assert.doesNotMatch(route, /"X-Meli-Session-Id"/);
+});
+
 test("Card Brick cria nova tentativa explícita após rejeição e remonta para novo token", () => {
   const component = read("src/components/checkout/MercadoPagoCardBrick.tsx");
   assert.match(component, /result\?\.status === "rejected"/);

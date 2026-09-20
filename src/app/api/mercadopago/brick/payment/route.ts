@@ -102,6 +102,7 @@ export async function POST(request: Request) {
       payment_type_id: body.paymentTypeId,
       installments: body.installments,
       has_token: Boolean(body.token),
+      has_device_session_id: Boolean(body.deviceSessionId),
       amount_cents: paymentOrder.amountInCents,
       sandbox: checkoutMode.isSandbox,
     });
@@ -141,6 +142,9 @@ export async function POST(request: Request) {
             },
             requestOptions: {
               idempotencyKey: paymentOrder.idempotencyKey,
+              ...(body.deviceSessionId
+                ? { meliSessionId: body.deviceSessionId }
+                : {}),
             },
           });
     } catch (error: unknown) {
@@ -148,6 +152,7 @@ export async function POST(request: Request) {
         body.token,
         body.identification.number,
         providerPayerEmail,
+        body.deviceSessionId ?? "",
       ]);
       throw error;
     }
