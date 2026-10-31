@@ -67,10 +67,16 @@ export default function EnhancedProjectProgressPage({ params }: { params: Promis
 
     if (projectId) {
       const channel = supabase.channel(`progress-${projectId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `project_id=eq.${projectId}` }, () => {
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tasks', filter: `project_id=eq.${projectId}` }, () => {
           fetchData();
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'timeline_steps', filter: `project_id=eq.${projectId}` }, () => {
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tasks', filter: `project_id=eq.${projectId}` }, () => {
+          fetchData();
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'timeline_steps', filter: `project_id=eq.${projectId}` }, () => {
+          fetchData();
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'timeline_steps', filter: `project_id=eq.${projectId}` }, () => {
           fetchData();
         })
         .subscribe();

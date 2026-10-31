@@ -1,44 +1,35 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { adminApiFetch } from "@/lib/admin/client-api";
 import { Users, TrendingUp, Clock, MessageSquareText, LayoutList, Rocket, ArrowRight, Bell } from "lucide-react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 
 export default function AdminOverview() {
     const [stats, setStats] = useState({ clients: 0, activeProjects: 0, pendingTasks: 0 });
-    const [clientInterests, setClientInterests] = useState<any[]>([]);
+    const [clientInterests, setClientInterests] = useState<Array<{ segment: string | null }>>([]);
     const router = useRouter();
 
     useEffect(() => {
         const load = async () => {
-            const { count: clientsCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
-            const { data: projs } = await supabase.from('projects').select('*, tasks(*)');
-            
-            let pTasks = 0;
-            if (projs) {
-                projs.forEach(p => {
-                    const pendentes = p.tasks?.filter((t: any) => t.status !== 'done').length || 0;
-                    pTasks += pendentes;
-                });
-            }
-
-            setStats({
-                clients: clientsCount || 0,
-                activeProjects: projs?.length || 0,
-                pendingTasks: pTasks || 0
-            });
-
-            // Carrega pesquisas de interesses reais do banco
-            const { data: interests } = await supabase
-                .from('client_interests')
-                .select('*')
-                .order('created_at', { ascending: false });
-            if (interests) {
-                setClientInterests(interests);
-            }
+            let clients = 0;
+            let activeProjects = 0;
+            let pendingTasks = 0;
+            try {
+                const response = await adminApiFetch("/api/admin/tasks/summary");
+                if (response.ok) {
+                    const summary = await response.json();
+                    clients = summary.clients ?? 0;
+                    activeProjects = summary.activeProjects ?? 0;
+                    pendingTasks = summary.pendingTasks ?? 0;
+                }
+            } catch (error) { console.error(error); }
+            setStats({ clients, activeProjects, pendingTasks });
+            const { data: interests } = await supabase.from('client_interests').select('*').order('created_at', { ascending: false });
+            if (interests) setClientInterests(interests);
         };
-        load();
+        void load();
     }, []);
 
     const hqModules = [

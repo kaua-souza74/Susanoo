@@ -1,97 +1,85 @@
 "use client";
-import { useState, useEffect, Suspense } from "react";
-import { supabase } from "@/lib/supabase";
-import { Calendar, Plus, Trash2, CheckCircle2, Clock, Circle, ChevronUp, ChevronDown, Rocket, AlertCircle, ImageIcon, Bell, Save, Users } from "lucide-react";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { adminApiFetch } from "@/lib/admin/client-api";
+import { Calendar, Plus, Trash2, CheckCircle2, Clock, Circle, ChevronUp, ChevronDown, AlertCircle, ImageIcon, Bell, Save } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 
+type TimelineProject = { id: string; name: string; timeline_requested?: boolean | null; profiles?: { name: string | null } | null };
+type TimelineStep = { id: string; project_id: string; title: string; description: string | null; date: string | null; status: string; order_index: number; created_at: string; photo_url: string | null };
+type TimelineStepPatch = Partial<Pick<TimelineStep, "title" | "description" | "date" | "status" | "order_index" | "photo_url">>;
+
 function AdminTimelineContent() {
     const searchParams = useSearchParams();
-    const [projects, setProjects] = useState<any[]>([]);
+    const [projects, setProjects] = useState<TimelineProject[]>([]);
     const [selectedProjectId, setSelectedProjectId] = useState<string>("");
-    const [steps, setSteps] = useState<any[]>([]);
+    const [steps, setSteps] = useState<TimelineStep[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState<string | null>(null);
 
-    const loadProjects = async () => {
-        const { data } = await supabase.from('projects').select('*, profiles(name, email)').order('created_at', { ascending: false });
-        if (data && data.length > 0) {
+    const loadProjects = useCallback(async () => {
+        try {
+            const response = await adminApiFetch("/api/admin/timeline-steps");
+            if (!response.ok) throw new Error("Não foi possível carregar projetos.");
+            const payload = await response.json();
+            const data = payload.projects || [];
             setProjects(data);
-            // Verifica se tem um projeto pré-selecionado via query param
             const paramProject = searchParams.get('project');
-            if (paramProject && data.find(p => p.id === paramProject)) {
-                setSelectedProjectId(paramProject);
-            } else if (!selectedProjectId) {
-                setSelectedProjectId(data[0].id);
-            }
-        }
-        setLoading(false);
-    };
+            if (paramProject && data.some((p: TimelineProject) => p.id === paramProject)) setSelectedProjectId(paramProject);
+            else if (!selectedProjectId && data.length) setSelectedProjectId(data[0].id);
+        } catch (error) { console.error(error); }
+        finally { setLoading(false); }
+    }, [searchParams, selectedProjectId]);
 
     useEffect(() => {
-        loadProjects();
+        const initial = window.setTimeout(() => void loadProjects(), 0);
+        return () => window.clearTimeout(initial);
+    }, [loadProjects]);
+
+    const loadSteps = useCallback(async (pid: string) => {
+        const response = await adminApiFetch(`/api/admin/timeline-steps?project_id=${encodeURIComponent(pid)}`);
+        if (!response.ok) return;
+        const payload = await response.json();
+        setSteps(payload.steps || []);
     }, []);
 
     useEffect(() => {
-        if (selectedProjectId) {
-            loadSteps(selectedProjectId);
-        }
-    }, [selectedProjectId]);
-
-    const loadSteps = async (pid: string) => {
-        const { data } = await supabase
-            .from('timeline_steps')
-            .select('*')
-            .eq('project_id', pid)
-            .order('order_index', { ascending: true });
-        setSteps(data || []);
-    };
+        if (!selectedProjectId) return;
+        const initial = window.setTimeout(() => void loadSteps(selectedProjectId), 0);
+        const timer = window.setInterval(() => void loadSteps(selectedProjectId), 30_000);
+        return () => { window.clearTimeout(initial); window.clearInterval(timer); };
+    }, [selectedProjectId, loadSteps]);
 
     const handleAddStep = async () => {
-        const newStep = {
-            project_id: selectedProjectId,
-            title: "Nova Etapa",
-            description: "Descrição da etapa...",
-            date: "A definir",
-            status: "upcoming",
-            photo_url: "",
-            order_index: steps.length + 1
-        };
-        const { data, error } = await supabase.from('timeline_steps').insert([newStep]).select();
-        if (data) setSteps([...steps, data[0]]);
+        const step = { project_id:selectedProjectId,title:"Nova Etapa",description:"Descrição da etapa...",date:"A definir",status:"upcoming",photo_url:"",order_index:steps.length+1 };
+        const response = await adminApiFetch("/api/admin/timeline-steps", { method:"POST", body:JSON.stringify(step) });
+        if (response.ok) { const payload = await response.json(); setSteps(current => [...current,payload.step]); }
     };
 
-    const handleUpdateStep = async (id: string, updates: any) => {
+    const handleUpdateStep = async (id: string, updates: TimelineStepPatch) => {
         setSaving(id);
-        await supabase.from('timeline_steps').update(updates).eq('id', id);
-        setSteps(steps.map(s => s.id === id ? { ...s, ...updates } : s));
+        const response = await adminApiFetch(`/api/admin/timeline-steps/${id}`, { method:"PATCH", body:JSON.stringify(updates) });
+        if (response.ok) setSteps(current => current.map(s => s.id === id ? { ...s, ...updates } : s));
+        else await loadSteps(selectedProjectId);
         setTimeout(() => setSaving(null), 800);
     };
 
     const handleDeleteStep = async (id: string) => {
         if (!confirm("Deletar esta etapa?")) return;
-        await supabase.from('timeline_steps').delete().eq('id', id);
-        setSteps(steps.filter(s => s.id !== id));
+        const response = await adminApiFetch(`/api/admin/timeline-steps/${id}`, { method:"DELETE" });
+        if (response.ok) setSteps(current => current.filter(s => s.id !== id));
     };
 
     const handleMoveStep = async (index: number, direction: 'up' | 'down') => {
         const newSteps = [...steps];
         const targetIndex = direction === 'up' ? index - 1 : index + 1;
         if (targetIndex < 0 || targetIndex >= newSteps.length) return;
-
-        // Troca os steps
         [newSteps[index], newSteps[targetIndex]] = [newSteps[targetIndex], newSteps[index]];
-        
-        // Atualiza order_index
         newSteps.forEach((s, i) => { s.order_index = i + 1; });
-        setSteps(newSteps);
-
-        // Salva no banco
-        await Promise.all(newSteps.map(s =>
-            supabase.from('timeline_steps').update({ order_index: s.order_index }).eq('id', s.id)
-        ));
+        const results = await Promise.all(newSteps.map(s => adminApiFetch(`/api/admin/timeline-steps/${s.id}`, { method:"PATCH", body:JSON.stringify({ order_index:s.order_index }) })));
+        if (results.every(response => response.ok)) setSteps(newSteps);
+        else await loadSteps(selectedProjectId);
     };
-
     if (loading) return (
         <div className="flex-1 flex items-center justify-center bg-background">
             <div className="w-8 h-8 border-2 border-surface-border border-t-accent rounded-full animate-spin" />
@@ -228,7 +216,7 @@ function AdminTimelineContent() {
                                         <div className="flex flex-col gap-1">
                                             <label className="text-[10px] font-black uppercase tracking-widest text-foreground/30">Data Prevista</label>
                                             <input 
-                                                value={step.date}
+                                                value={step.date || ""}
                                                 onChange={(e) => setSteps(steps.map(s => s.id === step.id ? { ...s, date: e.target.value } : s))}
                                                 onBlur={(e) => handleUpdateStep(step.id, { date: e.target.value })}
                                                 className="bg-transparent text-foreground font-medium text-sm outline-none focus:text-accent transition-colors border-b border-transparent focus:border-surface-border pb-1"
@@ -250,7 +238,7 @@ function AdminTimelineContent() {
                                         <div className="md:col-span-3 flex flex-col gap-1">
                                             <label className="text-[10px] font-black uppercase tracking-widest text-foreground/30">Descrição Completa</label>
                                             <textarea 
-                                                value={step.description}
+                                                value={step.description || ""}
                                                 onChange={(e) => setSteps(steps.map(s => s.id === step.id ? { ...s, description: e.target.value } : s))}
                                                 onBlur={(e) => handleUpdateStep(step.id, { description: e.target.value })}
                                                 className="w-full bg-transparent text-foreground/60 font-medium text-sm outline-none resize-none focus:text-foreground transition-colors mt-1 border-b border-transparent focus:border-surface-border pb-1"

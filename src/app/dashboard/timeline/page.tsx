@@ -79,7 +79,7 @@ function IntegratedTimelineContent() {
     const { data: projs } = await supabase
       .from('projects')
       .select('*')
-      .eq('client_id', session.user.id)
+      .or(`client_id.eq.${session.user.id},developer_id.eq.${session.user.id}`)
       .order('created_at', { ascending: false });
 
     if (projs && projs.length > 0) {
@@ -106,13 +106,19 @@ function IntegratedTimelineContent() {
     if (!selectedProject?.id) return;
 
     const timelineChannel = supabase.channel(`timeline-realtime-${selectedProject.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'timeline_steps', filter: `project_id=eq.${selectedProject.id}` }, () => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'timeline_steps', filter: `project_id=eq.${selectedProject.id}` }, () => {
+        fetchProjectDetails(selectedProject.id);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'timeline_steps', filter: `project_id=eq.${selectedProject.id}` }, () => {
         fetchProjectDetails(selectedProject.id);
       })
       .subscribe();
 
     const tasksChannel = supabase.channel(`tasks-realtime-${selectedProject.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `project_id=eq.${selectedProject.id}` }, () => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tasks', filter: `project_id=eq.${selectedProject.id}` }, () => {
+        fetchProjectDetails(selectedProject.id);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tasks', filter: `project_id=eq.${selectedProject.id}` }, () => {
         fetchProjectDetails(selectedProject.id);
       })
       .subscribe();

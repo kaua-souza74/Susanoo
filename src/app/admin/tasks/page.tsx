@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
+import { adminApiFetch } from "@/lib/admin/client-api";
 import { Plus, MoreHorizontal, LayoutList, ChevronDown, Check, X, Trash2, Search } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -11,10 +11,13 @@ const TEAM = [
     { name: 'Kauã', color: 'bg-purple-600', ring: 'ring-purple-600/30' }
 ];
 
+type Task = { id: string; project_id: string | null; title: string; description: string | null; status: string; created_at: string; assignee: string | null; projects?: { name: string; profiles?: { email: string | null } | null } | null };
+type Project = { id: string; name: string; profiles?: { email: string | null } | null };
+
 export default function AdminTrello() {
-   const [tasks, setTasks] = useState<any[]>([]);
-   const [projects, setProjects] = useState<any[]>([]);
-   const [team, setTeam] = useState<any[]>(TEAM);
+   const [tasks, setTasks] = useState<Task[]>([]);
+   const [projects, setProjects] = useState<Project[]>([]);
+   const team = TEAM;
    
    // Trello Menu Customizado
    const [filterProject, setFilterProject] = useState<string>("all");
@@ -25,55 +28,27 @@ export default function AdminTrello() {
    const [isModalOpen, setIsModalOpen] = useState(false);
    const [newTask, setNewTask] = useState({ title: '', assignee: TEAM[0].name, project_id: 'all' });
 
-   const getProjectDisplayName = (proj: any) => {
+   const getProjectDisplayName = (proj: Project | undefined) => {
       if (!proj) return "Geral HQ";
       const email = proj.profiles?.email || "Sem Cliente";
       return `${email} - ${proj.name}`;
    };
 
    const load = async () => {
-      const { data: projs } = await supabase.from('projects').select('*, profiles(email, name)');
-      setProjects(projs || []);
-      
-      const { data: allTasks } = await supabase.from('tasks').select('*, projects(*, profiles(email, name))').order('created_at', { ascending: false });
-      setTasks(allTasks || []);
-
-      // Carrega membros reais de equipe cadastrados no banco
-      const { data: teamProfiles, error: teamErr } = await supabase
-         .from('profiles')
-         .select('name, email, role')
-         .or('role.eq.developer,role.eq.Desenvolvedor,role.eq.admin,role.eq.Administrador');
-
-      let validTeam = teamProfiles;
-      if (teamErr || !validTeam) {
-         const { data: allP } = await supabase.from('profiles').select('name, email, role');
-         validTeam = (allP || []).filter((p: any) => 
-            ['developer', 'desenvolvedor', 'admin', 'administrador'].includes((p.role || '').toLowerCase())
-         );
-      }
-      if (validTeam && validTeam.length > 0) {
-         const colors = ['bg-emerald-600', 'bg-blue-600', 'bg-purple-600', 'bg-orange-600', 'bg-rose-600', 'bg-cyan-600'];
-         const loadedTeam = validTeam.map((p: any, idx: number) => ({
-            name: p.name || p.email?.split('@')[0] || `Membro ${idx + 1}`,
-            color: colors[idx % colors.length],
-            ring: `ring-${colors[idx % colors.length].replace('bg-', '')}/30`
-         }));
-         setTeam(loadedTeam);
-      }
+      try {
+         const response = await adminApiFetch("/api/admin/tasks");
+         if (!response.ok) throw new Error("Não foi possível carregar tarefas.");
+         const payload = await response.json();
+         setProjects(payload.projects || []);
+         setTasks(payload.tasks || []);
+      } catch (error) { console.error(error); }
    };
 
    useEffect(() => {
-       load();
-
-       const channel = supabase.channel('tasks_sync')
-           .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-               load();
-           })
-           .subscribe();
-
-       return () => { supabase.removeChannel(channel) };
+       const initial = window.setTimeout(() => void load(), 0);
+       const timer = window.setInterval(() => void load(), 30_000);
+       return () => { window.clearTimeout(initial); window.clearInterval(timer); };
    }, []);
-
    const cols = [
        { id: 'todo', name: 'Backlog Interno' },
        { id: 'doing', name: 'Em Produção' },
@@ -88,40 +63,26 @@ export default function AdminTrello() {
        e.preventDefault();
        const taskId = e.dataTransfer.getData('taskId');
        if (!taskId) return;
-       
-       // Update local
-       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
-       
-       // Update DB
-       await supabase.from('tasks').update({ status: newStatus }).eq('id', taskId);
+       const response = await adminApiFetch(`/api/admin/tasks/${taskId}`, { method:"PATCH", body:JSON.stringify({ status:newStatus }) });
+       if (response.ok) setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status:newStatus } : t));
+       else await load();
    };
-
    const handleCreateTaskForm = async (e: React.FormEvent) => {
        e.preventDefault();
-       const payload = {
-           title: newTask.title,
-           status: 'todo',
-           assignee: newTask.assignee,
-           project_id: newTask.project_id === 'all' ? null : newTask.project_id
-       };
-
-       const { error } = await supabase.from('tasks').insert([payload]);
-       if (!error) {
+       const payload = { title:newTask.title, assignee:newTask.assignee, project_id:newTask.project_id === 'all' ? null : newTask.project_id };
+       const response = await adminApiFetch("/api/admin/tasks", { method:"POST", body:JSON.stringify(payload) });
+       if (response.ok) {
            setIsModalOpen(false);
-           setNewTask({ title: '', assignee: TEAM[0].name, project_id: 'all' });
-           load();
-       } else {
-           alert("Erro ao lançar carta: " + error.message);
-       }
+           setNewTask({ title:'', assignee:TEAM[0].name, project_id:'all' });
+           await load();
+       } else alert("Erro ao lançar carta.");
    };
-
    const handleDeleteTask = async (id: string) => {
        if (confirm("Deseja mobilizar esta carta para o arquivo morto (Deletar)?")) {
-           await supabase.from('tasks').delete().eq('id', id);
-           setTasks(prev => prev.filter(t => t.id !== id));
+           const response = await adminApiFetch(`/api/admin/tasks/${id}`, { method:"DELETE" });
+           if (response.ok) setTasks(prev => prev.filter(t => t.id !== id));
        }
    };
-
    const displayTasks = filterProject === 'all' ? tasks : tasks.filter(t => t.project_id === filterProject);
    
    const selectedProjectName = filterProject === 'all' 
